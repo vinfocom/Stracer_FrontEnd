@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import { mapViewApi } from "@/api/apiEndpoints";
 import CanvasPointsOverlay from "@/components/map/overlays/CanvasPointsOverlay";
 import { resolveMetricConfig, getColorForMetric, getMetricValueFromLog } from "@/utils/metrics";
-import { getLogColor } from "@/utils/colorUtils";
+import { getLogColor,normalizeTechName } from "@/utils/colorUtils";
 
 export default function LogCirclesLayer({
   map,
@@ -33,53 +33,8 @@ export default function LogCirclesLayer({
     )];
   }, [logs]);
 
-  // useEffect(() => {
-  //   if (!showNeighbours || sessionIds.length === 0) {
-  //     setNeighbours([]);
-  //     return;
-  //   }
 
-  //   let cancelled = false;
 
-  //   const fetchNeighbours = async () => {
-  //     try {
-  //       const responses = await Promise.all(
-  //         sessionIds.map(id => mapViewApi.getNeighbours(id))
-  //       );
-        
-  //       if (cancelled) return;
-
-  //       const allData = responses.flatMap(response => {
-  //         if (response?.data?.data && Array.isArray(response.data.data)) {
-  //           return response.data.data;
-  //         }
-  //         if (response?.data && Array.isArray(response.data)) {
-  //           return response.data;
-  //         }
-  //         if (Array.isArray(response)) {
-  //           return response;
-  //         }
-  //         return [];
-  //       });
-        
-  //       setNeighbours(allData);
-        
-  //       if (allData.length > 0) {
-  //         toast.success(`Loaded ${allData.length} neighbour records`);
-  //       }
-  //     } catch (error) {
-  //       if (cancelled) return;
-  //       toast.error(`Failed to fetch neighbours: ${error?.message || "Unknown error"}`);
-  //       setNeighbours([]);
-  //     }
-  //   };
-
-  //   fetchNeighbours();
-
-  //   return () => {
-  //     cancelled = true;
-  //   };
-  // }, [sessionIds, showNeighbours]);
 
   const logsWithNeighbours = useMemo(() => {
     if (!showNeighbours || neighbours.length === 0) {
@@ -111,7 +66,9 @@ export default function LogCirclesLayer({
       
       if (colorBy === "technology") {
         const techValue = log.network || log.Network;
-        return getLogColor("technology", techValue);
+        const bandRaw = log.band || log.Band;
+        const normalizedTech = normalizeTechName(techValue, bandRaw);
+        return getLogColor("technology", normalizedTech);
       }
       
       if (colorBy === "band") {

@@ -14,8 +14,13 @@ const getNormalizedKey = (log, colorBy, scheme) => {
   switch (colorBy) {
     case "provider":
       return normalizeProviderName(log.provider || log.Provider || log.carrier) || "Unknown";
+      
     case "technology":
-      return normalizeTechName(log.network || log.Network || log.technology);
+      // ✅ FIX: Extract band and pass it to normalizeTechName
+      const tech = log.network || log.Network || log.technology;
+      const band = log.band || log.Band;
+      return normalizeTechName(tech, band);
+
     case "band": {
       const b = String(log.band || log.Band || "").trim();
       return b === "-1" || b === "" ? "Unknown" : (scheme[b] ? b : "Unknown");

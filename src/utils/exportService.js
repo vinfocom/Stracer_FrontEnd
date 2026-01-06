@@ -1,108 +1,148 @@
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import * as XLSX from "xlsx";
 import html2canvas from "html2canvas";
 import toast from "react-hot-toast";
 
-/**
- * Main export function for analytics data
- * @param {Object} params - Export parameters
- */
-export const exportAnalytics = async ({
-  locations,
-  stats,
-  duration,
-  appSummary,
-  ioSummary,
-  projectId,
-  sessionIds,
-  chartRefs,
-  selectedMetric,
-  totalLocations,
-  filteredCount,
-  polygonStats,
-  siteData,
-}) => {
-  try {
-    toast.loading("Preparing comprehensive export...", { id: "export" });
-
-    const zip = new JSZip();
-    const timestamp = getTimestamp();
-
-    // Create Excel workbook
-    const workbook = await createExcelWorkbook({
-      locations,
-      stats,
-      duration,
-      appSummary,
-      ioSummary,
-      projectId,
-      sessionIds,
-      selectedMetric,
-      totalLocations,
-      filteredCount,
-      polygonStats,
-      siteData,
-    });
-
-    // Add Excel file to ZIP
-    const excelBuffer = XLSX.write(workbook, { 
-      bookType: "xlsx", 
-      type: "array" 
-    });
-    zip.file(`analytics-data-${timestamp}.xlsx`, excelBuffer);
-
-    // Capture all charts
-    await captureAllCharts(zip, chartRefs, timestamp);
-
-    // Add README
-    const readme = generateReadme({
-      projectId,
-      sessionIds,
-      timestamp,
-      totalLocations,
-      filteredCount,
-      selectedMetric,
-    });
-    zip.file("README.txt", readme);
-
-    // Generate and download ZIP
-    const zipBlob = await zip.generateAsync({ 
-      type: "blob",
-      compression: "DEFLATE",
-      compressionOptions: { level: 6 }
-    });
-    
-    saveAs(zipBlob, `analytics-export-${timestamp}.zip`);
-
-    toast.success("Comprehensive export completed!", { id: "export" });
-  } catch (error) {
-    console.error("Export error:", error);
-    toast.error(`Export failed: ${error.message}`, { id: "export" });
-  }
+// ============ Constants ============
+const EXCEL_STYLES = {
+  headerFill: {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A5F" },
+  },
+  headerFont: {
+    bold: true,
+    color: { argb: "FFFFFFFF" },
+    size: 11,
+  },
+  titleFont: {
+    bold: true,
+    size: 14,
+    color: { argb: "FF1E3A5F" },
+  },
+  sectionFont: {
+    bold: true,
+    size: 12,
+    color: { argb: "FF2E5A8F" },
+  },
+  borderStyle: {
+    top: { style: "thin", color: { argb: "FFD0D0D0" } },
+    left: { style: "thin", color: { argb: "FFD0D0D0" } },
+    bottom: { style: "thin", color: { argb: "FFD0D0D0" } },
+    right: { style: "thin", color: { argb: "FFD0D0D0" } },
+  },
+  alternateRowFill: {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFF5F7FA" },
+  },
 };
 
-/**
- * Create Excel workbook with all data sheets
- */
-const createExcelWorkbook = async ({
-  locations,
-  stats,
-  duration,
-  appSummary,
-  ioSummary,
-  projectId,
-  sessionIds,
-  selectedMetric,
-  totalLocations,
-  filteredCount,
-  polygonStats,
-  siteData,
-}) => {
-  const wb = XLSX.utils.book_new();
+const CHART_CAPTURES = [
+  { key: "distribution", name: "signal-distribution" },
+  { key: "tech", name: "technology-breakdown" },
+  { key: "band", name: "band-distribution" },
+  { key: "operator", name: "operator-comparison" },
+  { key: "pciColorLegend", name: "pci-color-legend" },
+  { key: "providerPerf", name: "provider-performance" },
+  { key: "speed", name: "speed-analysis" },
+  { key: "throughputTimeline", name: "throughput-timeline" },
+  { key: "jitterLatency", name: "jitter-latency" },
+];
 
-  // 1. Summary Sheet
-  const summarySheet = createSummarySheet({
+// ============ Helper Functions ============
+const getTimestamp = () => 
+  new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+
+const formatNumber = (value, decimals = 2) => {
+  if (value == null || isNaN(value)) return "N/A";
+  return Number(value).toFixed(decimals);
+};
+
+const calculateStats = (arr) => {
+  if (!arr?.length) return { avg: "N/A", min: "N/A", max: "N/A", count: 0 };
+  const validValues = arr.filter((v) => v != null && !isNaN(v));
+  if (!validValues.length) return { avg: "N/A", min: "N/A", max: "N/A", count: 0 };
+  
+  const sum = validValues.reduce((a, b) => a + b, 0);
+  return {
+    avg: (sum / validValues.length).toFixed(2),
+    min: Math.min(...validValues).toFixed(2),
+    max: Math.max(...validValues).toFixed(2),
+    count: validValues.length,
+  };
+};
+
+const calculateAverage = (arr) => {
+  const stats = calculateStats(arr);
+  return stats.avg;
+};
+
+const safePercentage = (value, total) => {
+  if (!total || total === 0) return "0.00%";
+  return `${((value / total) * 100).toFixed(2)}%`;
+};
+
+// ============ Worksheet Styling Helpers ============
+const applyHeaderStyle = (row) => {
+  row.eachCell((cell) => {
+    cell.fill = EXCEL_STYLES.headerFill;
+    cell.font = EXCEL_STYLES.headerFont;
+    cell.border = EXCEL_STYLES.borderStyle;
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+  row.height = 25;
+};
+
+const applyDataRowStyle = (row, isAlternate = false) => {
+  row.eachCell((cell) => {
+    cell.border = EXCEL_STYLES.borderStyle;
+    cell.alignment = { vertical: "middle", horizontal: "left" };
+    if (isAlternate) {
+      cell.fill = EXCEL_STYLES.alternateRowFill;
+    }
+  });
+};
+
+const autoFitColumns = (worksheet, minWidth = 10, maxWidth = 50) => {
+  worksheet.columns.forEach((column) => {
+    let maxLength = minWidth;
+    column.eachCell({ includeEmpty: true }, (cell) => {
+      const cellLength = cell.value ? String(cell.value).length : 0;
+      maxLength = Math.min(Math.max(maxLength, cellLength + 2), maxWidth);
+    });
+    column.width = maxLength;
+  });
+};
+
+const addDataTable = (worksheet, data, startRow = 1) => {
+  if (!data?.length) return startRow;
+
+  const headers = Object.keys(data[0]);
+  
+  // Add headers
+  const headerRow = worksheet.getRow(startRow);
+  headers.forEach((header, index) => {
+    headerRow.getCell(index + 1).value = header;
+  });
+  applyHeaderStyle(headerRow);
+
+  // Add data rows
+  data.forEach((item, rowIndex) => {
+    const row = worksheet.getRow(startRow + rowIndex + 1);
+    headers.forEach((header, colIndex) => {
+      row.getCell(colIndex + 1).value = item[header];
+    });
+    applyDataRowStyle(row, rowIndex % 2 === 1);
+  });
+
+  return startRow + data.length + 1;
+};
+
+// ============ Sheet Creation Functions ============
+const createSummarySheet = (workbook, params) => {
+  const {
     projectId,
     sessionIds,
     selectedMetric,
@@ -112,164 +152,175 @@ const createExcelWorkbook = async ({
     ioSummary,
     polygonStats,
     siteData,
+  } = params;
+
+  const worksheet = workbook.addWorksheet("Summary", {
+    properties: { tabColor: { argb: "FF1E3A5F" } },
   });
-  XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
 
-  // 2. Location Data Sheet
-  if (locations?.length > 0) {
-    const locationSheet = createLocationSheet(locations);
-    XLSX.utils.book_append_sheet(wb, locationSheet, "Location Data");
-  }
+  let rowNum = 1;
 
-  // 3. Application Performance Sheet
-  if (appSummary && Object.keys(appSummary).length > 0) {
-    const appSheet = createApplicationSheet(appSummary);
-    XLSX.utils.book_append_sheet(wb, appSheet, "Application Performance");
-  }
+  // Title
+  worksheet.mergeCells(`A${rowNum}:D${rowNum}`);
+  const titleCell = worksheet.getCell(`A${rowNum}`);
+  titleCell.value = "📊 ANALYTICS EXPORT REPORT";
+  titleCell.font = { ...EXCEL_STYLES.titleFont, size: 16 };
+  titleCell.alignment = { horizontal: "center" };
+  rowNum += 2;
 
-  // 4. Duration Sheet
-  if (duration) {
-    const durationSheet = createDurationSheet(duration);
-    XLSX.utils.book_append_sheet(wb, durationSheet, "Session Duration");
-  }
+  // Helper to add section
+  const addSection = (title, items) => {
+    const sectionRow = worksheet.getRow(rowNum);
+    worksheet.mergeCells(`A${rowNum}:D${rowNum}`);
+    sectionRow.getCell(1).value = title;
+    sectionRow.getCell(1).font = EXCEL_STYLES.sectionFont;
+    rowNum++;
 
-  // 5. Statistics by Provider
-  if (locations?.length > 0) {
-    const providerSheet = createProviderStatsSheet(locations);
-    XLSX.utils.book_append_sheet(wb, providerSheet, "Provider Statistics");
-  }
+    items.forEach(([label, value]) => {
+      const row = worksheet.getRow(rowNum);
+      row.getCell(1).value = label;
+      row.getCell(2).value = value;
+      row.getCell(1).font = { bold: true };
+      rowNum++;
+    });
+    rowNum++;
+  };
 
-  // 6. Statistics by Technology
-  if (locations?.length > 0) {
-    const techSheet = createTechnologyStatsSheet(locations);
-    XLSX.utils.book_append_sheet(wb, techSheet, "Technology Statistics");
-  }
-
-  // 7. Band Analysis
-  if (locations?.length > 0) {
-    const bandSheet = createBandAnalysisSheet(locations);
-    XLSX.utils.book_append_sheet(wb, bandSheet, "Band Analysis");
-  }
-
-  // 8. PCI Analysis
-  if (locations?.length > 0) {
-    const pciSheet = createPCIAnalysisSheet(locations);
-    XLSX.utils.book_append_sheet(wb, pciSheet, "PCI Analysis");
-  }
-
-  return wb;
-};
-
-/**
- * Create Summary Sheet
- */
-const createSummarySheet = ({
-  projectId,
-  sessionIds,
-  selectedMetric,
-  totalLocations,
-  filteredCount,
-  stats,
-  ioSummary,
-  polygonStats,
-  siteData,
-}) => {
-  const data = [
-    ["📊 ANALYTICS EXPORT REPORT"],
-    [""],
+  // General Info
+  addSection("📋 GENERAL INFORMATION", [
     ["Generated:", new Date().toLocaleString()],
     ["Project ID:", projectId],
-    ["Session IDs:", sessionIds.join(", ")],
-    [""],
-    ["📈 DATA SUMMARY"],
-    ["Total Samples:", totalLocations],
-    ["Filtered Samples:", filteredCount],
-    ["Selected Metric:", selectedMetric?.toUpperCase() || "N/A"],
-    [""],
-  ];
+    ["Session IDs:", sessionIds?.join(", ") || "N/A"],
+  ]);
 
+  // Data Summary
+  addSection("📈 DATA SUMMARY", [
+    ["Total Samples:", totalLocations?.toLocaleString() || 0],
+    ["Filtered Samples:", filteredCount?.toLocaleString() || 0],
+    ["Selected Metric:", selectedMetric?.toUpperCase() || "N/A"],
+  ]);
+
+  // IO Summary
   if (ioSummary) {
-    data.push(
-      ["📍 INDOOR/OUTDOOR DISTRIBUTION"],
+    addSection("📍 INDOOR/OUTDOOR DISTRIBUTION", [
       ["Indoor Samples:", ioSummary.indoor],
       ["Outdoor Samples:", ioSummary.outdoor],
       ["Total:", ioSummary.total],
-      ["Indoor %:", `${((ioSummary.indoor / ioSummary.total) * 100).toFixed(2)}%`],
-      ["Outdoor %:", `${((ioSummary.outdoor / ioSummary.total) * 100).toFixed(2)}%`],
-      [""]
-    );
+      ["Indoor %:", safePercentage(ioSummary.indoor, ioSummary.total)],
+      ["Outdoor %:", safePercentage(ioSummary.outdoor, ioSummary.total)],
+    ]);
   }
 
+  // Metric Statistics
   if (stats) {
-    data.push(
-      ["📊 METRIC STATISTICS"],
+    addSection("📊 METRIC STATISTICS", [
       ["Average:", stats.avg],
       ["Minimum:", stats.min],
       ["Maximum:", stats.max],
       ["Median:", stats.median],
       ["Sample Count:", stats.count],
-      [""]
-    );
+    ]);
   }
 
+  // Polygon Statistics
   if (polygonStats) {
-    data.push(
-      ["🗺️ POLYGON STATISTICS"],
+    addSection("🗺️ POLYGON STATISTICS", [
       ["Total Polygons:", polygonStats.total],
       ["Polygons with Data:", polygonStats.withData],
       ["Total Points:", polygonStats.totalPoints],
       ["Average Points per Polygon:", polygonStats.avgPoints],
-      [""]
-    );
+    ]);
   }
 
+  // Site Information
   if (siteData?.length > 0) {
-    data.push(
-      ["📡 SITE INFORMATION"],
+    addSection("📡 SITE INFORMATION", [
       ["Total Sites:", siteData.length],
-      [""]
-    );
+    ]);
   }
 
-  return XLSX.utils.aoa_to_sheet(data);
+  autoFitColumns(worksheet, 15, 60);
 };
 
-/**
- * Create Location Data Sheet
- */
-const createLocationSheet = (locations) => {
-  const data = locations.map((loc, index) => ({
-    "Sample #": index + 1,
-    "Latitude": loc.lat?.toFixed(6) || "N/A",
-    "Longitude": loc.lng?.toFixed(6) || "N/A",
-    "Operator": loc.operator || "N/A",
-    "Provider": loc.provider || "N/A",
-    "Technology": loc.technology || "N/A",
-    "Band": loc.band || "N/A",
-    "PCI": loc.pci || "N/A",
-    "Cell ID": loc.nodeb_id || "N/A",
-    "RSRP (dBm)": loc.rsrp?.toFixed(2) || "N/A",
-    "RSRQ (dB)": loc.rsrq?.toFixed(2) || "N/A",
-    "SINR (dB)": loc.sinr?.toFixed(2) || "N/A",
-    "DL Throughput (Mbps)": loc.dl_thpt?.toFixed(2) || "N/A",
-    "UL Throughput (Mbps)": loc.ul_thpt?.toFixed(2) || "N/A",
-    "MOS": loc.mos?.toFixed(2) || "N/A",
-    "Latency (ms)": loc.latency?.toFixed(2) || "N/A",
-    "Jitter (ms)": loc.jitter?.toFixed(2) || "N/A",
-    "Speed (m/s)": loc.speed?.toFixed(2) || "N/A",
-    "Speed (km/h)": loc.speed ? (loc.speed * 3.6).toFixed(2) : "N/A",
-    "Timestamp": loc.timestamp || "N/A",
-  }));
+const createLocationSheet = (workbook, locations) => {
+  if (!locations?.length) return;
 
-  return XLSX.utils.json_to_sheet(data);
+  const worksheet = workbook.addWorksheet("Location Data", {
+    properties: { tabColor: { argb: "FF28A745" } },
+  });
+
+  const columns = [
+    { header: "Sample #", key: "sampleNo", width: 10 },
+    { header: "Latitude", key: "lat", width: 12 },
+    { header: "Longitude", key: "lng", width: 12 },
+    { header: "Operator", key: "operator", width: 15 },
+    { header: "Provider", key: "provider", width: 15 },
+    { header: "Technology", key: "technology", width: 12 },
+    { header: "Band", key: "band", width: 10 },
+    { header: "PCI", key: "pci", width: 8 },
+    { header: "Cell ID", key: "cellId", width: 15 },
+    { header: "RSRP (dBm)", key: "rsrp", width: 12 },
+    { header: "RSRQ (dB)", key: "rsrq", width: 12 },
+    { header: "SINR (dB)", key: "sinr", width: 12 },
+    { header: "DL Throughput (Mbps)", key: "dlThpt", width: 18 },
+    { header: "UL Throughput (Mbps)", key: "ulThpt", width: 18 },
+    { header: "MOS", key: "mos", width: 8 },
+    { header: "Latency (ms)", key: "latency", width: 12 },
+    { header: "Jitter (ms)", key: "jitter", width: 12 },
+    { header: "Speed (m/s)", key: "speedMs", width: 12 },
+    { header: "Speed (km/h)", key: "speedKmh", width: 12 },
+    { header: "Timestamp", key: "timestamp", width: 20 },
+  ];
+
+  worksheet.columns = columns;
+
+  // Style header row
+  applyHeaderStyle(worksheet.getRow(1));
+
+  // Add data with chunking for large datasets
+  const CHUNK_SIZE = 1000;
+  for (let i = 0; i < locations.length; i += CHUNK_SIZE) {
+    const chunk = locations.slice(i, i + CHUNK_SIZE);
+    chunk.forEach((loc, index) => {
+      const globalIndex = i + index;
+      const row = worksheet.addRow({
+        sampleNo: globalIndex + 1,
+        lat: formatNumber(loc.lat, 6),
+        lng: formatNumber(loc.lng, 6),
+        operator: loc.operator || "N/A",
+        provider: loc.provider || "N/A",
+        technology: loc.technology || "N/A",
+        band: loc.band || "N/A",
+        pci: loc.pci || "N/A",
+        cellId: loc.nodeb_id || "N/A",
+        rsrp: formatNumber(loc.rsrp),
+        rsrq: formatNumber(loc.rsrq),
+        sinr: formatNumber(loc.sinr),
+        dlThpt: formatNumber(loc.dl_thpt),
+        ulThpt: formatNumber(loc.ul_thpt),
+        mos: formatNumber(loc.mos),
+        latency: formatNumber(loc.latency),
+        jitter: formatNumber(loc.jitter),
+        speedMs: formatNumber(loc.speed),
+        speedKmh: loc.speed ? formatNumber(loc.speed * 3.6) : "N/A",
+        timestamp: loc.timestamp || "N/A",
+      });
+      applyDataRowStyle(row, globalIndex % 2 === 1);
+    });
+  }
+
+  // Freeze header row
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
 };
 
-/**
- * Create Application Performance Sheet
- */
-const createApplicationSheet = (appSummary) => {
+const createApplicationSheet = (workbook, appSummary) => {
+  if (!appSummary || Object.keys(appSummary).length === 0) return;
+
+  const worksheet = workbook.addWorksheet("Application Performance", {
+    properties: { tabColor: { argb: "FF6F42C1" } },
+  });
+
   const data = [];
-
   Object.entries(appSummary).forEach(([sessionId, apps]) => {
     Object.entries(apps).forEach(([appName, metrics]) => {
       data.push({
@@ -277,139 +328,134 @@ const createApplicationSheet = (appSummary) => {
         "Application": metrics.appName || appName,
         "Duration (HH:MM:SS)": metrics.durationHHMMSS || "N/A",
         "Samples": metrics.sampleCount || 0,
-        "MOS Score": metrics.avgMos?.toFixed(2) || "N/A",
-        "Avg RSRP (dBm)": metrics.avgRsrp?.toFixed(2) || "N/A",
-        "Avg RSRQ (dB)": metrics.avgRsrq?.toFixed(2) || "N/A",
-        "Avg SINR (dB)": metrics.avgSinr?.toFixed(2) || "N/A",
-        "Avg DL (Mbps)": metrics.avgDlTptMbps?.toFixed(2) || "N/A",
-        "Avg UL (Mbps)": metrics.avgUlTptMbps?.toFixed(2) || "N/A",
-        "Avg Latency (ms)": metrics.avgLatency?.toFixed(2) || "N/A",
-        "Avg Jitter (ms)": metrics.avgJitter?.toFixed(2) || "N/A",
-        "Avg Packet Loss (%)": metrics.avgPacketLoss?.toFixed(2) || "N/A",
+        "MOS Score": formatNumber(metrics.avgMos),
+        "Avg RSRP (dBm)": formatNumber(metrics.avgRsrp),
+        "Avg RSRQ (dB)": formatNumber(metrics.avgRsrq),
+        "Avg SINR (dB)": formatNumber(metrics.avgSinr),
+        "Avg DL (Mbps)": formatNumber(metrics.avgDlTptMbps),
+        "Avg UL (Mbps)": formatNumber(metrics.avgUlTptMbps),
+        "Avg Latency (ms)": formatNumber(metrics.avgLatency),
+        "Avg Jitter (ms)": formatNumber(metrics.avgJitter),
+        "Avg Packet Loss (%)": formatNumber(metrics.avgPacketLoss),
         "First Used": metrics.firstUsedAt || "N/A",
         "Last Used": metrics.lastUsedAt || "N/A",
       });
     });
   });
 
-  return XLSX.utils.json_to_sheet(data);
+  if (data.length > 0) {
+    addDataTable(worksheet, data);
+    autoFitColumns(worksheet);
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
 };
 
-/**
- * Create Duration Sheet
- */
-const createDurationSheet = (duration) => {
+const createDurationSheet = (workbook, duration) => {
+  if (!duration) return;
+
+  const worksheet = workbook.addWorksheet("Session Duration", {
+    properties: { tabColor: { argb: "FFFD7E14" } },
+  });
+
   const data = [
-    ["Session Duration Information"],
-    [""],
+    ["📅 Session Duration Information", ""],
+    ["", ""],
     ["Total Duration:", duration.total_duration || "N/A"],
     ["Start Time:", duration.start_time || "N/A"],
     ["End Time:", duration.end_time || "N/A"],
   ];
 
-  return XLSX.utils.aoa_to_sheet(data);
+  data.forEach((row, index) => {
+    const wsRow = worksheet.getRow(index + 1);
+    wsRow.getCell(1).value = row[0];
+    wsRow.getCell(2).value = row[1];
+    
+    if (index === 0) {
+      wsRow.getCell(1).font = EXCEL_STYLES.titleFont;
+    } else if (row[0] && row[0] !== "") {
+      wsRow.getCell(1).font = { bold: true };
+    }
+  });
+
+  autoFitColumns(worksheet, 20, 40);
 };
 
-/**
- * Create Provider Statistics Sheet
- */
-const createProviderStatsSheet = (locations) => {
-  const providerStats = {};
+const createProviderStatsSheet = (workbook, locations) => {
+  if (!locations?.length) return;
 
-  locations.forEach((loc) => {
-    const provider = loc.provider || "Unknown";
-    if (!providerStats[provider]) {
-      providerStats[provider] = {
-        count: 0,
-        rsrp: [],
-        rsrq: [],
-        sinr: [],
-        dl: [],
-        ul: [],
-        mos: [],
-        latency: [],
-      };
-    }
-
-    providerStats[provider].count++;
-    if (loc.rsrp != null) providerStats[provider].rsrp.push(loc.rsrp);
-    if (loc.rsrq != null) providerStats[provider].rsrq.push(loc.rsrq);
-    if (loc.sinr != null) providerStats[provider].sinr.push(loc.sinr);
-    if (loc.dl_thpt != null) providerStats[provider].dl.push(parseFloat(loc.dl_thpt));
-    if (loc.ul_thpt != null) providerStats[provider].ul.push(parseFloat(loc.ul_thpt));
-    if (loc.mos != null) providerStats[provider].mos.push(loc.mos);
-    if (loc.latency != null) providerStats[provider].latency.push(loc.latency);
+  const worksheet = workbook.addWorksheet("Provider Statistics", {
+    properties: { tabColor: { argb: "FF17A2B8" } },
   });
+
+  const providerStats = aggregateByField(locations, "provider", [
+    "rsrp", "rsrq", "sinr", "dl_thpt", "ul_thpt", "mos", "latency"
+  ]);
 
   const data = Object.entries(providerStats)
     .filter(([name]) => name !== "Unknown")
     .map(([provider, stats]) => ({
-      Provider: provider,
+      "Provider": provider,
       "Sample Count": stats.count,
       "Avg RSRP (dBm)": calculateAverage(stats.rsrp),
       "Avg RSRQ (dB)": calculateAverage(stats.rsrq),
       "Avg SINR (dB)": calculateAverage(stats.sinr),
-      "Avg DL (Mbps)": calculateAverage(stats.dl),
-      "Avg UL (Mbps)": calculateAverage(stats.ul),
+      "Avg DL (Mbps)": calculateAverage(stats.dl_thpt),
+      "Avg UL (Mbps)": calculateAverage(stats.ul_thpt),
       "Avg MOS": calculateAverage(stats.mos),
       "Avg Latency (ms)": calculateAverage(stats.latency),
     }));
 
-  return XLSX.utils.json_to_sheet(data);
+  if (data.length > 0) {
+    addDataTable(worksheet, data);
+    autoFitColumns(worksheet);
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
 };
 
-/**
- * Create Technology Statistics Sheet
- */
-const createTechnologyStatsSheet = (locations) => {
-  const techStats = {};
+const createTechnologyStatsSheet = (workbook, locations) => {
+  if (!locations?.length) return;
 
-  locations.forEach((loc) => {
-    const tech = loc.technology || "Unknown";
-    if (!techStats[tech]) {
-      techStats[tech] = {
-        count: 0,
-        rsrp: [],
-        sinr: [],
-        dl: [],
-        ul: [],
-      };
-    }
-
-    techStats[tech].count++;
-    if (loc.rsrp != null) techStats[tech].rsrp.push(loc.rsrp);
-    if (loc.sinr != null) techStats[tech].sinr.push(loc.sinr);
-    if (loc.dl_thpt != null) techStats[tech].dl.push(parseFloat(loc.dl_thpt));
-    if (loc.ul_thpt != null) techStats[tech].ul.push(parseFloat(loc.ul_thpt));
+  const worksheet = workbook.addWorksheet("Technology Statistics", {
+    properties: { tabColor: { argb: "FF20C997" } },
   });
+
+  const techStats = aggregateByField(locations, "technology", [
+    "rsrp", "sinr", "dl_thpt", "ul_thpt"
+  ]);
 
   const data = Object.entries(techStats)
     .filter(([name]) => name !== "Unknown")
     .map(([technology, stats]) => ({
-      Technology: technology,
+      "Technology": technology,
       "Sample Count": stats.count,
       "Avg RSRP (dBm)": calculateAverage(stats.rsrp),
       "Avg SINR (dB)": calculateAverage(stats.sinr),
-      "Avg DL (Mbps)": calculateAverage(stats.dl),
-      "Avg UL (Mbps)": calculateAverage(stats.ul),
+      "Avg DL (Mbps)": calculateAverage(stats.dl_thpt),
+      "Avg UL (Mbps)": calculateAverage(stats.ul_thpt),
     }));
 
-  return XLSX.utils.json_to_sheet(data);
+  if (data.length > 0) {
+    addDataTable(worksheet, data);
+    autoFitColumns(worksheet);
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
 };
 
-/**
- * Create Band Analysis Sheet
- */
-const createBandAnalysisSheet = (locations) => {
-  const bandStats = {};
+const createBandAnalysisSheet = (workbook, locations) => {
+  if (!locations?.length) return;
 
+  const worksheet = workbook.addWorksheet("Band Analysis", {
+    properties: { tabColor: { argb: "FFFFC107" } },
+  });
+
+  const bandStats = {};
   locations.forEach((loc) => {
     const band = loc.band || "Unknown";
     if (!bandStats[band]) {
       bandStats[band] = {
         count: 0,
         rsrp: [],
-        dl: [],
+        dl_thpt: [],
         pcis: new Set(),
         nodebs: new Set(),
       };
@@ -417,7 +463,7 @@ const createBandAnalysisSheet = (locations) => {
 
     bandStats[band].count++;
     if (loc.rsrp != null) bandStats[band].rsrp.push(loc.rsrp);
-    if (loc.dl_thpt != null) bandStats[band].dl.push(parseFloat(loc.dl_thpt));
+    if (loc.dl_thpt != null) bandStats[band].dl_thpt.push(parseFloat(loc.dl_thpt));
     if (loc.pci != null) bandStats[band].pcis.add(loc.pci);
     if (loc.nodeb_id != null) bandStats[band].nodebs.add(loc.nodeb_id);
   });
@@ -425,24 +471,31 @@ const createBandAnalysisSheet = (locations) => {
   const data = Object.entries(bandStats)
     .filter(([name]) => name !== "Unknown")
     .map(([band, stats]) => ({
-      Band: band,
+      "Band": band,
       "Sample Count": stats.count,
       "Unique PCIs": stats.pcis.size,
       "Unique Cells": stats.nodebs.size,
       "Avg RSRP (dBm)": calculateAverage(stats.rsrp),
-      "Avg DL (Mbps)": calculateAverage(stats.dl),
-      "PCI List": Array.from(stats.pcis).join(", "),
+      "Avg DL (Mbps)": calculateAverage(stats.dl_thpt),
+      "PCI List": Array.from(stats.pcis).slice(0, 20).join(", ") + 
+                  (stats.pcis.size > 20 ? "..." : ""),
     }));
 
-  return XLSX.utils.json_to_sheet(data);
+  if (data.length > 0) {
+    addDataTable(worksheet, data);
+    autoFitColumns(worksheet);
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
 };
 
-/**
- * Create PCI Analysis Sheet
- */
-const createPCIAnalysisSheet = (locations) => {
-  const pciStats = {};
+const createPCIAnalysisSheet = (workbook, locations) => {
+  if (!locations?.length) return;
 
+  const worksheet = workbook.addWorksheet("PCI Analysis", {
+    properties: { tabColor: { argb: "FFDC3545" } },
+  });
+
+  const pciStats = {};
   locations.forEach((loc) => {
     const pci = loc.pci || "Unknown";
     if (!pciStats[pci]) {
@@ -471,68 +524,114 @@ const createPCIAnalysisSheet = (locations) => {
   const data = Object.entries(pciStats)
     .filter(([name]) => name !== "Unknown")
     .map(([pci, stats]) => ({
-      PCI: pci,
+      "PCI": pci,
       "Sample Count": stats.count,
       "Unique Cells": stats.nodebs.size,
       "Providers": Array.from(stats.providers).join(", "),
       "Bands": Array.from(stats.bands).join(", "),
-      "Cell IDs": Array.from(stats.nodebs).join(", "),
+      "Cell IDs": Array.from(stats.nodebs).slice(0, 10).join(", ") +
+                  (stats.nodebs.size > 10 ? "..." : ""),
       "Avg RSRP (dBm)": calculateAverage(stats.rsrp),
       "Avg RSRQ (dB)": calculateAverage(stats.rsrq),
       "Avg SINR (dB)": calculateAverage(stats.sinr),
       "Avg MOS": calculateAverage(stats.mos),
     }));
 
-  return XLSX.utils.json_to_sheet(data);
+  if (data.length > 0) {
+    addDataTable(worksheet, data);
+    autoFitColumns(worksheet);
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
 };
 
-/**
- * Capture all chart screenshots
- */
+// ============ Aggregation Helper ============
+const aggregateByField = (locations, fieldName, metricsToAggregate) => {
+  const stats = {};
+
+  locations.forEach((loc) => {
+    const key = loc[fieldName] || "Unknown";
+    if (!stats[key]) {
+      stats[key] = { count: 0 };
+      metricsToAggregate.forEach((metric) => {
+        stats[key][metric] = [];
+      });
+    }
+
+    stats[key].count++;
+    metricsToAggregate.forEach((metric) => {
+      const value = loc[metric];
+      if (value != null) {
+        stats[key][metric].push(parseFloat(value));
+      }
+    });
+  });
+
+  return stats;
+};
+
+// ============ Excel Workbook Creation ============
+const createExcelWorkbook = async (params) => {
+  const workbook = new ExcelJS.Workbook();
+  
+  // Workbook properties
+  workbook.creator = "Network Analytics Dashboard";
+  workbook.lastModifiedBy = "Analytics Export";
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  // Create all sheets
+  createSummarySheet(workbook, params);
+  createLocationSheet(workbook, params.locations);
+  createApplicationSheet(workbook, params.appSummary);
+  createDurationSheet(workbook, params.duration);
+  createProviderStatsSheet(workbook, params.locations);
+  createTechnologyStatsSheet(workbook, params.locations);
+  createBandAnalysisSheet(workbook, params.locations);
+  createPCIAnalysisSheet(workbook, params.locations);
+
+  return workbook;
+};
+
+// ============ Chart Capture ============
 const captureAllCharts = async (zip, chartRefs, timestamp) => {
+  if (!chartRefs) return;
+
   const chartFolder = zip.folder("charts");
 
-  const chartCaptures = [
-    { ref: chartRefs.distribution, name: "signal-distribution" },
-    { ref: chartRefs.tech, name: "technology-breakdown" },
-    { ref: chartRefs.band, name: "band-distribution" },
-    { ref: chartRefs.operator, name: "operator-comparison" },
-    { ref: chartRefs.pciColorLegend, name: "pci-color-legend" },
-    { ref: chartRefs.providerPerf, name: "provider-performance" },
-    { ref: chartRefs.speed, name: "speed-analysis" },
-    { ref: chartRefs.throughputTimeline, name: "throughput-timeline" },
-    { ref: chartRefs.jitterLatency, name: "jitter-latency" },
-  ];
+  const capturePromises = CHART_CAPTURES.map(async ({ key, name }) => {
+    const ref = chartRefs[key];
+    if (!ref?.current) return;
 
-  const captures = chartCaptures.map(async ({ ref, name }) => {
-    if (ref?.current) {
-      try {
-        const canvas = await html2canvas(ref.current, {
-          backgroundColor: "#0f172a",
-          scale: 2,
-          logging: false,
-          useCORS: true,
-        });
+    try {
+      const canvas = await html2canvas(ref.current, {
+        backgroundColor: "#0f172a",
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+      });
 
-        const blob = await new Promise((resolve) => {
-          canvas.toBlob(resolve, "image/png", 1.0);
-        });
-
-        if (blob) {
-          chartFolder.file(`${name}-${timestamp}.png`, blob);
-        }
-      } catch (error) {
-        console.error(`Failed to capture ${name}:`, error);
-      }
+      return new Promise((resolve) => {
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              chartFolder.file(`${name}-${timestamp}.png`, blob);
+            }
+            resolve();
+          },
+          "image/png",
+          1.0
+        );
+      });
+    } catch (error) {
+      console.warn(`Failed to capture ${name}:`, error.message);
     }
   });
 
-  await Promise.all(captures);
+  await Promise.allSettled(capturePromises);
 };
 
-/**
- * Generate README file content
- */
+// ============ README Generator ============
 const generateReadme = ({
   projectId,
   sessionIds,
@@ -540,22 +639,21 @@ const generateReadme = ({
   totalLocations,
   filteredCount,
   selectedMetric,
-}) => {
-  return `
+}) => `
 ╔════════════════════════════════════════════════════════════════╗
 ║           ANALYTICS EXPORT REPORT - README                     ║
 ╚════════════════════════════════════════════════════════════════╝
 
 📅 Generated: ${new Date().toLocaleString()}
 🆔 Project ID: ${projectId}
-🔢 Session IDs: ${sessionIds.join(", ")}
+🔢 Session IDs: ${sessionIds?.join(", ") || "N/A"}
 
 ═══════════════════════════════════════════════════════════════
 
 📊 DATA SUMMARY
 ---------------
-• Total Samples: ${totalLocations.toLocaleString()}
-• Filtered Samples: ${filteredCount.toLocaleString()}
+• Total Samples: ${totalLocations?.toLocaleString() || 0}
+• Filtered Samples: ${filteredCount?.toLocaleString() || 0}
 • Selected Metric: ${selectedMetric?.toUpperCase() || "N/A"}
 
 ═══════════════════════════════════════════════════════════════
@@ -590,36 +688,13 @@ const generateReadme = ({
 ----------------------
 
 Signal Strength:
-• RSRP (Reference Signal Received Power): Signal strength in dBm
-  - Excellent: > -80 dBm
-  - Good: -80 to -90 dBm
-  - Fair: -90 to -100 dBm
-  - Poor: < -100 dBm
-
-• RSRQ (Reference Signal Received Quality): Signal quality in dB
-  - Excellent: > -10 dB
-  - Good: -10 to -15 dB
-  - Fair: -15 to -20 dB
-  - Poor: < -20 dB
-
-• SINR (Signal to Interference plus Noise Ratio): Signal clarity in dB
-  - Excellent: > 20 dB
-  - Good: 13 to 20 dB
-  - Fair: 0 to 13 dB
-  - Poor: < 0 dB
+• RSRP: Signal strength in dBm (Excellent: > -80, Poor: < -100)
+• RSRQ: Signal quality in dB (Excellent: > -10, Poor: < -20)
+• SINR: Signal clarity in dB (Excellent: > 20, Poor: < 0)
 
 Quality of Experience:
-• MOS (Mean Opinion Score): Voice quality rating (1-5)
-  - Excellent: 4.0 - 5.0
-  - Good: 3.0 - 4.0
-  - Fair: 2.0 - 3.0
-  - Poor: 1.0 - 2.0
-
-• Latency: Network delay in milliseconds
-  - Excellent: < 50 ms
-  - Good: 50 - 100 ms
-  - Fair: 100 - 150 ms
-  - Poor: > 150 ms
+• MOS: Voice quality rating 1-5 (Excellent: 4.0-5.0, Poor: 1.0-2.0)
+• Latency: Network delay in ms (Excellent: < 50, Poor: > 150)
 
 ═══════════════════════════════════════════════════════════════
 
@@ -633,74 +708,127 @@ Quality of Experience:
 
 ═══════════════════════════════════════════════════════════════
 
-⚠️ IMPORTANT NOTES
-------------------
-• All metrics are averaged where applicable
-• Location coordinates use WGS84 datum
-• Charts reflect filtered data only
-• Throughput values are in Mbps (Megabits per second)
-• Speed values are provided in both m/s and km/h
-
-═══════════════════════════════════════════════════════════════
-
-📧 SUPPORT
-----------
-For questions or issues with this export, please contact your
-system administrator.
-
-═══════════════════════════════════════════════════════════════
-
 Generated by Network Analytics Dashboard v2.0
 © ${new Date().getFullYear()} All rights reserved
 `;
-};
 
+// ============ Main Export Functions ============
 /**
- * Helper: Calculate average from array
+ * Main export function for analytics data
  */
-const calculateAverage = (arr) => {
-  if (!arr || arr.length === 0) return "N/A";
-  const sum = arr.reduce((a, b) => a + b, 0);
-  return (sum / arr.length).toFixed(2);
-};
+export const exportAnalytics = async ({
+  locations,
+  stats,
+  duration,
+  appSummary,
+  ioSummary,
+  projectId,
+  sessionIds = [],
+  chartRefs,
+  selectedMetric,
+  totalLocations = 0,
+  filteredCount = 0,
+  polygonStats,
+  siteData,
+}) => {
+  const toastId = "export";
+  
+  try {
+    toast.loading("Preparing comprehensive export...", { id: toastId });
 
-/**
- * Helper: Get formatted timestamp
- */
-const getTimestamp = () => {
-  return new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .slice(0, -5);
+    const zip = new JSZip();
+    const timestamp = getTimestamp();
+
+    // Create Excel workbook
+    toast.loading("Generating Excel data...", { id: toastId });
+    const workbook = await createExcelWorkbook({
+      locations,
+      stats,
+      duration,
+      appSummary,
+      ioSummary,
+      projectId,
+      sessionIds,
+      selectedMetric,
+      totalLocations,
+      filteredCount,
+      polygonStats,
+      siteData,
+    });
+
+    // Write workbook to buffer
+    const excelBuffer = await workbook.xlsx.writeBuffer();
+    zip.file(`analytics-data-${timestamp}.xlsx`, excelBuffer);
+
+    // Capture all charts
+    toast.loading("Capturing charts...", { id: toastId });
+    await captureAllCharts(zip, chartRefs, timestamp);
+
+    // Add README
+    const readme = generateReadme({
+      projectId,
+      sessionIds,
+      timestamp,
+      totalLocations,
+      filteredCount,
+      selectedMetric,
+    });
+    zip.file("README.txt", readme);
+
+    // Generate and download ZIP
+    toast.loading("Creating ZIP archive...", { id: toastId });
+    const zipBlob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 },
+    });
+
+    saveAs(zipBlob, `analytics-export-${timestamp}.zip`);
+
+    toast.success("Export completed successfully!", { id: toastId });
+  } catch (error) {
+    console.error("Export error:", error);
+    toast.error(`Export failed: ${error.message}`, { id: toastId });
+    throw error;
+  }
 };
 
 /**
  * Export individual chart
  */
 export const exportSingleChart = async (chartRef, chartName) => {
+  const toastId = "chart-export";
+  
   try {
     if (!chartRef?.current) {
       toast.error("Chart not available for export");
       return;
     }
 
-    toast.loading("Capturing chart...", { id: "chart-export" });
+    toast.loading("Capturing chart...", { id: toastId });
 
     const canvas = await html2canvas(chartRef.current, {
       backgroundColor: "#0f172a",
       scale: 2,
       logging: false,
       useCORS: true,
+      allowTaint: true,
     });
 
-    canvas.toBlob((blob) => {
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob(resolve, "image/png", 1.0);
+    });
+
+    if (blob) {
       const timestamp = getTimestamp();
       saveAs(blob, `${chartName}-${timestamp}.png`);
-      toast.success("Chart exported successfully!", { id: "chart-export" });
-    });
+      toast.success("Chart exported successfully!", { id: toastId });
+    } else {
+      throw new Error("Failed to create image blob");
+    }
   } catch (error) {
     console.error("Chart export error:", error);
-    toast.error("Failed to export chart", { id: "chart-export" });
+    toast.error("Failed to export chart", { id: toastId });
   }
 };
 
@@ -708,30 +836,31 @@ export const exportSingleChart = async (chartRef, chartName) => {
  * Export only Excel data (no charts)
  */
 export const exportExcelOnly = async (params) => {
+  const toastId = "excel-export";
+  
   try {
-    toast.loading("Generating Excel file...", { id: "excel-export" });
+    toast.loading("Generating Excel file...", { id: toastId });
 
     const workbook = await createExcelWorkbook(params);
     const timestamp = getTimestamp();
 
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
-
-    const blob = new Blob([excelBuffer], {
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
     saveAs(blob, `analytics-data-${timestamp}.xlsx`);
 
-    toast.success("Excel file exported!", { id: "excel-export" });
+    toast.success("Excel file exported!", { id: toastId });
   } catch (error) {
     console.error("Excel export error:", error);
-    toast.error("Failed to export Excel file", { id: "excel-export" });
+    toast.error("Failed to export Excel file", { id: toastId });
+    throw error;
   }
 };
 
+// ============ Default Export ============
 export default {
   exportAnalytics,
   exportSingleChart,
