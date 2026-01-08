@@ -400,14 +400,14 @@ const CanvasOverlay = ({
     }
   }, [radius]);
 
-  // Update opacity
+  
   useEffect(() => {
     if (overlayRef.current) {
       overlayRef.current.setOpacity(opacity);
     }
   }, [opacity]);
 
-  // Update selected index
+  
   useEffect(() => {
     if (overlayRef.current) {
       overlayRef.current.setSelectedIndex(selectedIndex);

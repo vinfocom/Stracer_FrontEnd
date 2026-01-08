@@ -1,11 +1,11 @@
-// src/components/map/overlays/CanvasPointsOverlay.jsx
 import React, { useEffect, useRef } from "react";
 
 export default function CanvasPointsOverlay({
   map,
   points,
   neigh,
-  getRadiusPx, // may be function or number
+  getRadiusPx, 
+
   opacity = 0.9,
   maxDraw = 50000,
   padding = 80,
@@ -33,11 +33,7 @@ export default function CanvasPointsOverlay({
       canvasRef.current = canvas;
       overlay.getPanes()?.overlayLayer.appendChild(canvas);
 
-      const redraw = () => drawCanvas();
-      // Using only 'idle' reduces redundant redraws
-      listenersRef.current.push(
-        map.addListener("idle", redraw)
-      );
+      
     };
 
     overlay.draw = () => drawCanvas();
@@ -121,10 +117,7 @@ export default function CanvasPointsOverlay({
       if (drawnCount >= maxDraw) break;
 
       const p = points[i];
-      // Quick bounds check using pre-calculated LatLng
-      // Note: Creating 'new google.maps.LatLng' in a loop is expensive. 
-      // Ideally 'points' should already contain lat/lng objects or use simple math for bounds.
-      // But adhering to your current structure:
+      
       const ll = new window.google.maps.LatLng(p.lat, p.lng);
       
       if (!paddedBounds.contains(ll)) continue;
@@ -146,13 +139,10 @@ export default function CanvasPointsOverlay({
         ctx.fill();
       }
       
-      drawnCount++; // Increment only when actually drawn
+      drawnCount++; 
     }
 
-    // Draw labels (Reuse the same logic or iterate again if needed)
-    // To ensure labels match drawn points, we can do a second pass or combine them.
-    // Given the complexity of canvas state changes (fillStyle vs font), separate loops are common
-    // but we must respect the same visibility logic.
+   
     
     if (neigh && showLabels) {
       ctx.globalAlpha = 1; 

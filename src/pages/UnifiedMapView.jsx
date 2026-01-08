@@ -1,4 +1,3 @@
-// src/pages/UnifiedMapView.jsx
 import React, {
   useState,
   useEffect,
@@ -37,7 +36,7 @@ import {
   useBestNetworkCalculation,
   DEFAULT_WEIGHTS,
 } from "@/hooks/useBestNetworkCalculation";
-
+import LoadingProgress from "@/components/LoadingProgress";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 
@@ -282,53 +281,69 @@ const calculateCategoryStats = (points, category, metric) => {
 };
 
 const parseLogEntry = (log, sessionId) => {
-  const latValue = log.lat ?? log.Lat ?? log.latitude ?? log.Latitude ?? log.LAT;
-  const lngValue = log.lon ?? log.lng ?? log.Lng ?? log.longitude ?? log.Longitude ?? log.LON ?? log.long ?? log.Long;
+  if (!log || typeof log !== 'object') {
+    return null;
+  }
 
-  const lat = parseFloat(latValue);
-  const lng = parseFloat(lngValue);
-  const rawProvider = String(log.m_alpha_long ?? log.Provider ?? log.operator ?? log.Operator ?? "").trim();
+  const lat = parseFloat(log.lat);
+  const lng = parseFloat(log.lon);
 
-  if (isNaN(lat) || isNaN(lng) || !isFinite(lat) || !isFinite(lng)) return null;
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+
+  const parseNum = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const num = parseFloat(val);
+    return Number.isFinite(num) ? num : null;
+  };
 
   return {
-    lat,
-    lng,
+    id: log.id,
+    session_id: sessionId ?? log.session_id,
+    lat: lat,
+    lng: lng,
     latitude: lat,
     longitude: lng,
     radius: 18,
-    timestamp: log.timestamp ?? log.time ?? log.created_at ?? log.Timestamp ?? log.Time,
-    rsrp: parseFloat(log.rsrp ?? log.RSRP ?? log.rsrp_dbm ?? log.Rsrp) || null,
-    rsrq: parseFloat(log.rsrq ?? log.RSRQ ?? log.Rsrq) || null,
-    sinr: parseFloat(log.sinr ?? log.SINR ?? log.Sinr) || null,
-    dl_tpt: parseFloat(log.dl_tpt ?? log.dl_thpt ?? log.DL ?? log.dl_throughput ?? log.DlThpt) || null,
-    ul_tpt: parseFloat(log.ul_tpt ?? log.ul_thpt ?? log.UL ?? log.ul_throughput ?? log.UlThpt) || null,
-    mos: parseFloat(log.mos ?? log.MOS ?? log.Mos) || null,
-    lte_bler: parseFloat(log.lte_bler_json ?? log.LTE_BLER ?? log.LteBler) || null,
-    provider: normalizeProviderName(rawProvider),
-    technology: String(normalizeTechName(log.technology ?? log.Technology ?? log.network ?? log.Network ?? "")).trim(),
-    band: String(log.band ?? log.Band ?? "").trim(),
-    pci: parseInt(log.pci ?? log.PCI ?? log.Pci) || null,
-    session_id: sessionId,
-    nodeb_id: log.nodeb_id,
-    latency: parseFloat(log.latency ?? log.Latency ?? log.Lat) || null,
-    jitter: parseFloat(log.jitter ?? log.Jitter ?? log.Jit) || null,
-    packet_loss: parseFloat(log.packet_loss),
-    speed: parseFloat(log.speed ?? log.Speed ?? log.Sp) || null,
-    cell_id: parseFloat(log.cell_id ?? log.CellId ?? log.Cell_ID ?? log.Cell_Id) || null,
+    timestamp: log.timestamp,
+    rsrp: parseNum(log.rsrp),
+    rsrq: parseNum(log.rsrq),
+    sinr: parseNum(log.sinr),
+    dl_tpt: parseNum(log.dl_tpt),
+    ul_tpt: parseNum(log.ul_tpt),
+    mos: parseNum(log.mos),
+    jitter: parseNum(log.jitter),
+    latency: parseNum(log.latency),
+    packet_loss: parseNum(log.packet_loss),
+    provider: normalizeProviderName(log.m_alpha_long || ''),
+    technology: normalizeTechName(log.network || ''),
+    band: log.band || '',
+    pci: log.pci || '',
+    nodeb_id: log.nodeb_id || '',
+    cell_id: log.cell_id || '',
+    num_cells: parseInt(log.num_cells) || null,
+    speed: parseNum(log.Speed),
+    battery: parseInt(log.battery) || null,
+    indoor_outdoor: log.indoor_outdoor || null,
+    apps: log.apps || '',
+    image_path: log.image_path || '',
   };
 };
 
-const extractLogsFromResponse = (data) => {
-  if (Array.isArray(data)) return data;
-  if (data?.data && Array.isArray(data.data)) return data.data;
-  if (data?.Data && Array.isArray(data.Data)) return data.Data;
-  if (data?.logs && Array.isArray(data.logs)) return data.logs;
-  if (data?.networkLogs && Array.isArray(data.networkLogs)) return data.networkLogs;
-  if (data?.result && Array.isArray(data.result)) return data.result;
-  return [];
-};
+// const extractLogsFromResponse = (data) => {
+//   if (Array.isArray(data)) return data;
+//   if (data?.data && Array.isArray(data.data)) return data.data;
+//   if (data?.Data && Array.isArray(data.Data)) return data.Data;
+//   if (data?.logs && Array.isArray(data.logs)) return data.logs;
+//   if (data?.networkLogs && Array.isArray(data.networkLogs)) return data.networkLogs;
+//   if (data?.result && Array.isArray(data.result)) return data.result;
+//   return [];
+// };
 
 const useThresholdSettings = () => {
   const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS);
@@ -383,6 +398,17 @@ const useThresholdSettings = () => {
   return { thresholds, loading, error };
 };
 
+const isRequestCancelled = (error) => {
+  if (!error) return false;
+  if (error.name === 'AbortError') return true;
+  if (error.name === 'CanceledError') return true;
+  if (error.code === 'ERR_CANCELED') return true;
+  if (typeof error.__CANCEL__ !== 'undefined') return true;
+  if (error.message?.toLowerCase().includes('cancel')) return true;
+  if (error.message?.toLowerCase().includes('abort')) return true;
+  return false;
+};
+
 const useSampleData = (sessionIds, enabled) => {
   const [locations, setLocations] = useState([]);
   const [appSummary, setAppSummary] = useState({});
@@ -390,131 +416,249 @@ const useSampleData = (sessionIds, enabled) => {
   const [tptVolume, setTptVolume] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [progress, setProgress] = useState({ current: 0, total: 0, page: 0, totalPages: 0 });
+  const [technologyTransitions, setTechnologyTransitions] = useState([]);
+  
   const abortControllerRef = useRef(null);
-  const [technologyTransitions, setTechnologyTransitions] = useState(false);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const lastFetchedKeyRef = useRef(null);
+  const fetchIdRef = useRef(0);
 
+  const fetchData = useCallback(async (forceRefresh = false) => {
+    const fetchKey = sessionIds?.sort().join(',') || '';
+    
+    if (!forceRefresh && fetchKey === lastFetchedKeyRef.current && locations.length > 0) {
+      return;
+    }
 
-  const fetchData = useCallback(async () => {
     if (!sessionIds?.length || !enabled) {
       setLocations([]);
       setAppSummary({});
       setInpSummary({});
       setTptVolume({});
+      setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
+      return;
+    }
+
+    if (isFetchingRef.current && fetchKey === lastFetchedKeyRef.current) {
       return;
     }
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    abortControllerRef.current = new AbortController();
 
+    abortControllerRef.current = new AbortController();
+    const currentFetchId = ++fetchIdRef.current;
+
+    isFetchingRef.current = true;
     setLoading(true);
     setError(null);
+    setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
 
-    const accumulatedLogs = [];
-    const accumulatedAppSummary = {};
-    const accumulatedIoSummary = {};
-    const accumulatedTptVolume = {};
+    const PAGE_SIZE = 20000;
+    const allParsedLogs = [];
+    let summaryData = { app: {}, io: {}, tpt: null };
+
+    const startTime = performance.now();
 
     try {
-      const startTime = performance.now();
+      let currentPage = 1;
+      let totalCount = 0;
+      let totalPages = 1;
+      let hasMoreData = true;
 
-      for (let i = 0; i < sessionIds.length; i++) {
-        const sessionId = sessionIds[i];
-
-        try {
-          const response = await mapViewApi.getNetworkLog({
-            session_id: sessionId,
-            signal: abortControllerRef.current.signal,
-          });
-
-          const appData = response?.data?.app_summary || response?.app_summary || {};
-          const ioData = response?.data?.io_summary || response?.io_summary || {};
-          const tptData = response?.data?.tpt_volume || response?.tpt_volume || {};
-
-          if (Object.keys(appData).length > 0) {
-            accumulatedAppSummary[sessionId] = appData;
-          }
-          if (Object.keys(ioData).length > 0) {
-            accumulatedIoSummary[sessionId] = ioData;
-          }
-          if (Object.keys(tptData).length > 0) {
-            accumulatedTptVolume[sessionId] = tptData;
-          }
-
-          const sessionLogs = extractLogsFromResponse(response?.data || response);
-          sessionLogs.forEach((log) => {
-            const parsed = parseLogEntry(log, sessionId);
-            if (parsed) accumulatedLogs.push(parsed);
-          });
-        } catch (err) {
-          if (err.name === "AbortError") throw err;
+      while (hasMoreData) {
+        if (fetchIdRef.current !== currentFetchId || !mountedRef.current) {
+          return;
         }
 
-        if (i < sessionIds.length - 1) await delay(100);
+        let response;
+        try {
+          response = await mapViewApi.getNetworkLog({
+            session_ids: sessionIds,
+            page: currentPage,
+            limit: PAGE_SIZE,
+            signal: abortControllerRef.current.signal,
+          });
+        } catch (fetchErr) {
+          if (isRequestCancelled(fetchErr)) {
+            return;
+          }
+          throw fetchErr;
+        }
+
+        if (fetchIdRef.current !== currentFetchId || !mountedRef.current) {
+          return;
+        }
+
+        let apiBody;
+        let logsArray;
+
+        if (response?.data && typeof response.data === 'object' && !Array.isArray(response.data) && response.data.data) {
+          apiBody = response.data;
+          logsArray = apiBody.data || [];
+        } else if (response?.data && Array.isArray(response.data)) {
+          apiBody = response;
+          logsArray = response.data;
+        } else if (Array.isArray(response)) {
+          apiBody = { data: response };
+          logsArray = response;
+        } else {
+          apiBody = response?.data || response || {};
+          logsArray = apiBody?.data || (Array.isArray(apiBody) ? apiBody : []);
+        }
+
+        if (currentPage === 1) {
+          totalCount = apiBody?.total_count || apiBody?.totalCount || apiBody?.TotalCount || 0;
+          
+          if (totalCount === 0 && logsArray.length > 0) {
+            totalCount = logsArray.length;
+          }
+          
+          totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+
+          if (apiBody?.app_summary) {
+            summaryData.app = apiBody.app_summary;
+          }
+          if (apiBody?.io_summary) {
+            summaryData.io = apiBody.io_summary;
+          }
+          if (apiBody?.tpt_volume) {
+            summaryData.tpt = apiBody.tpt_volume;
+          }
+        }
+
+        if (!Array.isArray(logsArray)) {
+          break;
+        }
+
+        let parsedCount = 0;
+
+        logsArray.forEach((log) => {
+          const parsed = parseLogEntry(log, log.session_id);
+          if (parsed) {
+            allParsedLogs.push(parsed);
+            parsedCount++;
+          }
+        });
+
+        if (mountedRef.current && fetchIdRef.current === currentFetchId) {
+          setProgress({
+            current: allParsedLogs.length,
+            total: totalCount,
+            page: currentPage,
+            totalPages: totalPages,
+          });
+        }
+
+        if (currentPage >= totalPages) {
+          hasMoreData = false;
+        } else if (logsArray.length < PAGE_SIZE) {
+          hasMoreData = false;
+        } else {
+          currentPage++;
+        }
+
+        if (currentPage > 100) {
+          hasMoreData = false;
+        }
+
+        if (hasMoreData) {
+          await delay(100);
+        }
       }
 
-      setAppSummary(accumulatedAppSummary);
-      setInpSummary(accumulatedIoSummary);
-      setTptVolume(accumulatedTptVolume);
-      setLocations(accumulatedLogs);
+      if (fetchIdRef.current !== currentFetchId || !mountedRef.current) {
+        return;
+      }
 
       const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
 
-      if (accumulatedLogs.length > 0) {
-        toast.success(`${accumulatedLogs.length} points loaded in ${fetchTime}s`);
+      setLocations(allParsedLogs);
+      setAppSummary(summaryData.app);
+      setInpSummary(summaryData.io);
+      setTptVolume(summaryData.tpt);
+      lastFetchedKeyRef.current = fetchKey;
+
+      if (allParsedLogs.length > 0) {
+        const pageInfo = totalPages > 1 ? ` (${totalPages} pages)` : '';
+        toast.success(`${allParsedLogs.length.toLocaleString()} points loaded in ${fetchTime}s${pageInfo}`);
       } else {
-        toast.warn("No valid log data found");
+        toast.warn('No valid log data found');
       }
+
     } catch (err) {
-      if (err.name === "AbortError") return;
-      toast.error(err.message);
-      setError(err.message);
+      if (isRequestCancelled(err)) {
+        return;
+      }
+
+      if (mountedRef.current && fetchIdRef.current === currentFetchId) {
+        setError(err.message);
+        toast.error(`Error: ${err.message}`);
+
+        if (allParsedLogs.length > 0) {
+          setLocations(allParsedLogs);
+          setAppSummary(summaryData.app);
+          setInpSummary(summaryData.io);
+          setTptVolume(summaryData.tpt);
+          toast.info(`Loaded ${allParsedLogs.length.toLocaleString()} points before error`);
+        }
+      }
     } finally {
-      setLoading(false);
+      if (fetchIdRef.current === currentFetchId) {
+        isFetchingRef.current = false;
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
     }
   }, [sessionIds, enabled]);
 
   useEffect(() => {
-  if (!locations || locations.length < 2) {
-    setTechnologyTransitions([]);
-    return;
-  }
-
-  const transitions = [];
-  let prevTech = normalizeTechName(locations[0].technology);
-
-  for (let i = 1; i < locations.length; i++) {
-    const currTech = normalizeTechName(locations[i].technology);
-
-    if (currTech && prevTech && currTech !== prevTech) {
-      transitions.push({
-        from: prevTech,
-        to: currTech,
-        atIndex: i,
-        lat: locations[i].lat,
-        lng: locations[i].lng,
-        timestamp: locations[i].timestamp,
-        session_id: locations[i].session_id,
-      });
-      
+    if (!locations || locations.length < 2) {
+      setTechnologyTransitions([]);
+      return;
     }
 
-    prevTech = currTech;
-  }
+    const transitions = [];
+    let prevTech = normalizeTechName(locations[0].technology);
 
-  setTechnologyTransitions(transitions);
-}, [locations]);
+    for (let i = 1; i < locations.length; i++) {
+      const currTech = normalizeTechName(locations[i].technology);
+      if (currTech && prevTech && currTech !== prevTech) {
+        transitions.push({
+          from: prevTech,
+          to: currTech,
+          atIndex: i,
+          lat: locations[i].lat,
+          lng: locations[i].lng,
+          timestamp: locations[i].timestamp,
+          session_id: locations[i].session_id,
+        });
+      }
+      prevTech = currTech;
+    }
 
+    setTechnologyTransitions(transitions);
+  }, [locations]);
 
   useEffect(() => {
-    fetchData();
-
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchData();
+    }, 50);
+    return () => clearTimeout(timeoutId);
   }, [fetchData]);
 
   return {
@@ -524,11 +668,14 @@ const useSampleData = (sessionIds, enabled) => {
     tptVolume,
     loading,
     error,
-    refetch: fetchData,
+    progress,
+    refetch: useCallback(() => {
+      lastFetchedKeyRef.current = null;
+      fetchData(true);
+    }, [fetchData]),
     technologyTransitions,
   };
 };
-
 
 const usePredictionData = (projectId, selectedMetric, enabled) => {
   const [locations, setLocations] = useState([]);
@@ -610,7 +757,151 @@ const usePredictionData = (projectId, selectedMetric, enabled) => {
     loading,
     error,
     refetch: fetchData,
-    
+  };
+};
+
+const useSessionNeighbors = (sessionIds, enabled) => {
+  const [neighborData, setNeighborData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [stats, setStats] = useState(null);
+  const abortControllerRef = useRef(null);
+
+  const fetchData = useCallback(async () => {
+    if (!sessionIds?.length || !enabled) {
+      setNeighborData([]);
+      setStats(null);
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await mapViewApi.getSessionNeighbour({
+        sessionIds: sessionIds,
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (res?.Status === 1 && res?.Data) {
+        const data = res.Data;
+        console.log("here in line no 793 in unifiedmap view ", res)
+        const formattedData = data
+          .map((item) => {
+            const lat = parseFloat(item.lat);
+            const lng = parseFloat(item.lon);
+            const neighborLat = parseFloat(item.neighbour_lat);
+            const neighborLng = parseFloat(item.neighbour_lon);
+
+            if (!isFinite(lat) || !isFinite(lng)) return null;
+
+            return {
+              id: item.id,
+              sessionId: item.session_id,
+              timestamp: item.timestamp,
+              lat,
+              lng,
+              latitude: lat,
+              longitude: lng,
+              indoorOutdoor: item.indoor_outdoor,
+              network: item.network,
+              networkType: normalizeTechName(item.network_type),
+              provider: normalizeProviderName(item.m_alpha_long || ""),
+              rsrp: parseFloat(item.rsrp) || null,
+              rsrq: parseFloat(item.rsrq) || null,
+              sinr: parseFloat(item.sinr) || null,
+              mos: parseFloat(item.mos) || null,
+              neighborLat: isFinite(neighborLat) ? neighborLat : null,
+              neighborLng: isFinite(neighborLng) ? neighborLng : null,
+              neighborBand: item.neighbour_band,
+              distanceMeters: parseFloat(item.distance_meters) || 0,
+            };
+          })
+          .filter(Boolean);
+
+        setNeighborData(formattedData);
+
+        const statsObj = {
+          sessionCount: res.SessionCount || 0,
+          recordCount: res.RecordCount || formattedData.length,
+          cached: res.Cached || false,
+          byProvider: {},
+          byBand: {},
+          byNetwork: {},
+        };
+
+        formattedData.forEach((item) => {
+          if (item.provider) {
+            if (!statsObj.byProvider[item.provider]) {
+              statsObj.byProvider[item.provider] = { count: 0, avgRsrp: 0, values: [] };
+            }
+            statsObj.byProvider[item.provider].count++;
+            if (item.rsrp) statsObj.byProvider[item.provider].values.push(item.rsrp);
+          }
+
+          if (item.neighborBand) {
+            if (!statsObj.byBand[item.neighborBand]) {
+              statsObj.byBand[item.neighborBand] = { count: 0 };
+            }
+            statsObj.byBand[item.neighborBand].count++;
+          }
+
+          if (item.networkType) {
+            if (!statsObj.byNetwork[item.networkType]) {
+              statsObj.byNetwork[item.networkType] = { count: 0 };
+            }
+            statsObj.byNetwork[item.networkType].count++;
+          }
+        });
+
+        Object.keys(statsObj.byProvider).forEach((provider) => {
+          const values = statsObj.byProvider[provider].values;
+          if (values.length > 0) {
+            statsObj.byProvider[provider].avgRsrp =
+              values.reduce((a, b) => a + b, 0) / values.length;
+          }
+          delete statsObj.byProvider[provider].values;
+        });
+
+        setStats(statsObj);
+        toast.success(`${formattedData.length} neighbor records loaded`);
+      } else {
+        toast.warn(res?.Message || "No neighbor data found");
+        setNeighborData([]);
+        setStats(null);
+      }
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      toast.error(`Failed to fetch neighbor data: ${err.message}`);
+      setError(err.message);
+      setNeighborData([]);
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionIds, enabled]);
+
+  useEffect(() => {
+    fetchData();
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchData]);
+
+  return {
+    neighborData,
+    stats,
+    loading,
+    error,
+    refetch: fetchData,
   };
 };
 
@@ -815,8 +1106,6 @@ const ZoneTooltip = React.memo(({ polygon, position, selectedMetric, selectedCat
       </div>
 
       <div className="p-4 space-y-3">
-        
-
         {selectedCategory === "provider" && bestProvider && (
           <div className="space-y-1">
             <div className="text-xs font-semibold text-gray-500 uppercase">Best Provider</div>
@@ -989,6 +1278,8 @@ const UnifiedMapView = () => {
   const [isOpacityCollapsed, setIsOpacityCollapsed] = useState(true);
   const [opacity, setOpacity] = useState(0.8);
 
+  const [showSessionNeighbors, setShowSessionNeighbors] = useState(false);
+
   const [bestNetworkEnabled, setBestNetworkEnabled] = useState(false);
   const [bestNetworkWeights, setBestNetworkWeights] = useState(DEFAULT_WEIGHTS);
   const [bestNetworkOptions, setBestNetworkOptions] = useState({
@@ -1006,7 +1297,7 @@ const UnifiedMapView = () => {
   const [enableGrid, setEnableGrid] = useState(false);
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
   const [durationTime, setDurationTime] = useState([]);
-  const [techHandOver, setTechHandOver] = useState(false); 
+  const [techHandOver, setTechHandOver] = useState(false);
   const [indoor, setIndoor] = useState([]);
   const [outdoor, setOutdoor] = useState([]);
   const [distance, setDistance] = useState(null);
@@ -1037,6 +1328,7 @@ const UnifiedMapView = () => {
     inpSummary,
     tptVolume,
     loading: sampleLoading,
+    progress: sampleProgress,
     error: sampleError,
     refetch: refetchSample,
     technologyTransitions: technologyTransitions,
@@ -1057,6 +1349,14 @@ const UnifiedMapView = () => {
     (enableDataToggle && dataToggle === "prediction") ||
     (enableSiteToggle && siteToggle === "sites-prediction")
   );
+
+  const {
+    neighborData: sessionNeighborData,
+    stats: sessionNeighborStats,
+    loading: sessionNeighborLoading,
+    error: sessionNeighborError,
+    refetch: refetchSessionNeighbors,
+  } = useSessionNeighbors(sessionIds, showSessionNeighbors);
 
   const {
     polygons,
@@ -1113,35 +1413,30 @@ const UnifiedMapView = () => {
           );
         }
       } catch (err) {
-        // Silent fail
       }
     };
     timeData();
   }, [sessionIds]);
 
-  useEffect(() =>{
-    const neighbordata = async () =>{
+  useEffect(() => {
+    const neighbordata = async () => {
       if (!sessionIds?.length) return;
       try {
         const res = await mapViewApi.getDistanceSession({ sessionIds: sessionIds.join(",") });
         setDistance(res?.TotalDistanceKm || null);
-        console.log("Distance data:", res); 
-        console.log("Distance value:", res?.TotalDistanceKm);
       } catch (error) {
-        console.error("Failed to fetch distance data:", error);
       }
     }
     neighbordata();
-  },[sessionIds])
+  }, [sessionIds]);
 
-  useEffect(() =>{
-    const ioAnalysis =async () =>{
+  useEffect(() => {
+    const ioAnalysis = async () => {
       try {
-          const res = await mapViewApi.getIOAnalysis({ sessionIds: sessionIds.join(",") });
-          setIndoor(res?.Indoor)
-          setOutdoor(res?.Outdoor);
+        const res = await mapViewApi.getIOAnalysis({ sessionIds: sessionIds.join(",") });
+        setIndoor(res?.Indoor);
+        setOutdoor(res?.Outdoor);
       } catch (error) {
-        console.error("Failed to fetch IO analysis:", error);
       }
     }
 
@@ -1151,21 +1446,32 @@ const UnifiedMapView = () => {
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
 
+    let mainLogs = [];
+
     if (enableDataToggle) {
-      return dataToggle === "sample" ? (sampleLocations || []) : (predictionLocations || []);
+      mainLogs = dataToggle === "sample" ? (sampleLocations || []) : (predictionLocations || []);
+    } else if (enableSiteToggle && siteToggle === "sites-prediction") {
+      mainLogs = predictionLocations || [];
     }
 
-    if (enableSiteToggle && siteToggle === "sites-prediction") {
-      return predictionLocations || [];
-    }
+    // if (showSessionNeighbors && sessionNeighborData?.length) {
+    //   const neighbors = sessionNeighborData.map(n => ({
+    //     ...n,
+    //     technology: n.networkType || 'Unknown',
+    //     band: n.neighborBand || '',
+    //     isNeighbour: true,
+    //     source: 'neighbour'
+    //   }));
+    //   return [...mainLogs, ...neighbors];
+    // }
 
-    return [];
-  }, [enableDataToggle, enableSiteToggle, dataToggle, siteToggle, sampleLocations, predictionLocations]);
+    return mainLogs;
+  }, [enableDataToggle, enableSiteToggle, dataToggle, siteToggle, sampleLocations, predictionLocations, showSessionNeighbors, sessionNeighborData]);
 
   const isLoading = sampleLoading || predictionLoading || siteLoading ||
-    neighborLoading || polygonLoading || areaLoading;
+    neighborLoading || polygonLoading || areaLoading || sessionNeighborLoading;
 
-  const error = sampleError || predictionError;
+  const error = sampleError || predictionError || sessionNeighborError;
 
   const effectiveThresholds = useMemo(() => {
     if (predictionColorSettings?.length && dataToggle === "prediction") {
@@ -1428,13 +1734,10 @@ const UnifiedMapView = () => {
     return locations || [];
   }, [showDataCircles, coverageHoleFilters, dataFilters, filteredLocations, locations, onlyInsidePolygons]);
 
-  // FIX: Memoize map options to prevent recreation on every render
   const mapOptions = useMemo(() => ({
     mapTypeId: basemapStyle,
-    maxZoom: 15,
   }), [basemapStyle]);
 
-  // FIX: Update viewport using ref to avoid triggering re-renders
   const updateViewportRef = useCallback((newViewport) => {
     viewportRef.current = newViewport;
     setViewport(newViewport);
@@ -1466,17 +1769,14 @@ const UnifiedMapView = () => {
     updateViewport();
   }, [debouncedSetViewport]);
 
-  // FIX: Handler for basemap style change
   const handleBasemapChange = useCallback((newStyle) => {
     setBasemapStyle(newStyle);
-    
-    // Also update the map directly if ref exists
+
     if (mapRef.current) {
       mapRef.current.setMapTypeId(newStyle);
     }
   }, []);
 
-  // FIX: Create a stable UI state handler
   const handleUIChange = useCallback((newUI) => {
     if (newUI.basemapStyle && newUI.basemapStyle !== basemapStyle) {
       handleBasemapChange(newUI.basemapStyle);
@@ -1493,11 +1793,12 @@ const UnifiedMapView = () => {
     if (showPolygons) refetchPolygons();
     if (areaEnabled) refetchAreaPolygons();
     if (showNeighbors) refetchNeighbors();
+    if (showSessionNeighbors) refetchSessionNeighbors();
   }, [
     enableDataToggle, enableSiteToggle, dataToggle, siteToggle,
-    showPolygons, areaEnabled, showNeighbors,
+    showPolygons, areaEnabled, showNeighbors, showSessionNeighbors,
     refetchSample, refetchPrediction, refetchPolygons,
-    refetchAreaPolygons, refetchSites, refetchNeighbors
+    refetchAreaPolygons, refetchSites, refetchNeighbors, refetchSessionNeighbors
   ]);
 
   const handlePolygonMouseOver = useCallback((poly, e) => {
@@ -1598,6 +1899,8 @@ const UnifiedMapView = () => {
         enableSiteToggle={enableSiteToggle}
         setEnableSiteToggle={setEnableSiteToggle}
         siteToggle={siteToggle}
+        showSessionNeighbors={showSessionNeighbors}
+        setShowSessionNeighbors={setShowSessionNeighbors}
         setSiteToggle={setSiteToggle}
         projectId={projectId}
         sessionIds={sessionIds}
@@ -1644,6 +1947,11 @@ const UnifiedMapView = () => {
       />
 
       <div className="flex-grow relative overflow-hidden">
+        <LoadingProgress
+          progress={sampleProgress}
+          loading={sampleLoading && enableDataToggle && dataToggle === "sample"}
+        />
+
         {shouldShowLegend && !bestNetworkEnabled && !isLoading && (
           <MapLegend
             thresholds={effectiveThresholds}
@@ -1689,7 +1997,7 @@ const UnifiedMapView = () => {
               techHandOver={techHandOver}
               colorBy={colorBy}
               activeMarkerIndex={null}
-              onMarkerClick={() => {}}
+              onMarkerClick={() => { }}
               options={mapOptions}
               center={mapCenter}
               defaultZoom={13}
@@ -1771,10 +2079,10 @@ const UnifiedMapView = () => {
 
               {showNeighbors && (allNeighbors?.length || 0) > 0 && (
                 <NeighborHeatmapLayer
-                  allNeighbors={allNeighbors}
+                  allNeighbors={sessionNeighborData}
                   showNeighbors={showNeighbors}
                   selectedMetric={selectedMetric}
-                  useHeatmap={true}
+                  useHeatmap={false}
                   radius={35}
                   opacity={0.7}
                 />

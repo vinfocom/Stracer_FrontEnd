@@ -635,6 +635,7 @@ function SessionMapDebug() {
     return logs.filter((log) => {
       const metricValue = getMetricValue(log, filters.metric);
 
+      // 1. Signal Strength Filters
       if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
         if (metricValue < parseFloat(filters.minSignal)) {
           return false;
@@ -646,17 +647,18 @@ function SessionMapDebug() {
         }
       }
 
+      // 2. Technology Filter
       if (filters.technology && filters.technology !== "ALL") {
         if (log.technology) {
-          if (
-            log.technology.toUpperCase() !== filters.technology.toUpperCase()
-          ) {
+          if (log.technology.toUpperCase() !== filters.technology.toUpperCase()) {
             return false;
           }
         }
       }
 
-      if (filters.band && filters.band !== "") {
+      // 3. Band Filter (FIXED)
+      // Added check for !== "all" so it doesn't filter out everything
+      if (filters.band && filters.band !== "" && filters.band !== "all") {
         if (log.band) {
           if (log.band.toString() !== filters.band) {
             return false;
@@ -664,6 +666,18 @@ function SessionMapDebug() {
         }
       }
 
+      // 4. Provider Filter (ADDED)
+      // This was missing previously
+      if (filters.provider && filters.provider !== "all") {
+        if (log.provider) {
+           // Case-insensitive comparison is safer
+           if (log.provider.toLowerCase() !== filters.provider.toLowerCase()) {
+             return false;
+           }
+        }
+      }
+
+      // 5. Date Filters
       if (filters.startDate || filters.endDate) {
         if (log.timestamp) {
           const logDate = new Date(log.timestamp);
@@ -680,6 +694,7 @@ function SessionMapDebug() {
         }
       }
 
+      // 6. Data Source Filter
       if (filters.dataSource && filters.dataSource !== "all") {
         if (log.source) {
           if (log.source.toLowerCase() !== filters.dataSource.toLowerCase()) {

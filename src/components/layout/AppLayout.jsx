@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react"; //
 import { Outlet, useLocation } from "react-router-dom";
 import SideBar from "../SideBar";
 import Header from "../Header";
+import { cancelAllRequests } from "@/api/apiService"; // Import the cancel function
 
 const AppLayout = ({ children }) => {
   const [visible, setVisible] = useState(true);
@@ -10,6 +11,11 @@ const AppLayout = ({ children }) => {
   const changeValue = () => {
     setVisible(!visible);
   };
+
+  // ✅ NEW: Clear the API queue whenever the route changes
+  useEffect(() => {
+    cancelAllRequests();
+  }, [location.pathname]);
 
   // Routes where the header should NOT show
   const pathsWithoutHeader = [
@@ -22,7 +28,6 @@ const AppLayout = ({ children }) => {
   // Routes where the sidebar should NOT show
   const pathsWithoutSidebar = [
     "/unified-map",
-    
   ];
 
   const shouldShowHeader = !pathsWithoutHeader.some((path) =>

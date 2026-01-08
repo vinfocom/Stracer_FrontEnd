@@ -723,7 +723,9 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
         if (b) {
           const ne = b.getNorthEast();
           const sw = b.getSouthWest();
-          setVisibleBounds({ north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() });
+          const latBuffer = (ne.lat() - sw.lat())*0.5;
+          const lngBuffer = (ne.lng()-sw.lng())*0.5; 
+          setVisibleBounds({ north: ne.lat()+latBuffer, east: ne.lng()+lngBuffer, south: sw.lat()-latBuffer, west: sw.lng()-lngBuffer });
         }
       }, 120);
     });

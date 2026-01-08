@@ -692,25 +692,43 @@ export const mapViewApi = {
   },
 
   // ==================== Network Logs ====================
-  getNetworkLog: (sessionLike) => {
-    const extractId = (s) => {
-      if (s == null) return "";
-      if (typeof s === "object") {
-        const sid =
-          s.session_id ??
-          s.id ??
-          s.SessionID ??
-          s.ID ??
-          s.value ??
-          (s.params && s.params.session_id);
-        return sid != null ? String(sid) : "";
+ // In apiEndpoints.js
+getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
+  const sid = Array.isArray(session_ids) ? session_ids.join(",") : session_ids;
+  
+  console.log('📡 Calling API with:', { session_Ids: sid, page, limit });
+  
+  const response = await api.get("/api/MapView/GetNetworkLog", {
+    params: { 
+      session_Ids: sid,
+      page: page,
+      limit: limit,
+    },
+    signal: signal,
+  });
+  
+  // DEBUG: Log what the API service returns
+  console.log('📡 API returned:', response);
+  console.log('📡 API returned type:', typeof response);
+  console.log('📡 API returned keys:', response ? Object.keys(response) : 'null');
+  
+  return response;
+},
+  
+ getSessionNeighbour: async ({ sessionIds, signal }) => {
+    // FIX: Join array to comma-separated string to ensure backend receives it correctly
+    const idsParam = Array.isArray(sessionIds) ? sessionIds.join(",") : sessionIds;
+    const response = await api.get(
+      '/api/MapView/GetN78Neighbours', 
+      { 
+        params: {
+          session_ids: idsParam 
+        },
+        signal 
       }
-      return String(s);
-    };
-    const sid = extractId(sessionLike);
-    return api.get("/api/MapView/GetNetworkLog", {
-      params: { session_id: sid },
-    });
+    );
+    console.log("this is in api endpoint and i am check for data ", response)
+    return response.data;
   },
   getDistanceSession: (session) =>
     api.get("/api/MapView/sessionsDistance", {
