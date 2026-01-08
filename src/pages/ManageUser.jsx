@@ -215,12 +215,12 @@ const ManageUsersPage = () => {
                         >
                             Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
+                        {/* <DropdownMenuItem
                             onClick={() => handleDeleteUser(user)}
                             className="text-red-600 hover:bg-red-50 cursor-pointer"
                         >
                             Delete
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> */}
                     </DropdownMenuContent>
                 </DropdownMenu>
             ),

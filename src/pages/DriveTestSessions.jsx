@@ -222,9 +222,9 @@ const DriveTestSessionsPage = () => {
                                         <Map className="h-4 w-4 mr-2" />
                                         
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 ml-2" onClick={() => handleDelete(session.id)}>
+                                    {/* <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 ml-2" onClick={() => handleDelete(session.id)}>
                                         <Trash2 className="h-4 w-4" />
-                                    </Button>
+                                    </Button> */}
                                 </TableCell>
                             </TableRow>
                         ))}
