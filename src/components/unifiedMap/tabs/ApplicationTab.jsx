@@ -133,6 +133,9 @@ const getAppCategory = (appName) => {
   if (['paytm', 'phonepe', 'gpay', 'google pay', 'amazon', 'flipkart'].some(a => normalized.includes(a))) {
     return 'Shopping/Payment';
   }
+  if (['gmail', 'mail', 'outlook'].some(a => normalized.includes(a))) {
+    return 'Email';
+  }
   
   return 'Other';
 };
@@ -140,6 +143,7 @@ const getAppCategory = (appName) => {
 // ==================== HELPER FUNCTIONS ====================
 const parseDuration = (durationStr) => {
   if (!durationStr) return 0;
+  if (typeof durationStr === 'number') return durationStr;
   const parts = durationStr.split(':').map(Number);
   if (parts.length === 3) {
     return parts[0] * 3600 + parts[1] * 60 + parts[2];
@@ -161,13 +165,6 @@ const formatDuration = (totalSeconds) => {
 const formatValue = (value, decimals = 1) => {
   if (value == null || isNaN(value)) return 'N/A';
   return value.toFixed(decimals);
-};
-
-const calculateAverage = (values) => {
-  if (!values?.length) return null;
-  const validValues = values.filter(v => v != null && !isNaN(v));
-  if (!validValues.length) return null;
-  return validValues.reduce((a, b) => a + b, 0) / validValues.length;
 };
 
 const getSignalColor = (value, thresholds) => {
@@ -207,9 +204,24 @@ const getCategoryColor = (category) => {
     'Video Call': 'bg-cyan-900/50 text-cyan-300 border border-cyan-700/30',
     'Browser': 'bg-orange-900/50 text-orange-300 border border-orange-700/30',
     'Shopping/Payment': 'bg-yellow-900/50 text-yellow-300 border border-yellow-700/30',
+    'Email': 'bg-pink-900/50 text-pink-300 border border-pink-700/30',
     'Other': 'bg-slate-700/50 text-white border border-slate-600/30',
   };
   return colors[category] || colors['Other'];
+};
+
+// ==================== DETECT DATA STRUCTURE ====================
+const isNestedBySession = (data) => {
+  if (!data || typeof data !== 'object') return false;
+  
+  const firstValue = Object.values(data)[0];
+  if (!firstValue || typeof firstValue !== 'object') return false;
+  
+  // Check if the first value has app-like properties (sampleCount, avgRsrp, etc.)
+  // If so, it's flat. If it contains nested objects, it's nested by session.
+  const hasAppMetrics = 'sampleCount' in firstValue || 'avgRsrp' in firstValue || 'appName' in firstValue;
+  
+  return !hasAppMetrics;
 };
 
 // ==================== MAIN COMPONENT ====================
@@ -224,99 +236,135 @@ export const ApplicationTab = ({
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [sortConfig, setSortConfig] = useState({ key: "totalSamples", direction: "desc" });
 
-  // Aggregate and normalize app data
+  // Aggregate and normalize app data - HANDLES BOTH FLAT AND NESTED STRUCTURES
   const aggregatedAppData = useMemo(() => {
     if (!appSummary || !Object.keys(appSummary).length) return [];
 
     const appAggregates = {};
+    const isNested = isNestedBySession(appSummary);
 
-    console.log(appSummary,"while creating in appa greation")
+    console.log("appSummary structure:", isNested ? "Nested by session" : "Flat", appSummary);
 
-    Object.entries(appSummary).forEach(([sessionId, apps]) => {
-      if (!apps || typeof apps !== 'object') return;
+    const processAppMetrics = (appName, metrics, sessionId = 'default') => {
+      if (!metrics || typeof metrics !== 'object') return;
       
-      Object.entries(apps).forEach(([appName, metrics]) => {
-        if (!metrics) return;
-        
-        const normalizedName = normalizeAppName(metrics.appName || appName);
-        const category = getAppCategory(normalizedName);
-        
-        if (!appAggregates[normalizedName]) {
-          appAggregates[normalizedName] = {
-            name: normalizedName,
-            category,
-            sessions: new Set(),
-            totalDurationSeconds: 0,
-            totalSamples: 0,
-            rsrpValues: [],
-            rsrqValues: [],
-            sinrValues: [],
-            dlValues: [],
-            ulValues: [],
-            mosValues: [],
-            latencyValues: [],
-            jitterValues: [],
-            packetLossValues: [],
-          };
-        }
-        
-        const agg = appAggregates[normalizedName];
-        agg.sessions.add(sessionId);
-        
-        agg.totalDurationSeconds += parseDuration(metrics.durationHHMMSS);
-        agg.totalSamples += metrics.sampleCount || 0;
-        
-        if (metrics.avgRsrp != null && !isNaN(metrics.avgRsrp)) {
-          agg.rsrpValues.push(parseFloat(metrics.avgRsrp));
-        }
-        if (metrics.avgRsrq != null && !isNaN(metrics.avgRsrq)) {
-          agg.rsrqValues.push(parseFloat(metrics.avgRsrq));
-        }
-        if (metrics.avgSinr != null && !isNaN(metrics.avgSinr)) {
-          agg.sinrValues.push(parseFloat(metrics.avgSinr));
-        }
-        if (metrics.avgDlTptMbps != null && !isNaN(metrics.avgDlTptMbps)) {
-          agg.dlValues.push(parseFloat(metrics.avgDlTptMbps));
-        }
-        if (metrics.avgUlTptMbps != null && !isNaN(metrics.avgUlTptMbps)) {
-          agg.ulValues.push(parseFloat(metrics.avgUlTptMbps));
-        }
-        if (metrics.avgMos != null && !isNaN(metrics.avgMos)) {
-          agg.mosValues.push(parseFloat(metrics.avgMos));
-        }
-        if (metrics.avgLatency != null && !isNaN(metrics.avgLatency)) {
-          agg.latencyValues.push(parseFloat(metrics.avgLatency));
-        }
-        if (metrics.avgJitter != null && !isNaN(metrics.avgJitter)) {
-          agg.jitterValues.push(parseFloat(metrics.avgJitter));
-        }
-        if (metrics.avgPacketLoss != null && !isNaN(metrics.avgPacketLoss)) {
-          agg.packetLossValues.push(parseFloat(metrics.avgPacketLoss));
-        }
-      });
-    });
+      // Skip if this looks like a property key, not an app
+      if (['appName', 'sampleCount', 'avgRsrp', 'avgRsrq', 'avgSinr', 'avgMos', 
+           'avgLatency', 'avgJitter', 'avgPacketLoss', 'avgDlTptMbps', 'avgUlTptMbps',
+           'firstUsedAt', 'lastUsedAt', 'durationSeconds', 'durationHHMMSS'].includes(appName)) {
+        return;
+      }
+      
+      const normalizedName = normalizeAppName(metrics.appName || appName);
+      const category = getAppCategory(normalizedName);
+      
+      if (!appAggregates[normalizedName]) {
+        appAggregates[normalizedName] = {
+          name: normalizedName,
+          category,
+          sessions: new Set(),
+          totalDurationSeconds: 0,
+          totalSamples: 0,
+          rsrpValues: [],
+          rsrqValues: [],
+          sinrValues: [],
+          dlValues: [],
+          ulValues: [],
+          mosValues: [],
+          latencyValues: [],
+          jitterValues: [],
+          packetLossValues: [],
+        };
+      }
+      
+      const agg = appAggregates[normalizedName];
+      agg.sessions.add(sessionId);
+      
+      // Handle both durationHHMMSS and durationSeconds
+      const durationSec = metrics.durationSeconds || parseDuration(metrics.durationHHMMSS) || 0;
+      agg.totalDurationSeconds += durationSec;
+      agg.totalSamples += metrics.sampleCount || 0;
+      
+      // Collect values for averaging
+      if (metrics.avgRsrp != null && !isNaN(metrics.avgRsrp)) {
+        agg.rsrpValues.push(parseFloat(metrics.avgRsrp));
+      }
+      if (metrics.avgRsrq != null && !isNaN(metrics.avgRsrq)) {
+        agg.rsrqValues.push(parseFloat(metrics.avgRsrq));
+      }
+      if (metrics.avgSinr != null && !isNaN(metrics.avgSinr)) {
+        agg.sinrValues.push(parseFloat(metrics.avgSinr));
+      }
+      if (metrics.avgDlTptMbps != null && !isNaN(metrics.avgDlTptMbps)) {
+        agg.dlValues.push(parseFloat(metrics.avgDlTptMbps));
+      }
+      if (metrics.avgUlTptMbps != null && !isNaN(metrics.avgUlTptMbps)) {
+        agg.ulValues.push(parseFloat(metrics.avgUlTptMbps));
+      }
+      if (metrics.avgMos != null && !isNaN(metrics.avgMos)) {
+        agg.mosValues.push(parseFloat(metrics.avgMos));
+      }
+      if (metrics.avgLatency != null && !isNaN(metrics.avgLatency)) {
+        agg.latencyValues.push(parseFloat(metrics.avgLatency));
+      }
+      if (metrics.avgJitter != null && !isNaN(metrics.avgJitter)) {
+        agg.jitterValues.push(parseFloat(metrics.avgJitter));
+      }
+      if (metrics.avgPacketLoss != null && !isNaN(metrics.avgPacketLoss)) {
+        agg.packetLossValues.push(parseFloat(metrics.avgPacketLoss));
+      }
+    };
 
-    return Object.values(appAggregates).map((app) => ({
-      name: app.name,
-      category: app.category,
-      sessionCount: app.sessions.size,
-      totalSamples: app.totalSamples,
-      totalDurationSeconds: app.totalDurationSeconds,
-      duration: formatDuration(app.totalDurationSeconds),
-      avgRsrp: calculateAverage(app.rsrpValues),
-      avgRsrq: calculateAverage(app.rsrqValues),
-      avgSinr: calculateAverage(app.sinrValues),
-      avgDl: calculateAverage(app.dlValues),
-      avgUl: calculateAverage(app.ulValues),
-      avgMos: calculateAverage(app.mosValues),
-      avgLatency: calculateAverage(app.latencyValues),
-      avgJitter: calculateAverage(app.jitterValues),
-      avgPacketLoss: calculateAverage(app.packetLossValues),
-    }));
+    if (isNested) {
+      // Handle nested structure: { sessionId: { appName: metrics } }
+      Object.entries(appSummary).forEach(([sessionId, apps]) => {
+        if (!apps || typeof apps !== 'object') return;
+        
+        Object.entries(apps).forEach(([appName, metrics]) => {
+          processAppMetrics(appName, metrics, sessionId);
+        });
+      });
+    } else {
+      // Handle flat structure: { appName: metrics }
+      Object.entries(appSummary).forEach(([appName, metrics]) => {
+        processAppMetrics(appName, metrics, 'session-1');
+      });
+    }
+
+    // Calculate averages
+    const calculateAverage = (values) => {
+      if (!values?.length) return null;
+      const validValues = values.filter(v => v != null && !isNaN(v));
+      if (!validValues.length) return null;
+      return validValues.reduce((a, b) => a + b, 0) / validValues.length;
+    };
+
+    const result = Object.values(appAggregates)
+      .filter(app => app.totalSamples > 0 || app.totalDurationSeconds > 0) // Filter out empty entries
+      .map((app) => ({
+        name: app.name,
+        category: app.category,
+        sessionCount: app.sessions.size,
+        totalSamples: app.totalSamples,
+        totalDurationSeconds: app.totalDurationSeconds,
+        duration: formatDuration(app.totalDurationSeconds),
+        avgRsrp: calculateAverage(app.rsrpValues),
+        avgRsrq: calculateAverage(app.rsrqValues),
+        avgSinr: calculateAverage(app.sinrValues),
+        avgDl: calculateAverage(app.dlValues),
+        avgUl: calculateAverage(app.ulValues),
+        avgMos: calculateAverage(app.mosValues),
+        avgLatency: calculateAverage(app.latencyValues),
+        avgJitter: calculateAverage(app.jitterValues),
+        avgPacketLoss: calculateAverage(app.packetLossValues),
+      }));
+
+    console.log("Aggregated App Data:", result);
+    return result;
   }, [appSummary]);
 
   useEffect(() => { 
-    console.log(aggregatedAppData, "Aggregated App Data in ApplicationTab");
+    console.log(aggregatedAppData, "Final Aggregated App Data in ApplicationTab");
   }, [aggregatedAppData]);
 
   const categories = useMemo(() => {
@@ -382,24 +430,6 @@ export const ApplicationTab = ({
       direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
     }));
   };
-
-  const summaryStats = useMemo(() => {
-    const data = filteredAndSortedData;
-    const appsWithMos = data.filter(a => a.avgMos != null);
-    const appsWithDl = data.filter(a => a.avgDl != null);
-    
-    return {
-      totalApps: data.length,
-      totalSamples: data.reduce((sum, app) => sum + app.totalSamples, 0),
-      totalDuration: formatDuration(data.reduce((sum, app) => sum + app.totalDurationSeconds, 0)),
-      avgMos: appsWithMos.length > 0 
-        ? (appsWithMos.reduce((sum, app) => sum + app.avgMos, 0) / appsWithMos.length).toFixed(2)
-        : 'N/A',
-      avgDl: appsWithDl.length > 0
-        ? (appsWithDl.reduce((sum, app) => sum + app.avgDl, 0) / appsWithDl.length).toFixed(1)
-        : 'N/A',
-    };
-  }, [filteredAndSortedData]);
 
   if (!appSummary || Object.keys(appSummary).length === 0) {
     return (
@@ -858,8 +888,6 @@ const AppComparisonView = ({ chartData, chartRefs }) => {
           </ResponsiveContainer>
         </ChartCard>
 
-        
-
         {/* Network Performance Comparison Chart */}
         <ChartCard
           chartRef={chartRefs?.qoeChart}
@@ -928,9 +956,9 @@ const AppComparisonView = ({ chartData, chartRefs }) => {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
-        
       </div>
     </div>
   );
 };
+
+export default ApplicationTab;

@@ -1,4 +1,3 @@
-// pages/SessionMapDebug.jsx
 import React, {
   useEffect,
   useState,
@@ -28,9 +27,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { format, set } from "date-fns";
+import { format } from "date-fns";
 import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
-import HeaderFilters from "@/components/map/HeaderFilters";
 
 const containerStyle = {
   width: "100%",
@@ -102,7 +100,6 @@ const parseThresholds = (jsonString) => {
     const parsed = JSON.parse(jsonString);
     return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
   } catch (e) {
-    console.error("Failed to parse thresholds:", e);
     return null;
   }
 };
@@ -237,6 +234,64 @@ const getMetricValue = (log, metric) => {
   return log[metricKey] ?? log.rsrp ?? -120;
 };
 
+const parseLogEntry = (log, sessionId) => {
+  if (!log || typeof log !== 'object') {
+    return null;
+  }
+
+  const lat = parseFloat(log.lat || log.Lat || log.latitude || log.Latitude);
+  const lng = parseFloat(log.lon || log.lng || log.Lng || log.longitude || log.Longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+
+  const parseNum = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const num = parseFloat(val);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const providerValue = normalizeProviderName(log.m_alpha_long || log.Provider);
+  const bandValue = log.band || log.Band;
+  const techValue = normalizeTechName(log.network);
+
+  return {
+    lat,
+    lng,
+    rsrp: parseNum(log.rsrp || log.RSRP) ?? -120,
+    rsrq: parseNum(log.rsrq || log.RSRQ) ?? 0,
+    sinr: parseNum(log.sinr || log.SINR) ?? 0,
+    rssi: parseNum(log.rssi || log.RSSI) ?? -100,
+    dl_tpt: parseNum(log.dl_tpt),
+    ul_tpt: parseNum(log.ul_tpt),
+    mos: parseNum(log.mos),
+    provider: providerValue,
+    technology: techValue,
+    band: bandValue ? String(bandValue) : "",
+    timestamp: log.timestamp || log.Timestamp || log.time || log.Time || log.dateTime || "",
+    source: log.source || log.Source || log.dataSource || "",
+    pci: log.pci || log.PCI || "",
+    cellId: log.cellId || log.CellId || log.cell_id || "",
+    session_id: sessionId ?? log.session_id,
+    id: log.id || `${sessionId}-${log.timestamp}`,
+  };
+};
+
+const extractLogsFromResponse = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data?.data && Array.isArray(data.data)) return data.data;
+  if (data?.Data && Array.isArray(data.Data)) return data.Data;
+  if (data?.logs && Array.isArray(data.logs)) return data.logs;
+  if (data?.networkLogs && Array.isArray(data.networkLogs)) return data.networkLogs;
+  if (data?.result && Array.isArray(data.result)) return data.result;
+  return [];
+};
+
 function CanvasCirclesOverlay({
   map,
   logs,
@@ -313,7 +368,6 @@ function CanvasCirclesOverlay({
               ctx.globalAlpha = 1;
             }
           } catch (e) {
-            console.error("Error drawing point on canvas:", e);
           }
         });
       }
@@ -508,7 +562,7 @@ function SessionMapDebug() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [map, setMap] = useState(null);
-  const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0 });
+  const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0, page: 0, totalPages: 0 });
   const [analysis, setAnalysis] = useState(null);
   const [appSummary, setAppSummary] = useState(null);
 
@@ -521,7 +575,6 @@ function SessionMapDebug() {
 
   const [showLegend, setShowLegend] = useState(true);
 
-  // FIX #3: Add state for session markers
   const [sessionMarkers, setSessionMarkers] = useState([]);
 
   const {
@@ -551,13 +604,12 @@ function SessionMapDebug() {
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
 
-  // FIX #2: Changed default drawCellSizeMeters from 100 to 10
   const safeUi = useMemo(
     () => ({
       drawEnabled: false,
       shapeMode: "polygon",
       drawPixelateRect: false,
-      drawCellSizeMeters: 5, 
+      drawCellSizeMeters: 5,
       drawClearSignal: 0,
       colorizeCells: true,
       ...ui,
@@ -565,17 +617,14 @@ function SessionMapDebug() {
     [ui]
   );
 
-  // FIX #4: Updated formattedThresholds to handle both naming conventions
   const formattedThresholds = useMemo(() => {
     if (!allThresholds) return {};
     return {
       rsrp: parseThresholds(allThresholds.rsrp_json),
       rsrq: parseThresholds(allThresholds.rsrq_json),
       sinr: parseThresholds(allThresholds.sinr_json),
-      // Handle both dl_thpt_json and dl_tpt_json naming
       dl_thpt: parseThresholds(allThresholds.dl_thpt_json || allThresholds.dl_tpt_json),
       ul_thpt: parseThresholds(allThresholds.ul_thpt_json || allThresholds.ul_tpt_json),
-      // Also add alternative keys for compatibility
       dl_tpt: parseThresholds(allThresholds.dl_thpt_json || allThresholds.dl_tpt_json),
       ul_tpt: parseThresholds(allThresholds.ul_thpt_json || allThresholds.ul_tpt_json),
       mos: parseThresholds(allThresholds.mos_json),
@@ -587,16 +636,13 @@ function SessionMapDebug() {
     const fetchThresholds = async () => {
       try {
         const response = await settingApi.getThresholdSettings();
-        console.log("Thresholds response:", response);
 
         if (!response || response.Status !== 1 || !response.Data) {
-          console.warn("Failed to fetch thresholds or invalid response");
           return;
         }
 
         setAllThresholds(response.Data);
       } catch (error) {
-        console.error("Error fetching signal thresholds:", error);
       }
     };
 
@@ -613,19 +659,12 @@ function SessionMapDebug() {
     const key = getThresholdKey(metric);
     const jsonString = allThresholds[key];
 
-    console.log(
-      `Looking for threshold key: ${key}, found:`,
-      jsonString ? "yes" : "no"
-    );
-
     if (!jsonString) {
-      console.warn("No thresholds found for metric:", metric);
       setCurrentThresholds(null);
       return;
     }
 
     const parsed = parseThresholds(jsonString);
-    console.log("Parsed thresholds for", metric, ":", parsed);
     setCurrentThresholds(parsed);
   }, [allThresholds, filters.metric]);
 
@@ -635,7 +674,6 @@ function SessionMapDebug() {
     return logs.filter((log) => {
       const metricValue = getMetricValue(log, filters.metric);
 
-      // 1. Signal Strength Filters
       if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
         if (metricValue < parseFloat(filters.minSignal)) {
           return false;
@@ -647,7 +685,6 @@ function SessionMapDebug() {
         }
       }
 
-      // 2. Technology Filter
       if (filters.technology && filters.technology !== "ALL") {
         if (log.technology) {
           if (log.technology.toUpperCase() !== filters.technology.toUpperCase()) {
@@ -656,8 +693,6 @@ function SessionMapDebug() {
         }
       }
 
-      // 3. Band Filter (FIXED)
-      // Added check for !== "all" so it doesn't filter out everything
       if (filters.band && filters.band !== "" && filters.band !== "all") {
         if (log.band) {
           if (log.band.toString() !== filters.band) {
@@ -666,18 +701,14 @@ function SessionMapDebug() {
         }
       }
 
-      // 4. Provider Filter (ADDED)
-      // This was missing previously
       if (filters.provider && filters.provider !== "all") {
         if (log.provider) {
-           // Case-insensitive comparison is safer
-           if (log.provider.toLowerCase() !== filters.provider.toLowerCase()) {
-             return false;
-           }
+          if (log.provider.toLowerCase() !== filters.provider.toLowerCase()) {
+            return false;
+          }
         }
       }
 
-      // 5. Date Filters
       if (filters.startDate || filters.endDate) {
         if (log.timestamp) {
           const logDate = new Date(log.timestamp);
@@ -694,7 +725,6 @@ function SessionMapDebug() {
         }
       }
 
-      // 6. Data Source Filter
       if (filters.dataSource && filters.dataSource !== "all") {
         if (log.source) {
           if (log.source.toLowerCase() !== filters.dataSource.toLowerCase()) {
@@ -972,136 +1002,150 @@ function SessionMapDebug() {
       const allProviders = new Set();
       const allBands = new Set();
       const allNetworkTypes = new Set();
-
-      // FIX #3: Create session markers array
       const markers = [];
 
-      for (let i = 0; i < sessionIds.length; i++) {
-        setFetchProgress({ current: i + 1, total: sessionIds.length });
+      const PAGE_SIZE = 10000;
+      const startTime = performance.now();
 
-        try {
-          const response = await mapViewApi.getNetworkLog({
-            session_id: sessionIds[i],
+      try {
+        let currentPage = 1;
+        let totalCount = 0;
+        let totalPages = 1;
+        let hasMoreData = true;
+
+        while (hasMoreData) {
+          setFetchProgress({
+            current: allPoints.length,
+            total: totalCount || 0,
+            page: currentPage,
+            totalPages: totalPages,
           });
 
-          if (response?.app_summary) {
-            mergedAppSummary = { ...mergedAppSummary, ...response.app_summary };
+          const response = await mapViewApi.getNetworkLog({
+            session_ids: sessionIds,
+            page: currentPage,
+            limit: PAGE_SIZE,
+          });
+
+          const rawResponse = response?.data || response;
+          const pageData = extractLogsFromResponse(rawResponse);
+
+          if (currentPage === 1) {
+            if (typeof rawResponse === 'object' && !Array.isArray(rawResponse)) {
+              totalCount = rawResponse.total_count || rawResponse.totalCount || rawResponse.TotalCount || 0;
+              if (rawResponse.app_summary) {
+                mergedAppSummary = { ...mergedAppSummary, ...rawResponse.app_summary };
+              }
+            } else {
+              totalCount = pageData.length;
+            }
+
+            totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
           }
 
-          let rawData = Array.isArray(response)
-            ? response
-            : response?.data
-            ? Array.isArray(response.data)
-              ? response.data
-              : response.data.Data || []
-            : response?.Data || [];
+          if (!Array.isArray(pageData)) {
+            break;
+          }
 
-          const points = rawData
-            .map((log, idx) => {
-              const providerValue = normalizeProviderName(
-                log.m_alpha_long || log.Provider
-              );
-              const bandValue = log.band || log.Band;
-              const techValue = normalizeTechName(log.network);
+          const sessionPointsMap = new Map();
+
+          pageData.forEach((log) => {
+            const parsed = parseLogEntry(log, log.session_id);
+            if (parsed) {
+              allPoints.push(parsed);
+
+              const providerValue = parsed.provider;
+              const bandValue = parsed.band;
+              const techValue = parsed.technology;
 
               if (providerValue) allProviders.add(providerValue);
               if (bandValue) allBands.add(String(bandValue));
               if (techValue) allNetworkTypes.add(techValue);
 
-              // FIX #1: Changed sessionId to session_id (with underscore)
-              return {
-                lat: parseFloat(
-                  log.lat || log.Lat || log.latitude || log.Latitude
-                ),
-                lng: parseFloat(
-                  log.lon ||
-                    log.lng ||
-                    log.Lng ||
-                    log.longitude ||
-                    log.Longitude
-                ),
-                rsrp: parseFloat(log.rsrp || log.RSRP || -120),
-                rsrq: parseFloat(log.rsrq || log.RSRQ || 0),
-                sinr: parseFloat(log.sinr || log.SINR || 0),
-                rssi: parseFloat(log.rssi || log.RSSI || -100),
-                provider: providerValue,
-                technology: techValue,
-                band: bandValue ? String(bandValue) : "",
-                timestamp:
-                  log.timestamp ||
-                  log.Timestamp ||
-                  log.time ||
-                  log.Time ||
-                  log.dateTime ||
-                  "",
-                source: log.source || log.Source || log.dataSource || "",
-                pci: log.pci || log.PCI || "",
-                cellId: log.cellId || log.CellId || log.cell_id || "",
-                session_id: sessionIds[i], // FIX #1: Changed from sessionId to session_id
-                id: `${sessionIds[i]}-${idx}`,
-              };
-            })
-            .filter(
-              (pt) =>
-                !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0
-            );
+              if (!sessionPointsMap.has(parsed.session_id)) {
+                sessionPointsMap.set(parsed.session_id, {
+                  lat: parsed.lat,
+                  lng: parsed.lng,
+                  count: 1
+                });
+              } else {
+                sessionPointsMap.get(parsed.session_id).count++;
+              }
+            }
+          });
 
-          allPoints.push(...points);
+          sessionPointsMap.forEach((data, sessionId) => {
+            const existingMarker = markers.find(m => m.session_id === sessionId);
+            if (!existingMarker) {
+              markers.push({
+                id: sessionId,
+                session_id: sessionId,
+                lat: data.lat,
+                lng: data.lng,
+                position: { lat: data.lat, lng: data.lng },
+                logsCount: data.count,
+              });
+            } else {
+              existingMarker.logsCount += data.count;
+            }
+          });
 
-          // FIX #3: Create a session marker for each session
-          if (points.length > 0) {
-            const firstPoint = points[0];
-            markers.push({
-              id: sessionIds[i],
-              session_id: sessionIds[i],
-              lat: firstPoint.lat,
-              lng: firstPoint.lng,
-              position: { lat: firstPoint.lat, lng: firstPoint.lng },
-              logsCount: points.length,
-            });
+          if (currentPage >= totalPages) {
+            hasMoreData = false;
+          } else if (pageData.length < PAGE_SIZE) {
+            hasMoreData = false;
+          } else {
+            currentPage++;
           }
-        } catch (err) {
-          console.error(`Error fetching session ${sessionIds[i]}:`, err);
-          toast.error(`Failed to fetch session ${sessionIds[i]}`);
+
+          if (currentPage > 100) {
+            hasMoreData = false;
+          }
+
+          if (hasMoreData) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
         }
-      }
 
-      const providerArray = Array.from(allProviders).filter(
-        (p) => p && p !== "undefined" && p !== "null"
-      );
-      const bandArray = Array.from(allBands).filter(
-        (b) => b && b !== "undefined" && b !== "null"
-      );
-      const techArray = Array.from(allNetworkTypes).filter(
-        (t) => t && t !== "undefined" && t !== "null"
-      );
+        const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
 
-      console.log("Final extracted data:", {
-        providers: providerArray,
-        bands: bandArray,
-        technologies: techArray,
-      });
-
-      updateAvailableFilters({
-        providers: providerArray,
-        bands: bandArray,
-        technologies: techArray,
-      });
-
-      if (allPoints.length === 0) {
-        setError("No valid data found in the sessions");
-      } else {
-        toast.success(
-          `Loaded ${allPoints.length} points from ${sessionIds.length} session(s)`
+        const providerArray = Array.from(allProviders).filter(
+          (p) => p && p !== "undefined" && p !== "null"
         );
-      }
+        const bandArray = Array.from(allBands).filter(
+          (b) => b && b !== "undefined" && b !== "null"
+        );
+        const techArray = Array.from(allNetworkTypes).filter(
+          (t) => t && t !== "undefined" && t !== "null"
+        );
 
-      setLogs(allPoints);
-      setSessionMarkers(markers); // FIX #3: Set session markers
-      setAppSummary(
-        Object.keys(mergedAppSummary).length > 0 ? mergedAppSummary : null
-      );
-      setLoading(false);
+        updateAvailableFilters({
+          providers: providerArray,
+          bands: bandArray,
+          technologies: techArray,
+        });
+
+        if (allPoints.length === 0) {
+          setError("No valid data found in the sessions");
+          toast.warn("No valid data found");
+        } else {
+          toast.success(
+            `Loaded ${allPoints.length.toLocaleString()} points from ${sessionIds.length} session(s) in ${fetchTime}s`
+          );
+        }
+
+        setLogs(allPoints);
+        setSessionMarkers(markers);
+        setAppSummary(
+          Object.keys(mergedAppSummary).length > 0 ? mergedAppSummary : null
+        );
+
+      } catch (err) {
+        toast.error(`Failed to fetch data: ${err.message}`);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchData();
@@ -1147,18 +1191,19 @@ function SessionMapDebug() {
         <div className="text-center">
           <Spinner />
           <p className="mt-4 text-white">
-            {loading && fetchProgress.total > 1
-              ? `Loading session ${fetchProgress.current} of ${fetchProgress.total}...`
+            {loading && fetchProgress.total > 0
+              ? `Loading... ${fetchProgress.current.toLocaleString()} / ${fetchProgress.total.toLocaleString()} points (Page ${fetchProgress.page}/${fetchProgress.totalPages})`
               : "Loading map..."}
           </p>
           {loading && fetchProgress.total > 0 && (
-            <div className="mt-2 w-48 mx-auto bg-gray-700 rounded-full h-2">
+            <div className="mt-2 w-64 mx-auto bg-gray-700 rounded-full h-2">
               <div
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                 style={{
-                  width: `${
+                  width: `${Math.min(
+                    100,
                     (fetchProgress.current / fetchProgress.total) * 100
-                  }%`,
+                  )}%`,
                 }}
               />
             </div>
@@ -1213,7 +1258,7 @@ function SessionMapDebug() {
             map={map}
             enabled={safeUi.drawEnabled}
             logs={filteredLogs}
-            sessions={sessionMarkers} 
+            sessions={sessionMarkers}
             thresholds={formattedThresholds}
             selectedMetric={filters.metric?.toLowerCase() || "rsrp"}
             shapeMode={safeUi.shapeMode}
@@ -1226,8 +1271,6 @@ function SessionMapDebug() {
           />
         )}
       </GoogleMap>
-
-      
 
       <AllLogsPanelToggle
         logs={filteredLogs}
