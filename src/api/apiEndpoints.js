@@ -715,21 +715,45 @@ getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
   return response;
 },
   
- getSessionNeighbour: async ({ sessionIds, signal }) => {
-    // FIX: Join array to comma-separated string to ensure backend receives it correctly
+ // apiEndpoints.js
+
+getSessionNeighbour: async ({ sessionIds, signal }) => {
+  try {
     const idsParam = Array.isArray(sessionIds) ? sessionIds.join(",") : sessionIds;
+    
+    console.log("📡 Calling N78 API with session_Ids:", idsParam);
+    
     const response = await api.get(
       '/api/MapView/GetN78Neighbours', 
       { 
         params: {
-          session_ids: idsParam 
+          session_Ids: idsParam  // ✅ Capital 'I' - THIS IS CRITICAL!
         },
         signal 
       }
     );
-    console.log("this is in api endpoint and i am check for data ", response)
-    return response.data;
-  },
+    
+    console.log("📥 N78 API raw response:", response);
+    console.log("📥 N78 API response.data:", response?.data);
+    
+    // Handle different response structures
+    if (response?.data) {
+      return response.data;
+    }
+    
+    // Some axios configs return data directly
+    if (response?.Status !== undefined) {
+      return response;
+    }
+    
+    console.warn("⚠️ Unexpected response structure:", response);
+    return response;
+    
+  } catch (error) {
+    console.error("❌ N78 API Error:", error);
+    throw error;
+  }
+},
   getDistanceSession: (session) =>
     api.get("/api/MapView/sessionsDistance", {
        params:session 

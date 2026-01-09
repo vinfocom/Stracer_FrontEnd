@@ -2,37 +2,94 @@
 import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { Rectangle, InfoWindow, useGoogleMap } from '@react-google-maps/api';
 
-const getRSRPColor = (rsrp) => {
-  if (rsrp === null || rsrp === undefined) return '#9CA3AF';
-  if (rsrp >= -80) return '#10B981';
-  if (rsrp >= -90) return '#34D399';
-  if (rsrp >= -100) return '#FBBF24';
-  if (rsrp >= -110) return '#F97316';
-  return '#EF4444';
+// Helper to get threshold value from array format
+const getThresholdValue = (thresholdArray, index, defaultValue) => {
+  if (!thresholdArray || !Array.isArray(thresholdArray) || thresholdArray.length === 0) {
+    return defaultValue;
+  }
+  return thresholdArray[index] ?? defaultValue;
 };
 
-const getRSRPQuality = (rsrp) => {
+// Get color based on RSRP value and thresholds array
+const getRSRPColor = (rsrp, thresholds = []) => {
+  if (rsrp === null || rsrp === undefined) return '#9CA3AF';
+  
+  // thresholds array format: [excellent, good, fair, poor] e.g., [-80, -90, -100, -110]
+  const excellent = getThresholdValue(thresholds, 0, -80);
+  const good = getThresholdValue(thresholds, 1, -90);
+  const fair = getThresholdValue(thresholds, 2, -100);
+  const poor = getThresholdValue(thresholds, 3, -110);
+
+  if (rsrp >= excellent) return '#10B981'; // Excellent - Green
+  if (rsrp >= good) return '#34D399';      // Good - Light Green
+  if (rsrp >= fair) return '#FBBF24';      // Fair - Yellow
+  if (rsrp >= poor) return '#F97316';      // Poor - Orange
+  return '#EF4444';                         // Very Poor - Red
+};
+
+const getRSRPQuality = (rsrp, thresholds = []) => {
   if (rsrp === null || rsrp === undefined) return 'Unknown';
-  if (rsrp >= -80) return 'Excellent';
-  if (rsrp >= -90) return 'Good';
-  if (rsrp >= -100) return 'Fair';
-  if (rsrp >= -110) return 'Poor';
+  
+  const excellent = getThresholdValue(thresholds, 0, -80);
+  const good = getThresholdValue(thresholds, 1, -90);
+  const fair = getThresholdValue(thresholds, 2, -100);
+  const poor = getThresholdValue(thresholds, 3, -110);
+
+  if (rsrp >= excellent) return 'Excellent';
+  if (rsrp >= good) return 'Good';
+  if (rsrp >= fair) return 'Fair';
+  if (rsrp >= poor) return 'Poor';
   return 'Very Poor';
 };
 
+// Get color based on RSRQ value
+const getRSRQColor = (rsrq, thresholds = []) => {
+  if (rsrq === null || rsrq === undefined) return '#9CA3AF';
+  
+  const excellent = getThresholdValue(thresholds, 0, -10);
+  const good = getThresholdValue(thresholds, 1, -15);
+  const fair = getThresholdValue(thresholds, 2, -20);
+
+  if (rsrq >= excellent) return '#10B981';
+  if (rsrq >= good) return '#34D399';
+  if (rsrq >= fair) return '#FBBF24';
+  return '#EF4444';
+};
+
+// Get color based on SINR value
+const getSINRColor = (sinr, thresholds = []) => {
+  if (sinr === null || sinr === undefined) return '#9CA3AF';
+  
+  const excellent = getThresholdValue(thresholds, 0, 20);
+  const good = getThresholdValue(thresholds, 1, 13);
+  const fair = getThresholdValue(thresholds, 2, 0);
+
+  if (sinr >= excellent) return '#10B981';
+  if (sinr >= good) return '#34D399';
+  if (sinr >= fair) return '#FBBF24';
+  return '#EF4444';
+};
+
+// Get color based on selected metric
+const getMetricColor = (value, metric, thresholds = {}) => {
+  if (value === null || value === undefined) return '#9CA3AF';
+  
+  switch (metric) {
+    case 'rsrp':
+      return getRSRPColor(value, thresholds.rsrp);
+    case 'rsrq':
+      return getRSRQColor(value, thresholds.rsrq);
+    case 'sinr':
+      return getSINRColor(value, thresholds.sinr);
+    default:
+      return getRSRPColor(value, thresholds.rsrp);
+  }
+};
+
 const PCI_COLORS = [
-  '#3B82F6',
-  '#EF4444',
-  '#10B981',
-  '#F59E0B',
-  '#8B5CF6',
-  '#EC4899',
-  '#06B6D4',
-  '#84CC16',
-  '#F43F5E',
-  '#6366F1',
-  '#14B8A6',
-  '#F97316',
+  '#3B82F6', '#EF4444', '#10B981', '#F59E0B',
+  '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16',
+  '#F43F5E', '#6366F1', '#14B8A6', '#F97316',
 ];
 
 const getPCIColor = (pci) => {
@@ -61,6 +118,17 @@ const NeighborHeatmapLayer = React.memo(({
   opacity = 0.7,
   useHeatmap = true,
   onNeighborClick,
+  // Thresholds from parent (DEFAULT_THRESHOLDS format)
+  thresholds = {
+    rsrp: [],
+    rsrq: [],
+    sinr: [],
+    dl_thpt: [],
+    ul_thpt: [],
+    mos: [],
+    lte_bler: [],
+  },
+  debug = false,
 }) => {
   const map = useGoogleMap();
   const heatmapRef = useRef(null);
@@ -68,11 +136,41 @@ const NeighborHeatmapLayer = React.memo(({
   
   const [isVisualizationReady, setIsVisualizationReady] = useState(false);
   const [selectedNeighbor, setSelectedNeighbor] = useState(null);
+  const [drawingStats, setDrawingStats] = useState({
+    totalReceived: 0,
+    validPoints: 0,
+    drawnPoints: 0,
+    isDrawing: false,
+  });
 
+  // Debug logger
+  const logDebug = useCallback((message, data) => {
+    if (debug) {
+      console.log(`[NeighborHeatmapLayer] ${message}`, data);
+    }
+  }, [debug]);
+
+  // Log on mount/update
+  useEffect(() => {
+    console.log('[NeighborHeatmapLayer] Props received:', {
+      showNeighbors,
+      useHeatmap,
+      totalNeighbors: allNeighbors?.length || 0,
+      selectedMetric,
+      radius,
+      opacity,
+      thresholds,
+      hasMap: !!map,
+      isVisualizationReady,
+    });
+  }, [showNeighbors, useHeatmap, allNeighbors?.length, selectedMetric, radius, opacity, thresholds, map, isVisualizationReady]);
+
+  // Check visualization library
   useEffect(() => {
     const checkVisualization = () => {
       if (window.google?.maps?.visualization) {
         setIsVisualizationReady(true);
+        logDebug('Visualization library ready', true);
         return true;
       }
       return false;
@@ -87,36 +185,102 @@ const NeighborHeatmapLayer = React.memo(({
     }, 200);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [logDebug]);
 
+  // Process neighbors data
   const neighbors = useMemo(() => {
+    console.log('[NeighborHeatmapLayer] Processing neighbors:', {
+      showNeighbors,
+      rawDataLength: allNeighbors?.length || 0,
+    });
+
     if (!showNeighbors || !allNeighbors?.length) {
+      console.log('[NeighborHeatmapLayer] No neighbors to process');
       return [];
     }
-    
-    return allNeighbors
+
+    const processed = allNeighbors
       .filter(n => {
         const lat = parseFloat(n.lat ?? n.latitude ?? n.Lat);
         const lng = parseFloat(n.lng ?? n.longitude ?? n.Lng ?? n.lon);
-        return !isNaN(lat) && !isNaN(lng) && 
-               lat >= -90 && lat <= 90 && 
-               lng >= -180 && lng <= 180;
+        const isValid = !isNaN(lat) && !isNaN(lng) && 
+                        lat >= -90 && lat <= 90 && 
+                        lng >= -180 && lng <= 180;
+        
+        if (!isValid && debug) {
+          console.warn('[NeighborHeatmapLayer] Invalid coordinate:', { lat, lng, original: n });
+        }
+        
+        return isValid;
       })
       .map((n) => {
         const lat = parseFloat(n.lat ?? n.latitude ?? n.Lat);
         const lng = parseFloat(n.lng ?? n.longitude ?? n.Lng ?? n.lon);
-        const rsrp = n.rsrp !== null && n.rsrp !== undefined ? parseFloat(n.rsrp) : null;
+        
+        // Handle both old and new data structure
+        const primaryRsrp = n.primaryRsrp ?? n.primary_rsrp ?? n.rsrp;
+        const primaryRsrq = n.primaryRsrq ?? n.primary_rsrq ?? n.rsrq;
+        const primarySinr = n.primarySinr ?? n.primary_sinr ?? n.sinr;
+        const neighbourRsrp = n.neighbourRsrp ?? n.neighbour_rsrp;
+        const neighbourRsrq = n.neighbourRsrq ?? n.neighbour_rsrq;
+        const pci = n.primaryPci ?? n.primary_pci ?? n.pci;
+        const neighbourPci = n.neighbourPci ?? n.neighbour_pci;
+        const band = n.primaryBand ?? n.primary_band ?? n.band;
+        const neighbourBand = n.neighbourBand ?? n.neighbour_band;
+
+        const rsrp = primaryRsrp !== null && primaryRsrp !== undefined 
+          ? parseFloat(primaryRsrp) 
+          : null;
+        const rsrq = primaryRsrq !== null && primaryRsrq !== undefined
+          ? parseFloat(primaryRsrq)
+          : null;
+        const sinr = primarySinr !== null && primarySinr !== undefined
+          ? parseFloat(primarySinr)
+          : null;
+
+        // Get the metric value for coloring
+        let metricValue = rsrp;
+        if (selectedMetric === 'rsrq') metricValue = rsrq;
+        if (selectedMetric === 'sinr') metricValue = sinr;
         
         return {
           ...n,
           lat,
           lng,
+          // Primary cell metrics
           rsrp: isNaN(rsrp) ? null : rsrp,
-          color: rsrp !== null ? getRSRPColor(rsrp) : getPCIColor(n.pci),
-          quality: rsrp !== null ? getRSRPQuality(rsrp) : null,
+          rsrq: isNaN(rsrq) ? null : rsrq,
+          sinr: isNaN(sinr) ? null : sinr,
+          pci,
+          band,
+          // Neighbour cell metrics
+          neighbourRsrp: neighbourRsrp !== null ? parseFloat(neighbourRsrp) : null,
+          neighbourRsrq: neighbourRsrq !== null ? parseFloat(neighbourRsrq) : null,
+          neighbourPci,
+          neighbourBand,
+          // Colors based on thresholds and selected metric
+          color: metricValue !== null 
+            ? getMetricColor(metricValue, selectedMetric, thresholds) 
+            : getPCIColor(pci),
+          quality: rsrp !== null ? getRSRPQuality(rsrp, thresholds.rsrp) : null,
         };
       });
-  }, [allNeighbors, showNeighbors]);
+
+    console.log('[NeighborHeatmapLayer] Processed neighbors:', {
+      total: processed.length,
+      sample: processed.slice(0, 3),
+      withRsrp: processed.filter(n => n.rsrp !== null).length,
+      withNeighbourData: processed.filter(n => n.neighbourRsrp !== null).length,
+    });
+
+    setDrawingStats(prev => ({
+      ...prev,
+      totalReceived: allNeighbors.length,
+      validPoints: processed.length,
+    }));
+
+    return processed;
+  }, [allNeighbors, showNeighbors, thresholds, selectedMetric, debug]);
 
   const gradient = useMemo(() => [
     'rgba(0, 0, 0, 0)',
@@ -138,51 +302,79 @@ const NeighborHeatmapLayer = React.memo(({
       try {
         heatmapRef.current.setMap(null);
         heatmapRef.current.setData([]);
+        console.log('[NeighborHeatmapLayer] Heatmap cleaned up');
       } catch (error) {
-        console.warn('Heatmap cleanup warning:', error);
+        console.warn('[NeighborHeatmapLayer] Heatmap cleanup warning:', error);
       }
       heatmapRef.current = null;
     }
     isCleanedUpRef.current = true;
+    setDrawingStats(prev => ({ ...prev, isDrawing: false, drawnPoints: 0 }));
   }, []);
 
+  // Main heatmap effect
   useEffect(() => {
     isCleanedUpRef.current = false;
 
+    console.log('[NeighborHeatmapLayer] Heatmap effect triggered:', {
+      showNeighbors,
+      useHeatmap,
+      hasMap: !!map,
+      isVisualizationReady,
+      neighborsCount: neighbors.length,
+    });
+
     if (!showNeighbors) {
+      console.log('[NeighborHeatmapLayer] showNeighbors is false, cleaning up');
       cleanupHeatmap();
       return cleanupHeatmap;
     }
 
     if (!map) {
+      console.log('[NeighborHeatmapLayer] No map instance');
       return cleanupHeatmap;
     }
 
     if (!useHeatmap) {
+      console.log('[NeighborHeatmapLayer] useHeatmap is false, will use rectangles');
       cleanupHeatmap();
       return cleanupHeatmap;
     }
 
     if (!isVisualizationReady) {
+      console.log('[NeighborHeatmapLayer] Visualization library not ready');
       return cleanupHeatmap;
     }
 
     if (neighbors.length === 0) {
+      console.log('[NeighborHeatmapLayer] No neighbors to draw');
       cleanupHeatmap();
       return cleanupHeatmap;
     }
 
+    // Create heatmap data with weights based on selected metric and thresholds
     const heatmapData = neighbors.map((n) => {
       let weight = 0.5;
       const value = n[selectedMetric];
       
       if (value !== null && value !== undefined && !isNaN(value)) {
+        const metricThresholds = thresholds[selectedMetric] || [];
+        
         if (selectedMetric === 'rsrp') {
-          weight = Math.max(0.1, Math.min(1, (value + 140) / 100));
+          // RSRP: typically -140 to -40, higher is better
+          const min = getThresholdValue(metricThresholds, 3, -110);
+          const max = getThresholdValue(metricThresholds, 0, -80);
+          weight = Math.max(0.1, Math.min(1, (value - min) / (max - min)));
         } else if (selectedMetric === 'rsrq') {
-          weight = Math.max(0.1, Math.min(1, (value + 20) / 20));
+          // RSRQ: typically -20 to 0, higher is better
+          const min = getThresholdValue(metricThresholds, 2, -20);
+          const max = getThresholdValue(metricThresholds, 0, -10);
+          weight = Math.max(0.1, Math.min(1, (value - min) / (max - min)));
         } else if (selectedMetric === 'sinr') {
-          weight = Math.max(0.1, Math.min(1, (value + 10) / 40));
+          // SINR: typically -10 to 30, higher is better
+          const min = getThresholdValue(metricThresholds, 2, 0);
+          const max = getThresholdValue(metricThresholds, 0, 20);
+          weight = Math.max(0.1, Math.min(1, (value - min) / (max - min)));
         }
       }
 
@@ -190,6 +382,15 @@ const NeighborHeatmapLayer = React.memo(({
         location: new window.google.maps.LatLng(n.lat, n.lng),
         weight: weight,
       };
+    });
+
+    console.log('[NeighborHeatmapLayer] Creating heatmap with data:', {
+      dataPoints: heatmapData.length,
+      radius,
+      opacity,
+      selectedMetric,
+      thresholdsUsed: thresholds[selectedMetric],
+      sampleWeights: heatmapData.slice(0, 5).map(d => d.weight.toFixed(3)),
     });
 
     cleanupHeatmap();
@@ -206,8 +407,20 @@ const NeighborHeatmapLayer = React.memo(({
       });
       
       isCleanedUpRef.current = false;
+      
+      setDrawingStats(prev => ({
+        ...prev,
+        drawnPoints: heatmapData.length,
+        isDrawing: true,
+      }));
+
+      console.log('[NeighborHeatmapLayer] ✅ Heatmap created successfully:', {
+        pointsDrawn: heatmapData.length,
+        heatmapInstance: !!heatmapRef.current,
+      });
+
     } catch (error) {
-      console.error('Heatmap creation error:', error);
+      console.error('[NeighborHeatmapLayer] ❌ Heatmap creation error:', error);
       cleanupHeatmap();
     }
 
@@ -226,22 +439,27 @@ const NeighborHeatmapLayer = React.memo(({
     radius, 
     opacity, 
     gradient,
+    thresholds,
     cleanupHeatmap
   ]);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
+      console.log('[NeighborHeatmapLayer] Component unmounting, cleaning up');
       if (heatmapRef.current) {
         try {
           heatmapRef.current.setMap(null);
           heatmapRef.current.setData([]);
         } catch (e) {
+          // Ignore
         }
         heatmapRef.current = null;
       }
     };
   }, []);
 
+  // Update heatmap options dynamically
   useEffect(() => {
     if (heatmapRef.current && showNeighbors && useHeatmap) {
       try {
@@ -249,16 +467,20 @@ const NeighborHeatmapLayer = React.memo(({
           radius: radius,
           opacity: opacity,
         });
+        console.log('[NeighborHeatmapLayer] Heatmap options updated:', { radius, opacity });
       } catch (e) {
+        console.warn('[NeighborHeatmapLayer] Failed to update heatmap options:', e);
       }
     }
   }, [radius, opacity, showNeighbors, useHeatmap]);
 
-  const handleCircleClick = useCallback((neighbor) => {
+  const handleRectangleClick = useCallback((neighbor) => {
+    console.log('[NeighborHeatmapLayer] Rectangle clicked:', neighbor);
     setSelectedNeighbor(neighbor);
     onNeighborClick?.(neighbor);
   }, [onNeighborClick]);
 
+  // Clear selection when hidden
   useEffect(() => {
     if (!showNeighbors) {
       setSelectedNeighbor(null);
@@ -266,17 +488,60 @@ const NeighborHeatmapLayer = React.memo(({
   }, [showNeighbors]);
 
   if (!showNeighbors || neighbors.length === 0) {
+    console.log('[NeighborHeatmapLayer] Rendering null - no data to show');
     return null;
   }
 
+  console.log('[NeighborHeatmapLayer] Rendering:', {
+    useHeatmap,
+    rectangleCount: !useHeatmap ? neighbors.length : 0,
+    hasSelectedNeighbor: !!selectedNeighbor,
+  });
+
   return (
     <>
+      {/* Debug overlay */}
+      {debug && (
+        <div 
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: 10,
+            background: 'rgba(0,0,0,0.85)',
+            color: 'white',
+            padding: '12px',
+            borderRadius: '8px',
+            fontSize: '11px',
+            zIndex: 9999,
+            fontFamily: 'monospace',
+            minWidth: '220px',
+          }}
+        >
+          <div style={{ fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #444', paddingBottom: '4px' }}>
+            🔍 Neighbor Heatmap Debug
+          </div>
+          <div>Mode: <span style={{ color: '#4ade80' }}>{useHeatmap ? 'Heatmap' : 'Rectangles'}</span></div>
+          <div>Total Received: <span style={{ color: '#60a5fa' }}>{drawingStats.totalReceived}</span></div>
+          <div>Valid Points: <span style={{ color: '#60a5fa' }}>{drawingStats.validPoints}</span></div>
+          <div>Drawn Points: <span style={{ color: '#60a5fa' }}>{drawingStats.drawnPoints}</span></div>
+          <div>Is Drawing: {drawingStats.isDrawing ? '✅' : '❌'}</div>
+          <div>Metric: <span style={{ color: '#fbbf24' }}>{selectedMetric}</span></div>
+          <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '4px' }}>
+            <div style={{ fontWeight: 'bold' }}>Thresholds ({selectedMetric}):</div>
+            <div style={{ color: '#a78bfa' }}>
+              {JSON.stringify(thresholds[selectedMetric] || 'default')}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rectangle mode */}
       {!useHeatmap && neighbors.map((n, idx) => {
         const bounds = getSquareBounds(n.lat, n.lng, n.isCollision ? 40 : 25);
         
         return (
           <Rectangle
-            key={`neighbor-sq-${n.id || n.pci || idx}-${n.lat}-${n.lng}`}
+            key={`neighbor-sq-${n.id || n.pci || idx}-${n.lat.toFixed(6)}-${n.lng.toFixed(6)}`}
             bounds={bounds}
             options={{
               fillColor: n.isCollision ? '#DC2626' : n.color,
@@ -287,22 +552,24 @@ const NeighborHeatmapLayer = React.memo(({
               clickable: true,
               zIndex: n.isCollision ? 300 : 200,
             }}
-            onClick={() => handleCircleClick(n)}
+            onClick={() => handleRectangleClick(n)}
           />
         );
       })}
 
+      {/* Info Window for selected neighbor */}
       {selectedNeighbor && (
         <InfoWindow
           position={{ lat: selectedNeighbor.lat, lng: selectedNeighbor.lng }}
           onCloseClick={() => setSelectedNeighbor(null)}
           options={{
             pixelOffset: new window.google.maps.Size(0, -15),
-            maxWidth: 240,
+            maxWidth: 300,
             disableAutoPan: false,
           }}
         >
-          <div className="p-2 min-w-[200px] font-sans">
+          <div className="p-2 min-w-[260px] font-sans">
+            {/* Header */}
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
               <div className="flex items-center gap-2">
                 <span 
@@ -313,15 +580,7 @@ const NeighborHeatmapLayer = React.memo(({
                   PCI: {selectedNeighbor.pci ?? 'N/A'}
                 </span>
               </div>
-              {selectedNeighbor.isCollision && (
-                <span className="text-[9px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full border border-red-200">
-                  COLLISION
-                </span>
-              )}
-            </div>
-            
-            {selectedNeighbor.quality && (
-              <div className="mb-2">
+              {selectedNeighbor.quality && (
                 <span 
                   className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                   style={{ 
@@ -330,83 +589,146 @@ const NeighborHeatmapLayer = React.memo(({
                     border: `1px solid ${selectedNeighbor.color}40`
                   }}
                 >
-                  {selectedNeighbor.quality} Signal
+                  {selectedNeighbor.quality}
                 </span>
-              </div>
-            )}
-            
-            <div className="space-y-1.5">
-              {selectedNeighbor.cell_id && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Cell ID</span>
-                  <span className="font-medium text-gray-700 font-mono">
-                    {selectedNeighbor.cell_id}
-                  </span>
-                </div>
               )}
+            </div>
+            
+            {/* Primary Cell Info */}
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">
+                📡 Primary Cell
+              </div>
               
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {selectedNeighbor.band && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Band</span>
+                    <span className="font-semibold text-blue-600">{selectedNeighbor.band}</span>
+                  </div>
+                )}
+                
+                {selectedNeighbor.pci && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">PCI</span>
+                    <span className="font-medium text-gray-700">{selectedNeighbor.pci}</span>
+                  </div>
+                )}
+              </div>
+
               {selectedNeighbor.rsrp !== null && (
                 <div className="flex justify-between text-xs items-center">
                   <span className="text-gray-500">RSRP</span>
                   <div className="flex items-center gap-1.5">
                     <span 
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: getRSRPColor(selectedNeighbor.rsrp) }}
+                      style={{ backgroundColor: getRSRPColor(selectedNeighbor.rsrp, thresholds.rsrp) }}
                     />
                     <span 
                       className="font-semibold"
-                      style={{ color: getRSRPColor(selectedNeighbor.rsrp) }}
+                      style={{ color: getRSRPColor(selectedNeighbor.rsrp, thresholds.rsrp) }}
                     >
-                      {selectedNeighbor.rsrp?.toFixed?.(1) ?? selectedNeighbor.rsrp} dBm
+                      {selectedNeighbor.rsrp?.toFixed?.(1)} dBm
                     </span>
                   </div>
                 </div>
               )}
               
-              {selectedNeighbor.rsrq !== null && selectedNeighbor.rsrq !== undefined && (
-                <div className="flex justify-between text-xs">
+              {selectedNeighbor.rsrq !== null && (
+                <div className="flex justify-between text-xs items-center">
                   <span className="text-gray-500">RSRQ</span>
-                  <span className="font-medium text-gray-700">
-                    {typeof selectedNeighbor.rsrq === 'number' 
-                      ? selectedNeighbor.rsrq.toFixed(1) 
-                      : selectedNeighbor.rsrq} dB
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span 
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: getRSRQColor(selectedNeighbor.rsrq, thresholds.rsrq) }}
+                    />
+                    <span className="font-medium text-gray-700">
+                      {selectedNeighbor.rsrq?.toFixed?.(1)} dB
+                    </span>
+                  </div>
                 </div>
               )}
               
-              {selectedNeighbor.sinr !== null && selectedNeighbor.sinr !== undefined && (
-                <div className="flex justify-between text-xs">
+              {selectedNeighbor.sinr !== null && (
+                <div className="flex justify-between text-xs items-center">
                   <span className="text-gray-500">SINR</span>
-                  <span className="font-medium text-gray-700">
-                    {typeof selectedNeighbor.sinr === 'number' 
-                      ? selectedNeighbor.sinr.toFixed(1) 
-                      : selectedNeighbor.sinr} dB
-                  </span>
-                </div>
-              )}
-              
-              {selectedNeighbor.band && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Band</span>
-                  <span className="font-semibold text-blue-600">
-                    B{selectedNeighbor.band}
-                  </span>
-                </div>
-              )}
-
-              {selectedNeighbor.earfcn && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">EARFCN</span>
-                  <span className="font-medium text-gray-700 font-mono">
-                    {selectedNeighbor.earfcn}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span 
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: getSINRColor(selectedNeighbor.sinr, thresholds.sinr) }}
+                    />
+                    <span className="font-medium text-gray-700">
+                      {selectedNeighbor.sinr?.toFixed?.(1)} dB
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
 
+            {/* Neighbour Cell Info */}
+            {(selectedNeighbor.neighbourRsrp !== null || selectedNeighbor.neighbourBand) && (
+              <div className="space-y-1.5 mt-3 pt-2 border-t border-gray-100">
+                <div className="text-[10px] font-semibold text-purple-600 uppercase tracking-wide">
+                  📶 Neighbour Cell
+                </div>
+                
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {selectedNeighbor.neighbourBand && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Band</span>
+                      <span className="font-semibold text-purple-600">{selectedNeighbor.neighbourBand}</span>
+                    </div>
+                  )}
+
+                  {selectedNeighbor.neighbourPci && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">PCI</span>
+                      <span className="font-medium text-gray-700">{selectedNeighbor.neighbourPci}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {selectedNeighbor.neighbourRsrp !== null && (
+                  <div className="flex justify-between text-xs items-center">
+                    <span className="text-gray-500">RSRP</span>
+                    <div className="flex items-center gap-1.5">
+                      <span 
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: getRSRPColor(selectedNeighbor.neighbourRsrp, thresholds.rsrp) }}
+                      />
+                      <span 
+                        className="font-semibold"
+                        style={{ color: getRSRPColor(selectedNeighbor.neighbourRsrp, thresholds.rsrp) }}
+                      >
+                        {selectedNeighbor.neighbourRsrp?.toFixed?.(1)} dBm
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
+                {selectedNeighbor.neighbourRsrq !== null && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">RSRQ</span>
+                    <span className="font-medium text-gray-700">
+                      {selectedNeighbor.neighbourRsrq?.toFixed?.(1)} dB
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Session Info */}
+            {selectedNeighbor.sessionId && (
+              <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between text-xs">
+                <span className="text-gray-500">Session ID</span>
+                <span className="font-medium text-gray-700">{selectedNeighbor.sessionId}</span>
+              </div>
+            )}
+
+            {/* Coordinates */}
             <div className="mt-2 pt-2 border-t border-gray-100">
-              <div className="text-[10px] text-gray-400 font-mono">
-                {selectedNeighbor.lat.toFixed(6)}, {selectedNeighbor.lng.toFixed(6)}
+              <div className="text-[10px] text-gray-400 font-mono text-center">
+                📍 {selectedNeighbor.lat.toFixed(6)}, {selectedNeighbor.lng.toFixed(6)}
               </div>
             </div>
           </div>

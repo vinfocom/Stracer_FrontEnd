@@ -765,22 +765,65 @@ const useSessionNeighbors = (sessionIds, enabled) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
+  
   const abortControllerRef = useRef(null);
+  const mountedRef = useRef(true);
+  const lastFetchKeyRef = useRef(null);
+  const isFetchingRef = useRef(false);
 
-  const fetchData = useCallback(async () => {
+  // Stable fetch function
+  const fetchData = useCallback(async (force = false) => {
+    // Create a stable key for this fetch
+    const fetchKey = sessionIds?.sort().join(',') || '';
+    
+    console.log('[useSessionNeighbors] fetchData called:', {
+      sessionIds,
+      enabled,
+      sessionIdsLength: sessionIds?.length || 0,
+      fetchKey,
+      lastFetchKey: lastFetchKeyRef.current,
+      isFetching: isFetchingRef.current,
+    });
+
+    // Skip if conditions not met
     if (!sessionIds?.length || !enabled) {
-      setNeighborData([]);
-      setStats(null);
+      console.log('[useSessionNeighbors] Skipping fetch - conditions not met');
+      if (mountedRef.current) {
+        setNeighborData([]);
+        setStats(null);
+        setError(null);
+      }
       return;
     }
 
+    // Skip if already fetched with same key (unless forced)
+    if (!force && fetchKey === lastFetchKeyRef.current && neighborData.length > 0) {
+      console.log('[useSessionNeighbors] Skipping - already have data for this key');
+      return;
+    }
+
+    // Skip if currently fetching the same data
+    if (isFetchingRef.current && fetchKey === lastFetchKeyRef.current) {
+      console.log('[useSessionNeighbors] Skipping - already fetching this data');
+      return;
+    }
+
+    // Abort any previous request
     if (abortControllerRef.current) {
+      console.log('[useSessionNeighbors] Aborting previous request');
       abortControllerRef.current.abort();
     }
-    abortControllerRef.current = new AbortController();
 
-    setLoading(true);
-    setError(null);
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+    isFetchingRef.current = true;
+
+    if (mountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
+
+    console.log('[useSessionNeighbors] Starting API call with sessionIds:', sessionIds);
 
     try {
       const res = await mapViewApi.getSessionNeighbour({
@@ -788,17 +831,34 @@ const useSessionNeighbors = (sessionIds, enabled) => {
         signal: abortControllerRef.current.signal,
       });
 
+      // Check if component is still mounted and this is still the current request
+      if (!mountedRef.current) {
+        console.log('[useSessionNeighbors] Component unmounted, ignoring response');
+        return;
+      }
+
+      console.log('[useSessionNeighbors] API Response received:', {
+        status: res?.Status,
+        message: res?.Message,
+        dataLength: res?.Data?.length || 0,
+        sessionCount: res?.SessionCount,
+        recordCount: res?.RecordCount,
+        cached: res?.Cached,
+      });
+
       if (res?.Status === 1 && res?.Data) {
         const data = res.Data;
-        console.log("here in line no 793 in unifiedmap view ", res)
+        
+        console.log('[useSessionNeighbors] Raw data sample (first 3 items):', data.slice(0, 3));
+
         const formattedData = data
-          .map((item) => {
+          .map((item, index) => {
             const lat = parseFloat(item.lat);
             const lng = parseFloat(item.lon);
-            const neighborLat = parseFloat(item.neighbour_lat);
-            const neighborLng = parseFloat(item.neighbour_lon);
 
-            if (!isFinite(lat) || !isFinite(lng)) return null;
+            if (!isFinite(lat) || !isFinite(lng)) {
+              return null;
+            }
 
             return {
               id: item.id,
@@ -809,29 +869,51 @@ const useSessionNeighbors = (sessionIds, enabled) => {
               latitude: lat,
               longitude: lng,
               indoorOutdoor: item.indoor_outdoor,
-              network: item.network,
-              networkType: normalizeTechName(item.network_type),
-              provider: normalizeProviderName(item.m_alpha_long || ""),
-              rsrp: parseFloat(item.rsrp) || null,
-              rsrq: parseFloat(item.rsrq) || null,
-              sinr: parseFloat(item.sinr) || null,
+
+              // Primary cell info
+              primaryNetwork: item.primary_network,
+              primaryBand: item.primary_band,
+              primaryRsrp: parseFloat(item.primary_rsrp) || null,
+              primaryRsrq: parseFloat(item.primary_rsrq) || null,
+              primarySinr: parseFloat(item.primary_sinr) || null,
+              primaryPci: item.primary_pci,
+
+              // Provider and network
+              provider: normalizeProviderName(item.provider || ""),
+              networkType: normalizeTechName(item.primary_network),
+
+              // Quality metrics
               mos: parseFloat(item.mos) || null,
-              neighborLat: isFinite(neighborLat) ? neighborLat : null,
-              neighborLng: isFinite(neighborLng) ? neighborLng : null,
-              neighborBand: item.neighbour_band,
-              distanceMeters: parseFloat(item.distance_meters) || 0,
+              dlTpt: parseFloat(item.dl_tpt) || null,
+              ulTpt: parseFloat(item.ul_tpt) || null,
+
+              // Neighbour cell info
+              neighbourBand: item.neighbour_band,
+              neighbourRsrp: parseFloat(item.neighbour_rsrp) || null,
+              neighbourRsrq: parseFloat(item.neighbour_rsrq) || null,
+              neighbourPci: item.neighbour_pci,
+
+              // Legacy compatibility
+              rsrp: parseFloat(item.primary_rsrp) || null,
+              rsrq: parseFloat(item.primary_rsrq) || null,
+              sinr: parseFloat(item.primary_sinr) || null,
             };
           })
           .filter(Boolean);
 
-        setNeighborData(formattedData);
+        console.log('[useSessionNeighbors] Formatted data:', {
+          totalRaw: data.length,
+          totalFormatted: formattedData.length,
+        });
 
+        // Build stats
         const statsObj = {
           sessionCount: res.SessionCount || 0,
           recordCount: res.RecordCount || formattedData.length,
           cached: res.Cached || false,
           byProvider: {},
-          byBand: {},
+          byPrimaryBand: {},
+          byNeighbourBand: {},
           byNetwork: {},
         };
 
@@ -841,21 +923,28 @@ const useSessionNeighbors = (sessionIds, enabled) => {
               statsObj.byProvider[item.provider] = { count: 0, avgRsrp: 0, values: [] };
             }
             statsObj.byProvider[item.provider].count++;
-            if (item.rsrp) statsObj.byProvider[item.provider].values.push(item.rsrp);
+            if (item.primaryRsrp) statsObj.byProvider[item.provider].values.push(item.primaryRsrp);
           }
 
-          if (item.neighborBand) {
-            if (!statsObj.byBand[item.neighborBand]) {
-              statsObj.byBand[item.neighborBand] = { count: 0 };
+          if (item.primaryBand) {
+            if (!statsObj.byPrimaryBand[item.primaryBand]) {
+              statsObj.byPrimaryBand[item.primaryBand] = { count: 0 };
             }
-            statsObj.byBand[item.neighborBand].count++;
+            statsObj.byPrimaryBand[item.primaryBand].count++;
           }
 
-          if (item.networkType) {
-            if (!statsObj.byNetwork[item.networkType]) {
-              statsObj.byNetwork[item.networkType] = { count: 0 };
+          if (item.neighbourBand) {
+            if (!statsObj.byNeighbourBand[item.neighbourBand]) {
+              statsObj.byNeighbourBand[item.neighbourBand] = { count: 0 };
             }
-            statsObj.byNetwork[item.networkType].count++;
+            statsObj.byNeighbourBand[item.neighbourBand].count++;
+          }
+
+          if (item.primaryNetwork) {
+            if (!statsObj.byNetwork[item.primaryNetwork]) {
+              statsObj.byNetwork[item.primaryNetwork] = { count: 0 };
+            }
+            statsObj.byNetwork[item.primaryNetwork].count++;
           }
         });
 
@@ -868,32 +957,77 @@ const useSessionNeighbors = (sessionIds, enabled) => {
           delete statsObj.byProvider[provider].values;
         });
 
-        setStats(statsObj);
-        toast.success(`${formattedData.length} neighbor records loaded`);
+        // Update state only if mounted
+        if (mountedRef.current) {
+          setNeighborData(formattedData);
+          setStats(statsObj);
+          lastFetchKeyRef.current = fetchKey;
+          console.log('[useSessionNeighbors] ✅ Data successfully loaded:', formattedData.length);
+          toast.success(`${formattedData.length} neighbor records loaded`);
+        }
+
       } else {
-        toast.warn(res?.Message || "No neighbor data found");
-        setNeighborData([]);
-        setStats(null);
+        console.warn('[useSessionNeighbors] API returned no data:', res?.Message);
+        if (mountedRef.current) {
+          toast.warn(res?.Message || "No neighbor data found");
+          setNeighborData([]);
+          setStats(null);
+        }
       }
     } catch (err) {
-      if (err.name === "AbortError") return;
-      toast.error(`Failed to fetch neighbor data: ${err.message}`);
-      setError(err.message);
-      setNeighborData([]);
-      setStats(null);
+      // Check if this was an abort/cancel
+      if (isRequestCancelled(err)) {
+        console.log('[useSessionNeighbors] Request was cancelled (expected during cleanup)');
+        return; // Don't update state or show error for cancelled requests
+      }
+      
+      console.error('[useSessionNeighbors] ❌ API Error:', err.message);
+      
+      if (mountedRef.current) {
+        setError(err.message);
+        toast.error(`Failed to fetch neighbor data: ${err.message}`);
+      }
     } finally {
-      setLoading(false);
+      isFetchingRef.current = false;
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [sessionIds, enabled]);
+  }, [sessionIds, enabled]); // Remove neighborData from dependencies
 
+  // Handle mount/unmount
   useEffect(() => {
-    fetchData();
-
+    mountedRef.current = true;
+    
     return () => {
+      console.log('[useSessionNeighbors] Component unmounting');
+      mountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
+  }, []);
+
+  // Fetch data when dependencies change
+  useEffect(() => {
+    console.log('[useSessionNeighbors] useEffect triggered:', { sessionIds, enabled });
+    
+    // Add a small delay to prevent rapid re-fetches
+    const timeoutId = setTimeout(() => {
+      fetchData();
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      // Don't abort here - let the request complete
+    };
+  }, [sessionIds?.join(','), enabled]); // Use stable dependency
+
+  // Manual refetch function
+  const refetch = useCallback(() => {
+    console.log('[useSessionNeighbors] Manual refetch triggered');
+    lastFetchKeyRef.current = null; // Reset to force refetch
+    fetchData(true);
   }, [fetchData]);
 
   return {
@@ -901,7 +1035,7 @@ const useSessionNeighbors = (sessionIds, enabled) => {
     stats,
     loading,
     error,
-    refetch: fetchData,
+    refetch,
   };
 };
 
@@ -1278,7 +1412,7 @@ const UnifiedMapView = () => {
   const [isOpacityCollapsed, setIsOpacityCollapsed] = useState(true);
   const [opacity, setOpacity] = useState(0.8);
 
-  const [showSessionNeighbors, setShowSessionNeighbors] = useState(false);
+  const [showSessionNeighbors, setShowSessionNeighbors] = useState(true);
 
   const [bestNetworkEnabled, setBestNetworkEnabled] = useState(false);
   const [bestNetworkWeights, setBestNetworkWeights] = useState(DEFAULT_WEIGHTS);
@@ -1351,13 +1485,25 @@ const UnifiedMapView = () => {
   );
 
   const {
-    neighborData: sessionNeighborData,
-    stats: sessionNeighborStats,
-    loading: sessionNeighborLoading,
-    error: sessionNeighborError,
-    refetch: refetchSessionNeighbors,
-  } = useSessionNeighbors(sessionIds, showSessionNeighbors);
+  neighborData: sessionNeighborData,
+  stats: sessionNeighborStats,
+  loading: sessionNeighborLoading,
+  error: sessionNeighborError,
+  refetch: refetchSessionNeighbors,
+} = useSessionNeighbors(sessionIds, showSessionNeighbors);
 
+
+
+useEffect(() => {
+  console.log('[UnifiedMapView] Session Neighbor Data Updated:', {
+    showSessionNeighbors,
+    sessionNeighborLoading,
+    sessionNeighborError,
+    dataLength: sessionNeighborData?.length || 0,
+    statsAvailable: !!sessionNeighborStats,
+    sample: sessionNeighborData?.slice(0, 2),
+  });
+}, [sessionNeighborData, sessionNeighborStats, sessionNeighborLoading, sessionNeighborError, showSessionNeighbors]);
   const {
     polygons,
     loading: polygonLoading,
@@ -1801,6 +1947,23 @@ const UnifiedMapView = () => {
     refetchAreaPolygons, refetchSites, refetchNeighbors, refetchSessionNeighbors
   ]);
 
+  const filteredNeighbors = useMemo(() => {
+  // 1. If no data, return empty
+  if (!sessionNeighborData?.length) return [];
+
+  // 2. If filtering is disabled, return all data
+  // Note: Adjust 'onlyInsidePolygons' to whatever flag triggers your filter
+  if (!onlyInsidePolygons || !showPolygons || !polygons?.length) {
+    return sessionNeighborData;
+  }
+
+  // 3. Filter points that are inside at least one visible polygon
+  return sessionNeighborData.filter((point) => {
+    // Check if point exists inside ANY of the loaded polygons
+    return polygons.some((poly) => isPointInPolygon(point, poly));
+  });
+}, [sessionNeighborData, onlyInsidePolygons, showPolygons, polygons]);
+
   const handlePolygonMouseOver = useCallback((poly, e) => {
     setHoveredPolygon(poly);
     setHoverPosition({ x: e.domEvent.clientX, y: e.domEvent.clientY });
@@ -2077,16 +2240,24 @@ const UnifiedMapView = () => {
                 />
               )}
 
-              {showNeighbors && (allNeighbors?.length || 0) > 0 && (
-                <NeighborHeatmapLayer
-                  allNeighbors={sessionNeighborData}
-                  showNeighbors={showNeighbors}
-                  selectedMetric={selectedMetric}
-                  useHeatmap={false}
-                  radius={35}
-                  opacity={0.7}
-                />
-              )}
+      {showSessionNeighbors && sessionNeighborData?.length > 0 && (
+  <>
+    {console.log('[UnifiedMapView] Rendering NeighborHeatmapLayer:', {
+      showSessionNeighbors,
+      dataLength: sessionNeighborData.length,
+    })}
+    <NeighborHeatmapLayer
+      allNeighbors={sessionNeighborData}
+      showNeighbors={showSessionNeighbors}
+      selectedMetric={selectedMetric}
+      useHeatmap={false}
+      radius={35}
+      opacity={0.7}
+      thresholds={effectiveThresholds}
+      debug={true}
+    />
+  </>
+)}
 
               {enableSiteToggle && showSiteSectors && (
                 <NetworkPlannerMap
