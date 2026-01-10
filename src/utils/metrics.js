@@ -133,7 +133,7 @@ export const getPciColor = (pciValue) => {
   return PCI_COLOR_PALETTE[Math.abs(Math.floor(numValue)) % PCI_COLOR_PALETTE.length];
 };
 
-
+// metric 
 export const METRIC_CONFIG = {
   rsrp: {
     thresholdKey: 'rsrp',
