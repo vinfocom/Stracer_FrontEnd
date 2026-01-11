@@ -38,8 +38,7 @@ const getRSRPQuality = (rsrp, thresholds = []) => {
   if (rsrp >= excellent) return 'Excellent';
   if (rsrp >= good) return 'Good';
   if (rsrp >= fair) return 'Fair';
-  if (rsrp >= poor) return 'Poor';
-  return 'Very Poor';
+  return 'Poor'; // If rsrp is below poor threshold
 };
 
 // Get color based on RSRQ value
@@ -132,7 +131,7 @@ const NeighborHeatmapLayer = React.memo(({
 }) => {
   const map = useGoogleMap();
   const heatmapRef = useRef(null);
-  const isCleanedUpRef = useRef(false);
+  const isCleanedUpRef = useRef(false); // Tracks if the GM HeatmapLayer object has been cleaned up
   
   const [isVisualizationReady, setIsVisualizationReady] = useState(false);
   const [selectedNeighbor, setSelectedNeighbor] = useState(null);
@@ -152,7 +151,7 @@ const NeighborHeatmapLayer = React.memo(({
 
   // Log on mount/update
   useEffect(() => {
-    console.log('[NeighborHeatmapLayer] Props received:', {
+    logDebug('Props received:', {
       showNeighbors,
       useHeatmap,
       totalNeighbors: allNeighbors?.length || 0,
@@ -163,7 +162,7 @@ const NeighborHeatmapLayer = React.memo(({
       hasMap: !!map,
       isVisualizationReady,
     });
-  }, [showNeighbors, useHeatmap, allNeighbors?.length, selectedMetric, radius, opacity, thresholds, map, isVisualizationReady]);
+  }, [showNeighbors, useHeatmap, allNeighbors?.length, selectedMetric, radius, opacity, thresholds, map, isVisualizationReady, logDebug]);
 
   // Check visualization library
   useEffect(() => {
@@ -189,13 +188,19 @@ const NeighborHeatmapLayer = React.memo(({
 
   // Process neighbors data
   const neighbors = useMemo(() => {
-    console.log('[NeighborHeatmapLayer] Processing neighbors:', {
+    logDebug('Processing neighbors:', {
       showNeighbors,
       rawDataLength: allNeighbors?.length || 0,
     });
 
     if (!showNeighbors || !allNeighbors?.length) {
-      console.log('[NeighborHeatmapLayer] No neighbors to process');
+      logDebug('No neighbors to process');
+      // Update initial stats even if no data to process
+      setDrawingStats(prev => ({
+        ...prev,
+        totalReceived: allNeighbors?.length || 0,
+        validPoints: 0,
+      }));
       return [];
     }
 
@@ -266,7 +271,7 @@ const NeighborHeatmapLayer = React.memo(({
         };
       });
 
-    console.log('[NeighborHeatmapLayer] Processed neighbors:', {
+    logDebug('Processed neighbors:', {
       total: processed.length,
       sample: processed.slice(0, 3),
       withRsrp: processed.filter(n => n.rsrp !== null).length,
@@ -280,7 +285,7 @@ const NeighborHeatmapLayer = React.memo(({
     }));
 
     return processed;
-  }, [allNeighbors, showNeighbors, thresholds, selectedMetric, debug]);
+  }, [allNeighbors, showNeighbors, thresholds, selectedMetric, debug, logDebug]);
 
   const gradient = useMemo(() => [
     'rgba(0, 0, 0, 0)',
@@ -297,59 +302,61 @@ const NeighborHeatmapLayer = React.memo(({
     'rgba(255, 0, 0, 1)',
   ], []);
 
+  // Refactored cleanup function: only handles the Google Maps HeatmapLayer object
   const cleanupHeatmap = useCallback(() => {
     if (heatmapRef.current) {
       try {
         heatmapRef.current.setMap(null);
         heatmapRef.current.setData([]);
-        console.log('[NeighborHeatmapLayer] Heatmap cleaned up');
+        logDebug('Heatmap Google Maps object cleaned up.');
       } catch (error) {
         console.warn('[NeighborHeatmapLayer] Heatmap cleanup warning:', error);
       }
       heatmapRef.current = null;
     }
-    isCleanedUpRef.current = true;
-    setDrawingStats(prev => ({ ...prev, isDrawing: false, drawnPoints: 0 }));
-  }, []);
+    isCleanedUpRef.current = true; // Mark that the Google Maps HeatmapLayer object has been cleaned up
+  }, [logDebug]);
 
-  // Main heatmap effect
+  // Effect to manage drawingStats (drawnPoints, isDrawing) based on render mode
   useEffect(() => {
-    isCleanedUpRef.current = false;
-
-    console.log('[NeighborHeatmapLayer] Heatmap effect triggered:', {
-      showNeighbors,
-      useHeatmap,
-      hasMap: !!map,
-      isVisualizationReady,
-      neighborsCount: neighbors.length,
-    });
-
-    if (!showNeighbors) {
-      console.log('[NeighborHeatmapLayer] showNeighbors is false, cleaning up');
+    if (!showNeighbors || neighbors.length === 0) {
+      // If no neighbors or not shown, reset stats and cleanup heatmap
+      setDrawingStats(prev => ({ ...prev, drawnPoints: 0, isDrawing: false }));
       cleanupHeatmap();
-      return cleanupHeatmap;
+      return;
     }
 
-    if (!map) {
-      console.log('[NeighborHeatmapLayer] No map instance');
-      return cleanupHeatmap;
-    }
-
-    if (!useHeatmap) {
-      console.log('[NeighborHeatmapLayer] useHeatmap is false, will use rectangles');
+    if (useHeatmap) {
+      // For heatmap, the actual drawnPoints will be set by the heatmap creation effect
+      // We set isDrawing to true here to indicate intent to draw a heatmap
+      setDrawingStats(prev => ({
+        ...prev,
+        drawnPoints: 0, // Reset for now, heatmap effect will update with actual count
+        isDrawing: true,
+      }));
+    } else {
+      // For rectangles, all valid neighbors are drawn
+      setDrawingStats(prev => ({
+        ...prev,
+        drawnPoints: neighbors.length,
+        isDrawing: true,
+      }));
+      // If switching from heatmap to rectangles, ensure heatmap object is removed
       cleanupHeatmap();
-      return cleanupHeatmap;
     }
+  }, [showNeighbors, useHeatmap, neighbors.length, cleanupHeatmap]);
 
-    if (!isVisualizationReady) {
-      console.log('[NeighborHeatmapLayer] Visualization library not ready');
-      return cleanupHeatmap;
-    }
 
-    if (neighbors.length === 0) {
-      console.log('[NeighborHeatmapLayer] No neighbors to draw');
+  // Main heatmap creation/management effect
+  useEffect(() => {
+    isCleanedUpRef.current = false; // Reset the cleanup flag for this effect run
+
+    // Conditions where heatmap should NOT be active
+    if (!map || !isVisualizationReady || !useHeatmap || !showNeighbors || neighbors.length === 0) {
+      // Clean up any existing heatmap object
       cleanupHeatmap();
-      return cleanupHeatmap;
+      // No need to set drawingStats here; the other useEffect handles the general reset
+      return;
     }
 
     // Create heatmap data with weights based on selected metric and thresholds
@@ -362,18 +369,19 @@ const NeighborHeatmapLayer = React.memo(({
         
         if (selectedMetric === 'rsrp') {
           // RSRP: typically -140 to -40, higher is better
-          const min = getThresholdValue(metricThresholds, 3, -110);
-          const max = getThresholdValue(metricThresholds, 0, -80);
+          // Use thresholds from settings if available, otherwise defaults
+          const min = getThresholdValue(thresholds.rsrp, 3, -110);
+          const max = getThresholdValue(thresholds.rsrp, 0, -80);
           weight = Math.max(0.1, Math.min(1, (value - min) / (max - min)));
         } else if (selectedMetric === 'rsrq') {
           // RSRQ: typically -20 to 0, higher is better
-          const min = getThresholdValue(metricThresholds, 2, -20);
-          const max = getThresholdValue(metricThresholds, 0, -10);
+          const min = getThresholdValue(thresholds.rsrq, 2, -20);
+          const max = getThresholdValue(thresholds.rsrq, 0, -10);
           weight = Math.max(0.1, Math.min(1, (value - min) / (max - min)));
         } else if (selectedMetric === 'sinr') {
           // SINR: typically -10 to 30, higher is better
-          const min = getThresholdValue(metricThresholds, 2, 0);
-          const max = getThresholdValue(metricThresholds, 0, 20);
+          const min = getThresholdValue(thresholds.sinr, 2, 0);
+          const max = getThresholdValue(thresholds.sinr, 0, 20);
           weight = Math.max(0.1, Math.min(1, (value - min) / (max - min)));
         }
       }
@@ -384,7 +392,7 @@ const NeighborHeatmapLayer = React.memo(({
       };
     });
 
-    console.log('[NeighborHeatmapLayer] Creating heatmap with data:', {
+    logDebug('Attempting to create heatmap with data:', {
       dataPoints: heatmapData.length,
       radius,
       opacity,
@@ -393,6 +401,7 @@ const NeighborHeatmapLayer = React.memo(({
       sampleWeights: heatmapData.slice(0, 5).map(d => d.weight.toFixed(3)),
     });
 
+    // Ensure any existing heatmap object is removed before creating a new one
     cleanupHeatmap();
 
     try {
@@ -405,61 +414,49 @@ const NeighborHeatmapLayer = React.memo(({
         gradient: gradient,
         maxIntensity: 10,
       });
-      
-      isCleanedUpRef.current = false;
-      
+      isCleanedUpRef.current = false; // Heatmap object is now active
+
+      // Update drawingStats with actual drawn count for heatmap
       setDrawingStats(prev => ({
         ...prev,
         drawnPoints: heatmapData.length,
         isDrawing: true,
       }));
 
-      console.log('[NeighborHeatmapLayer] ✅ Heatmap created successfully:', {
-        pointsDrawn: heatmapData.length,
-        heatmapInstance: !!heatmapRef.current,
-      });
+      logDebug('[NeighborHeatmapLayer] ✅ Heatmap created successfully');
 
     } catch (error) {
       console.error('[NeighborHeatmapLayer] ❌ Heatmap creation error:', error);
-      cleanupHeatmap();
+      cleanupHeatmap(); // Clean up if creation failed
+      // Reset drawing stats on heatmap creation failure
+      setDrawingStats(prev => ({ ...prev, drawnPoints: 0, isDrawing: false }));
     }
 
+    // Cleanup function for this specific heatmap effect
     return () => {
-      if (!isCleanedUpRef.current) {
+      if (!isCleanedUpRef.current) { // Only run if cleanupHeatmap hasn't been called manually yet
+        logDebug('Heatmap effect cleanup return function running');
         cleanupHeatmap();
+        // Reset drawing stats when this specific effect cleans up, e.g., component unmounts
+        setDrawingStats(prev => ({ ...prev, isDrawing: false, drawnPoints: 0 }));
       }
     };
   }, [
-    map, 
-    showNeighbors, 
-    neighbors, 
-    useHeatmap, 
-    isVisualizationReady, 
-    selectedMetric, 
-    radius, 
-    opacity, 
-    gradient,
-    thresholds,
-    cleanupHeatmap
+    map, showNeighbors, neighbors, useHeatmap, isVisualizationReady,
+    selectedMetric, radius, opacity, gradient, thresholds, cleanupHeatmap, logDebug
   ]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount (redundant with the cleanup return functions, but good for explicit safety)
   useEffect(() => {
     return () => {
-      console.log('[NeighborHeatmapLayer] Component unmounting, cleaning up');
-      if (heatmapRef.current) {
-        try {
-          heatmapRef.current.setMap(null);
-          heatmapRef.current.setData([]);
-        } catch (e) {
-          // Ignore
-        }
-        heatmapRef.current = null;
-      }
+      logDebug('Component unmounting, cleaning up');
+      cleanupHeatmap();
+      // Ensure drawingStats are reset on full component unmount
+      setDrawingStats(prev => ({ ...prev, isDrawing: false, drawnPoints: 0 }));
     };
-  }, []);
+  }, [cleanupHeatmap, logDebug]);
 
-  // Update heatmap options dynamically
+  // Update heatmap options dynamically (only if heatmap is active)
   useEffect(() => {
     if (heatmapRef.current && showNeighbors && useHeatmap) {
       try {
@@ -467,18 +464,18 @@ const NeighborHeatmapLayer = React.memo(({
           radius: radius,
           opacity: opacity,
         });
-        console.log('[NeighborHeatmapLayer] Heatmap options updated:', { radius, opacity });
+        logDebug('Heatmap options updated:', { radius, opacity });
       } catch (e) {
         console.warn('[NeighborHeatmapLayer] Failed to update heatmap options:', e);
       }
     }
-  }, [radius, opacity, showNeighbors, useHeatmap]);
+  }, [radius, opacity, showNeighbors, useHeatmap, logDebug]);
 
   const handleRectangleClick = useCallback((neighbor) => {
-    console.log('[NeighborHeatmapLayer] Rectangle clicked:', neighbor);
+    logDebug('Rectangle clicked:', neighbor);
     setSelectedNeighbor(neighbor);
     onNeighborClick?.(neighbor);
-  }, [onNeighborClick]);
+  }, [onNeighborClick, logDebug]);
 
   // Clear selection when hidden
   useEffect(() => {
@@ -488,11 +485,11 @@ const NeighborHeatmapLayer = React.memo(({
   }, [showNeighbors]);
 
   if (!showNeighbors || neighbors.length === 0) {
-    console.log('[NeighborHeatmapLayer] Rendering null - no data to show');
+    logDebug('Rendering null - no data to show');
     return null;
   }
 
-  console.log('[NeighborHeatmapLayer] Rendering:', {
+  logDebug('Rendering elements:', {
     useHeatmap,
     rectangleCount: !useHeatmap ? neighbors.length : 0,
     hasSelectedNeighbor: !!selectedNeighbor,

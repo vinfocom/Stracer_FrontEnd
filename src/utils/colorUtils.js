@@ -41,7 +41,7 @@ export const normalizeProviderName = (rawName) => {
   return s;
 };
 
-// In your colorUtils.js file
+
 
 export const normalizeTechName = (tech, band = null) => {
   // 1. Check Band First: NR bands like "n78", "n41", "n1" always imply 5G

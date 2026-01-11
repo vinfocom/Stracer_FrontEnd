@@ -1,184 +1,238 @@
-// components/maps/DeckGLOverlay.jsx
+// src/components/maps/DeckGLOverlay.jsx
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
-import { ScatterplotLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, PolygonLayer } from '@deck.gl/layers';
 
-// Convert hex color to RGB array
-const hexToRgb = (hex) => {
-  if (!hex) return [128, 128, 128];
+// Convert meters to degrees for square bounds
+const metersToLatDeg = (meters) => meters / 111320;
+const metersToLngDeg = (meters, lat) => meters / (111320 * Math.cos((lat * Math.PI) / 180));
+
+// Generate square polygon coordinates
+const getSquarePolygon = (lat, lng, sizeMeters) => {
+  const halfLatDeg = metersToLatDeg(sizeMeters / 2);
+  const halfLngDeg = metersToLngDeg(sizeMeters / 2, lat);
   
-  // Handle shorthand hex
+  return [
+    [lng - halfLngDeg, lat - halfLatDeg],
+    [lng + halfLngDeg, lat - halfLatDeg],
+    [lng + halfLngDeg, lat + halfLatDeg],
+    [lng - halfLngDeg, lat + halfLatDeg],
+    [lng - halfLngDeg, lat - halfLatDeg], // Close the polygon
+  ];
+};
+
+// Parse hex color to RGB array
+const hexToRgb = (hex) => {
+  if (!hex || typeof hex !== 'string') return [128, 128, 128, 200];
+  
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if (result) {
     return [
       parseInt(result[1], 16),
       parseInt(result[2], 16),
       parseInt(result[3], 16),
+      200, // Alpha
     ];
   }
-  
-  // Handle shorthand like #fff
-  const shorthand = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex);
-  if (shorthand) {
-    return [
-      parseInt(shorthand[1] + shorthand[1], 16),
-      parseInt(shorthand[2] + shorthand[2], 16),
-      parseInt(shorthand[3] + shorthand[3], 16),
-    ];
-  }
-  
-  return [128, 128, 128];
-};
-
-// Pre-compute colors for better performance
-const createColorCache = () => {
-  const cache = new Map();
-  return (hex) => {
-    if (cache.has(hex)) return cache.get(hex);
-    const rgb = hexToRgb(hex);
-    cache.set(hex, rgb);
-    return rgb;
-  };
+  return [128, 128, 128, 200];
 };
 
 const DeckGLOverlay = ({
   map,
-  locations,
+  // Primary locations (circles)
+  locations = [],
   getColor,
   radius = 8,
-  opacity = 1,
+  opacity = 0.8,
   selectedIndex = null,
   onClick,
-  enablePicking = true,
   radiusMinPixels = 2,
-  radiusMaxPixels = 50,
+  radiusMaxPixels = 40,
+  showPrimaryLogs = true,
+  
+  // Neighbor locations (squares)
+  neighbors = [],
+  getNeighborColor,
+  neighborSquareSize = 25, // meters
+  neighborOpacity = 0.7,
+  onNeighborClick,
+  showNeighbors = true,
+  
+  // Shared
+  pickable = true,
+  autoHighlight = true,
 }) => {
   const overlayRef = useRef(null);
-  const colorCacheRef = useRef(createColorCache());
+  const layersRef = useRef([]);
 
   // Initialize overlay
   useEffect(() => {
     if (!map) return;
 
-    const overlay = new GoogleMapsOverlay({
-      interleaved: true,
-    });
-    
-    overlay.setMap(map);
-    overlayRef.current = overlay;
+    if (!overlayRef.current) {
+      overlayRef.current = new GoogleMapsOverlay({
+        interleaved: true,
+      });
+    }
+
+    overlayRef.current.setMap(map);
 
     return () => {
-      overlay.setMap(null);
-      overlayRef.current = null;
+      if (overlayRef.current) {
+        overlayRef.current.setMap(null);
+        overlayRef.current.finalize();
+        overlayRef.current = null;
+      }
     };
   }, [map]);
 
-  // Pre-compute position data for better performance
-  const positionData = useMemo(() => {
-    if (!locations?.length) return null;
-
-    // Use Float32Array for better memory efficiency with large datasets
-    const positions = new Float32Array(locations.length * 2);
-    const colors = new Uint8Array(locations.length * 4);
-    const colorCache = colorCacheRef.current;
-
-    for (let i = 0; i < locations.length; i++) {
-      const loc = locations[i];
-      const idx2 = i * 2;
-      const idx4 = i * 4;
-
-      positions[idx2] = loc.lng;
-      positions[idx2 + 1] = loc.lat;
-
-      const hexColor = getColor(loc);
-      const rgb = colorCache(hexColor);
-      
-      colors[idx4] = rgb[0];
-      colors[idx4 + 1] = rgb[1];
-      colors[idx4 + 2] = rgb[2];
-      colors[idx4 + 3] = Math.round(opacity * 255);
+  // Handle primary location click
+  const handlePrimaryClick = useCallback((info, event) => {
+    if (info.object && onClick) {
+      onClick(info.index, info.object);
     }
+  }, [onClick]);
 
-    return { positions, colors, length: locations.length };
-  }, [locations, getColor, opacity]);
+  // Handle neighbor click
+  const handleNeighborClick = useCallback((info, event) => {
+    if (info.object && onNeighborClick) {
+      onNeighborClick(info.object);
+    }
+  }, [onNeighborClick]);
 
-  // Create and update layer
+  // Memoize primary locations data
+  const primaryData = useMemo(() => {
+    if (!showPrimaryLogs || !locations?.length) return [];
+    
+    return locations.map((loc, idx) => ({
+      ...loc,
+      index: idx,
+      position: [loc.lng, loc.lat],
+      color: getColor ? hexToRgb(getColor(loc)) : [16, 185, 129, 200],
+    }));
+  }, [locations, showPrimaryLogs, getColor]);
+
+  // Memoize neighbor data with pre-computed polygons
+  const neighborData = useMemo(() => {
+    if (!showNeighbors || !neighbors?.length) return [];
+    
+    return neighbors.map((n, idx) => ({
+      ...n,
+      index: idx,
+      polygon: getSquarePolygon(n.lat, n.lng, neighborSquareSize),
+      color: getNeighborColor ? hexToRgb(getNeighborColor(n)) : [139, 92, 246, 180],
+    }));
+  }, [neighbors, showNeighbors, neighborSquareSize, getNeighborColor]);
+
+  // Create and update layers
   useEffect(() => {
-    if (!overlayRef.current || !positionData) {
-      overlayRef.current?.setProps({ layers: [] });
-      return;
+    if (!overlayRef.current || !map) return;
+
+    const layers = [];
+
+    // Primary locations layer (Circles)
+    if (showPrimaryLogs && primaryData.length > 0) {
+      const scatterLayer = new ScatterplotLayer({
+        id: 'primary-logs-layer',
+        data: primaryData,
+        getPosition: d => d.position,
+        getFillColor: d => d.color,
+        getRadius: d => d.index === selectedIndex ? radius * 1.5 : radius,
+        radiusMinPixels,
+        radiusMaxPixels,
+        opacity,
+        pickable,
+        autoHighlight,
+        highlightColor: [255, 255, 0, 200],
+        onClick: handlePrimaryClick,
+        updateTriggers: {
+          getFillColor: [getColor],
+          getRadius: [selectedIndex, radius],
+        },
+        // Performance optimizations
+        parameters: {
+          depthTest: false,
+        },
+        extensions: [],
+      });
+      layers.push(scatterLayer);
     }
 
-    const { positions, colors, length } = positionData;
+    // Neighbor locations layer (Squares)
+    if (showNeighbors && neighborData.length > 0) {
+      const polygonLayer = new PolygonLayer({
+        id: 'neighbor-logs-layer',
+        data: neighborData,
+        getPolygon: d => d.polygon,
+        getFillColor: d => d.color,
+        getLineColor: d => {
+          const c = d.color;
+          return [c[0], c[1], c[2], 220]; // Slightly more opaque for border
+        },
+        getLineWidth: 1,
+        lineWidthMinPixels: 1,
+        lineWidthMaxPixels: 3,
+        filled: true,
+        stroked: true,
+        opacity: neighborOpacity,
+        pickable,
+        autoHighlight,
+        highlightColor: [255, 255, 0, 180],
+        onClick: handleNeighborClick,
+        updateTriggers: {
+          getFillColor: [getNeighborColor],
+          getPolygon: [neighborSquareSize],
+        },
+        // Performance optimizations
+        parameters: {
+          depthTest: false,
+        },
+      });
+      layers.push(polygonLayer);
+    }
 
-    const scatterLayer = new ScatterplotLayer({
-      id: 'location-scatter',
-      data: { length, attributes: { getPosition: { value: positions, size: 2 } } },
-      
-      // Optimized for large datasets
-      _dataDiff: null,
-      positionFormat: 'XY',
-      
-      getPosition: (_, { index, target }) => {
-        target[0] = positions[index * 2];
-        target[1] = positions[index * 2 + 1];
-        target[2] = 0;
-        return target;
-      },
-      
-      getFillColor: (_, { index, target }) => {
-        const idx4 = index * 4;
-        target[0] = colors[idx4];
-        target[1] = colors[idx4 + 1];
-        target[2] = colors[idx4 + 2];
-        target[3] = colors[idx4 + 3];
-        return target;
-      },
+    layersRef.current = layers;
+    overlayRef.current.setProps({ layers });
 
-      getRadius: (_, { index }) => {
-        return selectedIndex === index ? radius * 1.5 : radius;
-      },
+    // Log performance info in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DeckGLOverlay] Layers updated:', {
+        primaryCount: primaryData.length,
+        neighborCount: neighborData.length,
+        totalLayers: layers.length,
+      });
+    }
+  }, [
+    map, 
+    primaryData, 
+    neighborData, 
+    showPrimaryLogs, 
+    showNeighbors,
+    selectedIndex, 
+    radius, 
+    radiusMinPixels, 
+    radiusMaxPixels, 
+    opacity,
+    neighborOpacity,
+    neighborSquareSize,
+    pickable, 
+    autoHighlight,
+    handlePrimaryClick,
+    handleNeighborClick,
+    getColor,
+    getNeighborColor,
+  ]);
 
-      radiusScale: 1,
-      radiusMinPixels,
-      radiusMaxPixels,
-      radiusUnits: 'pixels',
-      
-      filled: true,
-      stroked: selectedIndex !== null,
-      lineWidthMinPixels: 1,
-      getLineColor: [255, 255, 255, 200],
-      getLineWidth: (_, { index }) => selectedIndex === index ? 2 : 0,
-      
-      pickable: enablePicking,
-      autoHighlight: enablePicking,
-      highlightColor: [255, 255, 255, 100],
-      
-      onClick: enablePicking ? (info) => {
-        if (info.index >= 0 && onClick) {
-          onClick(info.index, locations[info.index]);
-        }
-      } : undefined,
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (overlayRef.current) {
+        overlayRef.current.setProps({ layers: [] });
+      }
+    };
+  }, []);
 
-      // Performance optimizations
-      updateTriggers: {
-        getFillColor: [colors],
-        getRadius: [selectedIndex, radius],
-        getLineWidth: [selectedIndex],
-      },
-
-      // GPU acceleration settings
-      parameters: {
-        depthTest: false,
-      },
-    });
-
-    overlayRef.current.setProps({
-      layers: [scatterLayer],
-    });
-  }, [positionData, radius, selectedIndex, onClick, enablePicking, radiusMinPixels, radiusMaxPixels, locations]);
-
-  return null;
+  return null; // This component doesn't render DOM elements
 };
 
 export default React.memo(DeckGLOverlay);

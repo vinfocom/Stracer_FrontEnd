@@ -2150,127 +2150,89 @@ useEffect(() => {
               </div>
             </div>
           ) : (
-            <MapWithMultipleCircles
-              isLoaded={isLoaded}
-              loadError={loadError}
-              locations={locationsToDisplay}
-              thresholds={effectiveThresholds}
-              selectedMetric={selectedMetric}
-              technologyTransitions={technologyTransitions}
-              techHandOver={techHandOver}
-              colorBy={colorBy}
-              activeMarkerIndex={null}
-              onMarkerClick={() => { }}
-              options={mapOptions}
-              center={mapCenter}
-              defaultZoom={13}
-              fitToLocations={(locationsToDisplay?.length || 0) > 0}
-              onLoad={handleMapLoad}
-              pointRadius={5}
-              projectId={projectId}
-              polygonSource={polygonSource}
-              enablePolygonFilter={true}
-              showPolygonBoundary={true}
-              enableGrid={enableGrid}
-              gridSizeMeters={gridSizeMeters}
-              areaEnabled={areaEnabled}
-              onFilteredLocationsChange={setMapVisibleLocations}
-              opacity={opacity}
-            >
-              {showPolygons && (visiblePolygons || []).map((poly) => (
-                <Polygon
-                  key={poly.uid}
-                  paths={poly.paths[0]}
-                  options={{
-                    fillColor: poly.fillColor || "#4285F4",
-                    fillOpacity: poly.fillOpacity || 0.35,
-                    strokeColor: onlyInsidePolygons ? poly.fillColor : "#2563eb",
-                    strokeWeight: 2,
-                    strokeOpacity: 0.9,
-                    clickable: true,
-                    zIndex: 50,
-                  }}
-                />
-              ))}
+            // In UnifiedMapView.jsx - Replace the NeighborHeatmapLayer usage
 
-              {areaEnabled && !bestNetworkEnabled && (areaPolygonsWithColors || []).map((poly) => (
-                <Polygon
-                  key={poly.uid}
-                  paths={poly.paths[0]}
-                  options={{
-                    fillColor: poly.fillColor || "#9333ea",
-                    fillOpacity: poly.fillOpacity || 0.7,
-                    strokeColor: poly.fillColor || "#7c3aed",
-                    strokeWeight: 2.5,
-                    strokeOpacity: 0.9,
-                    clickable: true,
-                    zIndex: 60,
-                  }}
-                  onMouseOver={(e) => handlePolygonMouseOver(poly, e)}
-                  onMouseMove={handlePolygonMouseMove}
-                  onMouseOut={handlePolygonMouseOut}
-                />
-              ))}
-
-              {bestNetworkEnabled && (allBestNetworkPolygons || []).map((poly) => (
-                <Polygon
-                  key={poly.uid}
-                  paths={poly.paths[0]}
-                  options={{
-                    fillColor: poly.fillColor || "#3B82F6",
-                    fillOpacity: poly.fillOpacity || 0.65,
-                    strokeColor: poly.fillColor || "#1E40AF",
-                    strokeWeight: poly.strokeWeight || 2,
-                    strokeOpacity: 0.95,
-                    clickable: true,
-                    zIndex: 70,
-                  }}
-                  onMouseOver={(e) => handlePolygonMouseOver(poly, e)}
-                  onMouseMove={handlePolygonMouseMove}
-                  onMouseOut={handlePolygonMouseOut}
-                />
-              ))}
-
-              {enableSiteToggle && showSiteMarkers && (
-                <SiteMarkers
-                  sites={siteData}
-                  showMarkers={showSiteMarkers}
-                  circleRadius={0}
-                  viewport={viewport}
-                />
-              )}
-
-      {showSessionNeighbors && sessionNeighborData?.length > 0 && (
-  <>
-    {console.log('[UnifiedMapView] Rendering NeighborHeatmapLayer:', {
-      showSessionNeighbors,
-      dataLength: sessionNeighborData.length,
-    })}
-    <NeighborHeatmapLayer
-      allNeighbors={sessionNeighborData}
-      showNeighbors={showSessionNeighbors}
-      selectedMetric={selectedMetric}
-      useHeatmap={false}
-      radius={35}
-      opacity={0.7}
-      thresholds={effectiveThresholds}
-      debug={true}
+// Remove the NeighborHeatmapLayer from children and pass data as props:
+<MapWithMultipleCircles
+  isLoaded={isLoaded}
+  loadError={loadError}
+  locations={locationsToDisplay}
+  thresholds={effectiveThresholds}
+  selectedMetric={selectedMetric}
+  technologyTransitions={technologyTransitions}
+  techHandOver={techHandOver}
+  colorBy={colorBy}
+  activeMarkerIndex={null}
+  onMarkerClick={() => {}}
+  options={mapOptions}
+  center={mapCenter}
+  defaultZoom={13}
+  fitToLocations={(locationsToDisplay?.length || 0) > 0}
+  onLoad={handleMapLoad}
+  pointRadius={5}
+  projectId={projectId}
+  polygonSource={polygonSource}
+  enablePolygonFilter={true}
+  showPolygonBoundary={true}
+  enableGrid={enableGrid}
+  gridSizeMeters={gridSizeMeters}
+  areaEnabled={areaEnabled}
+  onFilteredLocationsChange={setMapVisibleLocations}
+  opacity={opacity}
+  
+  // ========= NEW: Neighbor Props =========
+  neighborData={sessionNeighborData}
+  showNeighbors={showSessionNeighbors}
+  neighborSquareSize={25}  // Size in meters
+  neighborOpacity={0.7}
+  onNeighborClick={(neighbor) => {
+    console.log('Neighbor clicked:', neighbor);
+  }}
+  onFilteredNeighborsChange={(filtered) => {
+    console.log('Filtered neighbors:', filtered.length);
+  }}
+  debugNeighbors={true}  // Set to false in production
+>
+  {/* Other children like SiteMarkers, NetworkPlannerMap, Polygons, etc. */}
+  {showPolygons && (visiblePolygons || []).map((poly) => (
+    <Polygon
+      key={poly.uid}
+      paths={poly.paths[0]}
+      options={{
+        fillColor: poly.fillColor || "#4285F4",
+        fillOpacity: poly.fillOpacity || 0.35,
+        strokeColor: onlyInsidePolygons ? poly.fillColor : "#2563eb",
+        strokeWeight: 2,
+        strokeOpacity: 0.9,
+        clickable: true,
+        zIndex: 50,
+      }}
     />
-  </>
-)}
+  ))}
 
-              {enableSiteToggle && showSiteSectors && (
-                <NetworkPlannerMap
-                  defaultRadius={10}
-                  scale={0.2}
-                  showSectors={showSiteSectors}
-                  viewport={viewport}
-                  options={{ zIndex: 1000 }}
-                  projectId={projectId}
-                  minSectors={3}
-                />
-              )}
-            </MapWithMultipleCircles>
+  {enableSiteToggle && showSiteMarkers && (
+    <SiteMarkers
+      sites={siteData}
+      showMarkers={showSiteMarkers}
+      circleRadius={0}
+      viewport={viewport}
+    />
+  )}
+
+  {enableSiteToggle && showSiteSectors && (
+    <NetworkPlannerMap
+      defaultRadius={10}
+      scale={0.2}
+      showSectors={showSiteSectors}
+      viewport={viewport}
+      options={{ zIndex: 1000 }}
+      projectId={projectId}
+      minSectors={3}
+    />
+  )}
+  
+  {/* Area polygons, Best Network polygons, etc. */}
+</MapWithMultipleCircles>
           )}
         </div>
       </div>

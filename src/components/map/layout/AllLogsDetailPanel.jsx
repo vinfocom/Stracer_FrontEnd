@@ -120,7 +120,7 @@ const buildDistribution = (values, thresholds) => {
     }));
     
     values.forEach((v) => {
-      const bucket = buckets.find((b) => v >= b.min && v <= b.max);
+      const bucket = buckets.find((b) => v >= b.min && v < b.max);
       if (bucket) bucket.count++;
     });
     

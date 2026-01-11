@@ -1,14 +1,15 @@
+// src/components/MapWithMultipleCircles.jsx
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
-import { GoogleMap, PolygonF, RectangleF } from "@react-google-maps/api";
-import { getColorForMetric } from "../utils/metrics";
+import { GoogleMap, PolygonF, RectangleF, InfoWindow } from "@react-google-maps/api";
 import { mapViewApi } from "../api/apiEndpoints";
 import DeckGLOverlay from "./maps/DeckGLOverlay";
-import { Zap, Layers } from "lucide-react";
-import { getLogColor } from "../utils/colorUtils";
+import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
 import TechHandoverMarkers from "./maps/TechHandoverMarkers";
+import useColorForLog from "@/hooks/useColorForLog";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 
+// ============== Spatial Hash Grid ==============
 class SpatialHashGrid {
   constructor(cellSize = 0.001) {
     this.cellSize = cellSize;
@@ -72,6 +73,7 @@ class SpatialHashGrid {
   }
 }
 
+// ============== Polygon Checker ==============
 class PolygonChecker {
   constructor(polygonData) {
     this.polygons = [];
@@ -137,6 +139,7 @@ class PolygonChecker {
   }
 }
 
+// ============== Aggregation Methods ==============
 const AGGREGATION_METHODS = {
   median: (values) => {
     if (!values.length) return null;
@@ -152,14 +155,9 @@ const AGGREGATION_METHODS = {
   },
   min: (values) => values.length ? Math.min(...values) : null,
   max: (values) => values.length ? Math.max(...values) : null,
-  sum: (values) => {
-    let sum = 0;
-    for (let i = 0; i < values.length; i++) sum += values[i];
-    return sum;
-  },
-  count: (values) => values.length,
 };
 
+// ============== WKT Parser ==============
 const parseWKTToPolygons = (wkt) => {
   if (!wkt?.trim()) return [];
   try {
@@ -197,12 +195,13 @@ const getPolygonBounds = (path) => {
   return { north: maxLat, south: minLat, east: maxLng, west: minLng };
 };
 
+// ============== Grid Generator ==============
 const generateGridCellsOptimized = (
   polygonData, 
   gridSizeMeters, 
   locations, 
   metric, 
-  thresholds,
+  getMetricColor,
   aggregationMethod = 'median',
   spatialIndex
 ) => {
@@ -230,8 +229,6 @@ const generateGridCellsOptimized = (
 
   const checker = new PolygonChecker(polygonData);
   const aggregateFn = AGGREGATION_METHODS[aggregationMethod] || AGGREGATION_METHODS.median;
-  const thresholdKey = { dl_tpt: "dl_thpt", ul_tpt: "ul_thpt" }[metric] || metric;
-  const metricThresholds = thresholds?.[thresholdKey];
 
   const cells = [];
   let cellId = 0;
@@ -284,13 +281,8 @@ const generateGridCellsOptimized = (
           const values = valuesBuffer.subarray(0, validCount);
           aggregatedValue = aggregateFn(Array.from(values));
           
-          if (metricThresholds?.length && aggregatedValue !== null) {
-            for (const t of metricThresholds) {
-              if (aggregatedValue >= parseFloat(t.min) && aggregatedValue <= parseFloat(t.max)) {
-                fillColor = t.color;
-                break;
-              }
-            }
+          if (getMetricColor && aggregatedValue !== null) {
+            fillColor = getMetricColor(aggregatedValue, metric);
           }
         }
       }
@@ -308,13 +300,262 @@ const generateGridCellsOptimized = (
   return cells;
 };
 
+// ============== Neighbor InfoWindow Component ==============
+const NeighborInfoWindow = React.memo(({ neighbor, onClose, getMetricColor }) => {
+  if (!neighbor) return null;
+
+  const rsrpColor = getMetricColor?.(neighbor.rsrp, 'rsrp') || '#808080';
+  const rsrqColor = getMetricColor?.(neighbor.rsrq, 'rsrq') || '#808080';
+  const sinrColor = getMetricColor?.(neighbor.sinr, 'sinr') || '#808080';
+
+  return (
+    <InfoWindow
+      position={{ lat: neighbor.lat, lng: neighbor.lng }}
+      onCloseClick={onClose}
+      options={{
+        pixelOffset: new window.google.maps.Size(0, -15),
+        maxWidth: 320,
+        disableAutoPan: false,
+      }}
+    >
+      <div className="p-2 min-w-[280px] font-sans text-gray-800">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Square 
+              className="w-4 h-4"
+              style={{ color: neighbor.displayColor || rsrpColor }}
+              fill={neighbor.displayColor || rsrpColor}
+            />
+            <span className="font-bold text-sm">
+              PCI: {neighbor.pci ?? 'N/A'}
+            </span>
+          </div>
+          <span 
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            style={{ 
+              backgroundColor: `${rsrpColor}20`,
+              color: rsrpColor,
+              border: `1px solid ${rsrpColor}40`
+            }}
+          >
+            {neighbor.quality || 'Unknown'}
+          </span>
+        </div>
+        
+        {/* Primary Cell Info */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">
+            📡 Primary Cell
+          </div>
+          
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            {neighbor.band && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Band</span>
+                <span className="font-semibold text-blue-600">{neighbor.band}</span>
+              </div>
+            )}
+            {neighbor.pci && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">PCI</span>
+                <span className="font-medium">{neighbor.pci}</span>
+              </div>
+            )}
+          </div>
+
+          {neighbor.rsrp !== null && (
+            <div className="flex justify-between text-xs items-center">
+              <span className="text-gray-500">RSRP</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: rsrpColor }} />
+                <span className="font-semibold" style={{ color: rsrpColor }}>
+                  {neighbor.rsrp?.toFixed?.(1)} dBm
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {neighbor.rsrq !== null && (
+            <div className="flex justify-between text-xs items-center">
+              <span className="text-gray-500">RSRQ</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: rsrqColor }} />
+                <span className="font-medium">{neighbor.rsrq?.toFixed?.(1)} dB</span>
+              </div>
+            </div>
+          )}
+          
+          {neighbor.sinr !== null && (
+            <div className="flex justify-between text-xs items-center">
+              <span className="text-gray-500">SINR</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: sinrColor }} />
+                <span className="font-medium">{neighbor.sinr?.toFixed?.(1)} dB</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Neighbour Cell Info */}
+        {(neighbor.neighbourRsrp !== null || neighbor.neighbourBand) && (
+          <div className="space-y-1.5 mt-3 pt-2 border-t border-gray-100">
+            <div className="text-[10px] font-semibold text-purple-600 uppercase tracking-wide">
+              📶 Neighbour Cell
+            </div>
+            
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {neighbor.neighbourBand && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">Band</span>
+                  <span className="font-semibold text-purple-600">{neighbor.neighbourBand}</span>
+                </div>
+              )}
+              {neighbor.neighbourPci && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">PCI</span>
+                  <span className="font-medium">{neighbor.neighbourPci}</span>
+                </div>
+              )}
+            </div>
+            
+            {neighbor.neighbourRsrp !== null && (
+              <div className="flex justify-between text-xs items-center">
+                <span className="text-gray-500">RSRP</span>
+                <span className="font-semibold" style={{ color: getMetricColor?.(neighbor.neighbourRsrp, 'rsrp') }}>
+                  {neighbor.neighbourRsrp?.toFixed?.(1)} dBm
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Session & Coordinates */}
+        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+          {neighbor.sessionId && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Session</span>
+              <span className="font-medium">{neighbor.sessionId}</span>
+            </div>
+          )}
+          <div className="text-[10px] text-gray-400 font-mono text-center">
+            📍 {neighbor.lat.toFixed(6)}, {neighbor.lng.toFixed(6)}
+          </div>
+        </div>
+      </div>
+    </InfoWindow>
+  );
+});
+
+NeighborInfoWindow.displayName = 'NeighborInfoWindow';
+
+// ============== Primary Log InfoWindow ==============
+const PrimaryLogInfoWindow = React.memo(({ log, onClose, getMetricColor, selectedMetric }) => {
+  if (!log) return null;
+
+  const metricValue = log[selectedMetric];
+  const metricColor = getMetricColor?.(metricValue, selectedMetric) || '#808080';
+
+  return (
+    <InfoWindow
+      position={{ lat: log.lat, lng: log.lng }}
+      onCloseClick={onClose}
+      options={{
+        pixelOffset: new window.google.maps.Size(0, -15),
+        maxWidth: 320,
+      }}
+    >
+      <div className="p-2 min-w-[260px] font-sans text-gray-800">
+        <div className="flex items-center gap-2 pb-2 mb-2 border-b border-gray-200">
+          <Circle 
+            className="w-4 h-4"
+            style={{ color: metricColor }}
+            fill={metricColor}
+          />
+          <span className="font-bold text-sm">Primary Log</span>
+        </div>
+
+        <div className="space-y-1.5">
+          {log.provider && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Provider</span>
+              <span className="font-medium">{log.provider}</span>
+            </div>
+          )}
+          {log.technology && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Technology</span>
+              <span className="font-medium">{log.technology}</span>
+            </div>
+          )}
+          {log.band && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Band</span>
+              <span className="font-semibold text-blue-600">{log.band}</span>
+            </div>
+          )}
+          
+          {log.rsrp !== null && log.rsrp !== undefined && (
+            <div className="flex justify-between text-xs items-center">
+              <span className="text-gray-500">RSRP</span>
+              <span className="font-semibold" style={{ color: getMetricColor?.(log.rsrp, 'rsrp') }}>
+                {log.rsrp?.toFixed?.(1)} dBm
+              </span>
+            </div>
+          )}
+          
+          {log.rsrq !== null && log.rsrq !== undefined && (
+            <div className="flex justify-between text-xs items-center">
+              <span className="text-gray-500">RSRQ</span>
+              <span className="font-medium" style={{ color: getMetricColor?.(log.rsrq, 'rsrq') }}>
+                {log.rsrq?.toFixed?.(1)} dB
+              </span>
+            </div>
+          )}
+          
+          {log.sinr !== null && log.sinr !== undefined && (
+            <div className="flex justify-between text-xs items-center">
+              <span className="text-gray-500">SINR</span>
+              <span className="font-medium" style={{ color: getMetricColor?.(log.sinr, 'sinr') }}>
+                {log.sinr?.toFixed?.(1)} dB
+              </span>
+            </div>
+          )}
+
+          {log.dl_tpt !== null && log.dl_tpt !== undefined && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">DL Throughput</span>
+              <span className="font-medium">{log.dl_tpt?.toFixed?.(2)} Mbps</span>
+            </div>
+          )}
+
+          {log.ul_tpt !== null && log.ul_tpt !== undefined && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">UL Throughput</span>
+              <span className="font-medium">{log.ul_tpt?.toFixed?.(2)} Mbps</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <div className="text-[10px] text-gray-400 font-mono text-center">
+            📍 {log.lat.toFixed(6)}, {log.lng.toFixed(6)}
+          </div>
+        </div>
+      </div>
+    </InfoWindow>
+  );
+});
+
+PrimaryLogInfoWindow.displayName = 'PrimaryLogInfoWindow';
+
+// ============== Main Component ==============
 const containerStyle = { width: "100%", height: "100%" };
 
 const MapWithMultipleCircles = ({
   isLoaded,
   loadError,
   locations = [],
-  thresholds = {},
   selectedMetric = "rsrp",
   colorBy = null,
   activeMarkerIndex,
@@ -341,14 +582,35 @@ const MapWithMultipleCircles = ({
   onFilteredLocationsChange,
   opacity = 1,
   showPoints: showPointsProp = true,
+  
+  // Neighbor Props
+  neighborData = [],
+  showNeighbors = false,
+  neighborSquareSize = 25,
+  neighborOpacity = 0.7,
+  onNeighborClick,
+  onFilteredNeighborsChange,
+  debugMode = false,
 }) => {
+  // Use the color hook
+  const { 
+    getMetricColor, 
+    getThresholdInfo, 
+    thresholds, 
+    loading: thresholdsLoading, 
+    isReady: thresholdsReady 
+  } = useColorForLog();
+
   const [map, setMap] = useState(null);
   const [hoveredCell, setHoveredCell] = useState(null);
   const [polygonData, setPolygonData] = useState([]);
   const [polygonsFetched, setPolygonsFetched] = useState(false);
   const [fetchError, setFetchError] = useState(null);
+  const [selectedNeighbor, setSelectedNeighbor] = useState(null);
+  const [selectedLog, setSelectedLog] = useState(null);
   
   const onFilteredLocationsChangeRef = useRef(onFilteredLocationsChange);
+  const onFilteredNeighborsChangeRef = useRef(onFilteredNeighborsChange);
   const polygonCheckerRef = useRef(null);
   const spatialIndexRef = useRef(null);
 
@@ -356,6 +618,11 @@ const MapWithMultipleCircles = ({
     onFilteredLocationsChangeRef.current = onFilteredLocationsChange;
   }, [onFilteredLocationsChange]);
 
+  useEffect(() => {
+    onFilteredNeighborsChangeRef.current = onFilteredNeighborsChange;
+  }, [onFilteredNeighborsChange]);
+
+  // Fetch polygons
   useEffect(() => {
     const fetchPolygons = async () => {
       if (!projectId || !enablePolygonFilter) {
@@ -399,6 +666,7 @@ const MapWithMultipleCircles = ({
     fetchPolygons();
   }, [projectId, polygonSource, enablePolygonFilter]);
 
+  // Filter primary locations by polygon
   const locationsToRender = useMemo(() => {
     if (!locations?.length) return [];
     if (!enablePolygonFilter) return locations;
@@ -409,6 +677,70 @@ const MapWithMultipleCircles = ({
     return checker.filterLocations(locations);
   }, [locations, polygonData, polygonsFetched, enablePolygonFilter]);
 
+  // Process and filter neighbor data by polygon
+  const processedNeighbors = useMemo(() => {
+    if (!showNeighbors || !neighborData?.length) return [];
+
+    const parsed = neighborData
+      .filter(n => {
+        const lat = parseFloat(n.lat ?? n.latitude ?? n.Lat);
+        const lng = parseFloat(n.lng ?? n.longitude ?? n.Lng ?? n.lon);
+        return !isNaN(lat) && !isNaN(lng) && 
+               lat >= -90 && lat <= 90 && 
+               lng >= -180 && lng <= 180;
+      })
+      .map((n, idx) => {
+        const lat = parseFloat(n.lat ?? n.latitude ?? n.Lat);
+        const lng = parseFloat(n.lng ?? n.longitude ?? n.Lng ?? n.lon);
+        
+        const rsrp = parseFloat(n.primaryRsrp ?? n.primary_rsrp ?? n.rsrp) || null;
+        const rsrq = parseFloat(n.primaryRsrq ?? n.primary_rsrq ?? n.rsrq) || null;
+        const sinr = parseFloat(n.primarySinr ?? n.primary_sinr ?? n.sinr) || null;
+        const pci = n.primaryPci ?? n.primary_pci ?? n.pci;
+        const band = n.primaryBand ?? n.primary_band ?? n.band;
+        const neighbourRsrp = n.neighbourRsrp ?? n.neighbour_rsrp;
+        const neighbourRsrq = n.neighbourRsrq ?? n.neighbour_rsrq;
+        const neighbourPci = n.neighbourPci ?? n.neighbour_pci;
+        const neighbourBand = n.neighbourBand ?? n.neighbour_band;
+
+        // Get metric value for coloring
+        let metricValue = rsrp;
+        if (selectedMetric === 'rsrq') metricValue = rsrq;
+        if (selectedMetric === 'sinr') metricValue = sinr;
+
+        // Get quality label from threshold info
+        const thresholdInfo = getThresholdInfo?.(rsrp, 'rsrp');
+        const quality = thresholdInfo?.label || 'Unknown';
+        
+        return {
+          ...n,
+          id: n.id || idx,
+          lat,
+          lng,
+          rsrp: isNaN(rsrp) ? null : rsrp,
+          rsrq: isNaN(rsrq) ? null : rsrq,
+          sinr: isNaN(sinr) ? null : sinr,
+          pci,
+          band,
+          neighbourRsrp: neighbourRsrp !== null ? parseFloat(neighbourRsrp) : null,
+          neighbourRsrq: neighbourRsrq !== null ? parseFloat(neighbourRsrq) : null,
+          neighbourPci,
+          neighbourBand,
+          metricValue,
+          quality,
+        };
+      });
+
+    // Apply polygon filter
+    if (enablePolygonFilter && polygonsFetched && polygonData.length > 0) {
+      const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
+      return checker.filterLocations(parsed);
+    }
+
+    return parsed;
+  }, [neighborData, showNeighbors, enablePolygonFilter, polygonsFetched, polygonData, selectedMetric, getThresholdInfo]);
+
+  // Build spatial index
   useEffect(() => {
     if (locationsToRender.length > 1000) {
       const index = new SpatialHashGrid(0.001);
@@ -419,52 +751,54 @@ const MapWithMultipleCircles = ({
     }
   }, [locationsToRender]);
 
+  // Notify parent of filtered locations
   useEffect(() => {
     const callback = onFilteredLocationsChangeRef.current;
     if (callback) callback(locationsToRender);
   }, [locationsToRender]);
 
+  // Notify parent of filtered neighbors
+  useEffect(() => {
+    const callback = onFilteredNeighborsChangeRef.current;
+    if (callback) callback(processedNeighbors);
+  }, [processedNeighbors]);
+
+  // Grid cells with hook-based coloring
   const gridCells = useMemo(() => {
-    if (!enableGrid || !polygonData.length || !locationsToRender.length) return [];
+    if (!enableGrid || !polygonData.length || !locationsToRender.length || !thresholdsReady) return [];
     
     return generateGridCellsOptimized(
       polygonData, 
       gridSizeMeters, 
       locationsToRender, 
       selectedMetric, 
-      thresholds,
+      getMetricColor,
       gridAggregationMethod,
       spatialIndexRef.current
     );
-  }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, thresholds, gridAggregationMethod]);
+  }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, getMetricColor, thresholdsReady]);
 
-  const getLocationColor = useCallback((loc) => {
-    if (colorBy && colorBy !== 'metric') {
-      let schemeKey = colorBy; 
-      let value = null;
-      const mode = colorBy.toLowerCase();
-
-      if (mode.includes('provider') || mode.includes('operator')) {
-        schemeKey = 'provider';
-        value = loc.operator || loc.Operator || loc.provider || loc.Provider || loc.operatorName || loc.name; 
-      } else if (mode.includes('tech') || mode.includes('rat')) {
-        schemeKey = 'technology';
-        value = loc.technology || loc.Technology || loc.tech || loc.Tech || loc.networkType;
-      } else if (mode.includes('band') || mode.includes('freq')) {
-        schemeKey = 'band';
-        value = loc.band || loc.Band || loc.frequency; 
-      } else {
-        value = loc[colorBy];
-      }
-
-      return getLogColor(schemeKey, value);
-    }
+  // Color getter for primary locations
+  const getPrimaryColor = useCallback((loc) => {
+    if (!thresholdsReady) return '#808080';
     
-    return getColorForMetric(selectedMetric, loc?.[selectedMetric], thresholds);
-  }, [colorBy, selectedMetric, thresholds]);
+    // Use metric-based coloring
+    const value = loc?.[selectedMetric];
+    return getMetricColor(value, selectedMetric);
+  }, [selectedMetric, getMetricColor, thresholdsReady]);
 
+  // Color getter for neighbors
+  const getNeighborColor = useCallback((neighbor) => {
+    if (!thresholdsReady) return '#808080';
+    
+    const value = neighbor?.metricValue ?? neighbor?.[selectedMetric];
+    return getMetricColor(value, selectedMetric);
+  }, [selectedMetric, getMetricColor, thresholdsReady]);
+
+  // Compute center
   const computedCenter = useMemo(() => {
-    const locs = locationsToRender.length > 0 ? locationsToRender : 
+    const allPoints = [...locationsToRender, ...processedNeighbors];
+    const locs = allPoints.length > 0 ? allPoints : 
                  locations.length > 0 ? locations : null;
     
     if (!locs?.length) return center;
@@ -480,15 +814,17 @@ const MapWithMultipleCircles = ({
     }
     
     return { lat: sumLat / count, lng: sumLng / count };
-  }, [locationsToRender, locations, center]);
+  }, [locationsToRender, processedNeighbors, locations, center]);
 
+  // Map load handler
   const handleMapLoad = useCallback((mapInstance) => {
     setMap(mapInstance);
     
-    const locs = locationsToRender.length > 0 ? locationsToRender : locations;
+    const allPoints = [...locationsToRender, ...processedNeighbors];
+    const locs = allPoints.length > 0 ? allPoints : locations;
+    
     if (fitToLocations && locs?.length && window.google) {
       const bounds = new window.google.maps.LatLngBounds();
-      
       const sampleSize = Math.min(locs.length, 500);
       const step = Math.max(1, Math.floor(locs.length / sampleSize));
       
@@ -502,11 +838,20 @@ const MapWithMultipleCircles = ({
     }
     
     onLoadProp?.(mapInstance);
-  }, [locationsToRender, locations, fitToLocations, computedCenter, defaultZoom, onLoadProp]);
+  }, [locationsToRender, processedNeighbors, locations, fitToLocations, computedCenter, defaultZoom, onLoadProp]);
 
-  const handleLocationClick = useCallback((index, loc) => {
+  // Click handlers
+  const handlePrimaryClick = useCallback((index, loc) => {
+    setSelectedLog(loc);
+    setSelectedNeighbor(null);
     onMarkerClick?.(index, loc);
   }, [onMarkerClick]);
+
+  const handleNeighborClick = useCallback((neighbor) => {
+    setSelectedNeighbor(neighbor);
+    setSelectedLog(null);
+    onNeighborClick?.(neighbor);
+  }, [onNeighborClick]);
 
   if (loadError) {
     return (
@@ -535,6 +880,7 @@ const MapWithMultipleCircles = ({
         center={computedCenter}
         zoom={defaultZoom}
       >
+        {/* Polygon boundaries */}
         {showPolygonBoundary && polygonData.map(({ path }, idx) => (
           <PolygonF
             key={`polygon-${idx}`}
@@ -550,6 +896,7 @@ const MapWithMultipleCircles = ({
           />
         ))}
 
+        {/* Grid cells */}
         {enableGrid && gridCells.map((cell) => (
           <RectangleF
             key={`grid-${cell.id}`}
@@ -567,37 +914,71 @@ const MapWithMultipleCircles = ({
           />
         ))}
 
-        {showPoints && map && locationsToRender.length > 0 && (
+        {/* WebGL Layer for BOTH primary logs (circles) and neighbors (squares) */}
+        {map && thresholdsReady && (
           <DeckGLOverlay
             map={map}
-            locations={locationsToRender}
-            getColor={getLocationColor}
+            // Primary logs (circles)
+            locations={showPoints ? locationsToRender : []}
+            getColor={getPrimaryColor}
             radius={pointRadius}
             opacity={opacity}
             selectedIndex={activeMarkerIndex}
-            onClick={handleLocationClick}
+            onClick={handlePrimaryClick}
             radiusMinPixels={2}
             radiusMaxPixels={40}
+            showPrimaryLogs={showPoints}
+            // Neighbors (squares)
+            neighbors={processedNeighbors}
+            getNeighborColor={getNeighborColor}
+            neighborSquareSize={neighborSquareSize}
+            neighborOpacity={neighborOpacity}
+            onNeighborClick={handleNeighborClick}
+            showNeighbors={showNeighbors}
           />
         )}
 
+        {/* Neighbor InfoWindow */}
+        {selectedNeighbor && (
+          <NeighborInfoWindow
+            neighbor={selectedNeighbor}
+            onClose={() => setSelectedNeighbor(null)}
+            getMetricColor={getMetricColor}
+          />
+        )}
+
+        {/* Primary Log InfoWindow */}
+        {selectedLog && (
+          <PrimaryLogInfoWindow
+            log={selectedLog}
+            onClose={() => setSelectedLog(null)}
+            getMetricColor={getMetricColor}
+            selectedMetric={selectedMetric}
+          />
+        )}
+
+        {/* Tech handover markers */}
         <TechHandoverMarkers
           transitions={technologyTransitions}
           show={techHandOver}
           compactMode={technologyTransitions.length > 30}
           showConnections={technologyTransitions.length < 50}
-          onTransitionClick={(transition) => {}}
+          onTransitionClick={() => {}}
         />
 
         {children}
       </GoogleMap>
 
-      {isLoadingPolygons && (
+      {/* Loading indicators */}
+      {(isLoadingPolygons || thresholdsLoading) && (
         <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-20 text-sm">
-          <span className="animate-pulse">Loading polygon boundaries...</span>
+          <span className="animate-pulse">
+            {thresholdsLoading ? 'Loading color thresholds...' : 'Loading polygon boundaries...'}
+          </span>
         </div>
       )}
 
+      {/* Grid cell hover info */}
       {enableGrid && hoveredCell && (
         <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[160px] text-xs">
           <div className="font-semibold text-gray-800 mb-2">Grid Cell</div>
@@ -616,51 +997,93 @@ const MapWithMultipleCircles = ({
         </div>
       )}
 
+      {/* Stats panel */}
       {showStats && (
-        <div className="absolute bottom-4 right-4 bg-white/90 px-3 py-1.5 rounded-lg shadow text-xs text-gray-600 z-10">
-          {isLoadingPolygons ? (
+        <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg text-xs text-gray-600 z-10">
+          {isLoadingPolygons || thresholdsLoading ? (
             <span className="animate-pulse">Loading...</span>
           ) : enableGrid ? (
             <span>{gridCells.filter(c => c.count > 0).length} cells with data</span>
           ) : (
-            <div className="flex flex-col gap-0.5">
-              <span className="font-medium text-green-600">
-                {locationsToRender.length.toLocaleString()} points
-              </span>
-              <span className="text-[10px] text-blue-500 flex items-center gap-1">
-                <Layers className="h-3 w-3" />
-                WebGL Rendering
-              </span>
-              {enablePolygonFilter && locations.length !== locationsToRender.length && (
-                <span className="text-[10px] text-gray-400">
-                  ({(locations.length - locationsToRender.length).toLocaleString()} outside polygon)
+            <div className="flex flex-col gap-1.5">
+              {/* Primary points */}
+              <div className="flex items-center gap-2">
+                <Circle className="w-3 h-3 text-green-500" fill="#22C55E" />
+                <span className="font-medium text-green-600">
+                  {locationsToRender.length.toLocaleString()} primary logs
                 </span>
+              </div>
+              
+              {/* Neighbor points */}
+              {showNeighbors && processedNeighbors.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Square className="w-3 h-3 text-purple-500" fill="#8B5CF6" />
+                  <span className="font-medium text-purple-600">
+                    {processedNeighbors.length.toLocaleString()} neighbor logs
+                  </span>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-1 text-[10px] text-blue-500">
+                <Layers className="h-3 w-3" />
+                <span>WebGL Accelerated</span>
+              </div>
+              
+              {/* Filtered counts */}
+              {enablePolygonFilter && polygonData.length > 0 && (
+                <div className="text-[10px] text-gray-400 space-y-0.5">
+                  {locations.length !== locationsToRender.length && (
+                    <div>({(locations.length - locationsToRender.length).toLocaleString()} primary outside)</div>
+                  )}
+                  {showNeighbors && neighborData.length !== processedNeighbors.length && (
+                    <div>({(neighborData.length - processedNeighbors.length).toLocaleString()} neighbors outside)</div>
+                  )}
+                </div>
               )}
             </div>
           )}
         </div>
       )}
 
-      {showControls && enableGrid && (
-        <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-3 z-10 space-y-2 min-w-[140px]">
-          <div className="text-xs font-semibold text-gray-700 mb-2">Grid Info</div>
-          <div className="text-xs space-y-1">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Size:</span>
-              <span className="font-medium">{gridSizeMeters}m</span>
+      {/* Debug panel */}
+      {debugMode && (
+        <div className="absolute top-4 left-4 bg-black/90 text-white p-3 rounded-lg z-50 text-xs font-mono min-w-[280px] max-h-[400px] overflow-auto">
+          <div className="font-bold text-green-400 mb-2 border-b border-gray-600 pb-1">
+            🔍 Map Debug Panel
+          </div>
+          <div className="space-y-2">
+            <div className="border-b border-gray-700 pb-2">
+              <div className="text-yellow-400 font-bold mb-1">Thresholds</div>
+              <div>Ready: <span className={thresholdsReady ? 'text-green-400' : 'text-red-400'}>{thresholdsReady ? '✅' : '❌'}</span></div>
+              <div>Loading: <span className={thresholdsLoading ? 'text-yellow-400' : 'text-gray-400'}>{thresholdsLoading ? '⏳' : 'No'}</span></div>
+              <div>Metric: <span className="text-blue-400">{selectedMetric}</span></div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Method:</span>
-              <span className="font-medium capitalize">{gridAggregationMethod}</span>
+            
+            <div className="border-b border-gray-700 pb-2">
+              <div className="text-yellow-400 font-bold mb-1">Primary Logs</div>
+              <div>Raw: <span className="text-blue-400">{locations?.length || 0}</span></div>
+              <div>Filtered: <span className="text-green-400">{locationsToRender?.length || 0}</span></div>
+              <div>Showing: <span className={showPoints ? 'text-green-400' : 'text-red-400'}>{showPoints ? '✅' : '❌'}</span></div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Cells:</span>
-              <span className="font-medium">{gridCells.length}</span>
+            
+            <div className="border-b border-gray-700 pb-2">
+              <div className="text-yellow-400 font-bold mb-1">Neighbors</div>
+              <div>Raw: <span className="text-blue-400">{neighborData?.length || 0}</span></div>
+              <div>Processed: <span className="text-purple-400">{processedNeighbors?.length || 0}</span></div>
+              <div>Showing: <span className={showNeighbors ? 'text-green-400' : 'text-red-400'}>{showNeighbors ? '✅' : '❌'}</span></div>
+            </div>
+            
+            <div>
+              <div className="text-yellow-400 font-bold mb-1">Polygon Filter</div>
+              <div>Enabled: <span className={enablePolygonFilter ? 'text-green-400' : 'text-gray-400'}>{enablePolygonFilter ? 'Yes' : 'No'}</span></div>
+              <div>Polygons: <span className="text-blue-400">{polygonData?.length || 0}</span></div>
+              <div>Fetched: <span className={polygonsFetched ? 'text-green-400' : 'text-yellow-400'}>{polygonsFetched ? '✅' : '⏳'}</span></div>
             </div>
           </div>
         </div>
       )}
 
+      {/* Tech handover panel */}
       {techHandOver && technologyTransitions.length > 0 && (
         <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[180px]">
           <div className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
@@ -670,9 +1093,7 @@ const MapWithMultipleCircles = ({
           <div className="space-y-1 text-xs">
             <div className="flex justify-between">
               <span className="text-gray-500">Total:</span>
-              <span className="font-bold text-orange-600">
-                {technologyTransitions.length}
-              </span>
+              <span className="font-bold text-orange-600">{technologyTransitions.length}</span>
             </div>
           </div>
         </div>
