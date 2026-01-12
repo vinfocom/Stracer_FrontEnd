@@ -1,3 +1,4 @@
+// src/pages/UnifiedMapView.jsx
 import React, {
   useState,
   useEffect,
@@ -31,6 +32,7 @@ import {
   getProviderColor,
   COLOR_SCHEMES,
 } from "@/utils/colorUtils";
+import useColorForLog from "@/hooks/useColorForLog";
 
 import {
   useBestNetworkCalculation,
@@ -1454,7 +1456,7 @@ const UnifiedMapView = () => {
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
 
-  const { thresholds: baseThresholds } = useThresholdSettings();
+  const { thresholds: baseThresholds } = useColorForLog();
 
   const {
     locations: sampleLocations,
@@ -1645,15 +1647,25 @@ useEffect(() => {
     areaData
   );
 
+  // ✅ UPDATED: Include Neighbor Data in Filter Options
   const availableFilterOptions = useMemo(() => {
     const providers = new Set();
     const bands = new Set();
     const technologies = new Set();
 
+    // 1. Process Primary Logs
     (locations || []).forEach((loc) => {
       if (loc.provider) providers.add(loc.provider);
-      if (loc.band) bands.add(loc.band);
+      if (loc.band) bands.add(String(loc.band));
       if (loc.technology) technologies.add(normalizeTechName(loc.technology));
+    });
+
+    // 2. Process Neighbor Logs (if available)
+    (sessionNeighborData || []).forEach((n) => {
+      if (n.provider) providers.add(n.provider);
+      if (n.primaryBand) bands.add(String(n.primaryBand));
+      if (n.neighbourBand) bands.add(String(n.neighbourBand));
+      if (n.networkType) technologies.add(normalizeTechName(n.networkType, n.neighbourBand));
     });
 
     return {
@@ -1661,7 +1673,7 @@ useEffect(() => {
       bands: [...bands].sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
       technologies: [...technologies].sort(),
     };
-  }, [locations]);
+  }, [locations, sessionNeighborData]);
 
   const filteredLocations = useMemo(() => {
     let result = [...(locations || [])];
@@ -1681,8 +1693,8 @@ useEffect(() => {
 
     const { providers, bands, technologies } = dataFilters;
     if (providers?.length) result = result.filter((l) => providers.includes(l.provider));
-    if (bands?.length) result = result.filter((l) => bands.includes(l.band));
-    if (technologies?.length) result = result.filter((l) => technologies.includes(l.technology));
+    if (bands?.length) result = result.filter((l) => bands.includes(String(l.band)));
+    if (technologies?.length) result = result.filter((l) => technologies.includes(normalizeTechName(l.technology)));
 
     return result;
   }, [locations, coverageHoleFilters, dataFilters]);
@@ -1947,22 +1959,42 @@ useEffect(() => {
     refetchAreaPolygons, refetchSites, refetchNeighbors, refetchSessionNeighbors
   ]);
 
+  // ✅ UPDATED: Filter Neighbors based on Data Filters (Provider, Band, Tech)
   const filteredNeighbors = useMemo(() => {
-  // 1. If no data, return empty
-  if (!sessionNeighborData?.length) return [];
+    let data = sessionNeighborData || [];
+    if (!data.length) return [];
 
-  // 2. If filtering is disabled, return all data
-  // Note: Adjust 'onlyInsidePolygons' to whatever flag triggers your filter
-  if (!onlyInsidePolygons || !showPolygons || !polygons?.length) {
-    return sessionNeighborData;
-  }
+    // 1. Polygon Filter (if enabled)
+    if (onlyInsidePolygons && showPolygons && polygons?.length) {
+      data = data.filter((point) => polygons.some((poly) => isPointInPolygon(point, poly)));
+    }
 
-  // 3. Filter points that are inside at least one visible polygon
-  return sessionNeighborData.filter((point) => {
-    // Check if point exists inside ANY of the loaded polygons
-    return polygons.some((poly) => isPointInPolygon(point, poly));
-  });
-}, [sessionNeighborData, onlyInsidePolygons, showPolygons, polygons]);
+    // 2. Data Filters (Provider, Band, Technology)
+    const { providers, bands, technologies } = dataFilters;
+    const hasProviderFilter = providers?.length > 0;
+    const hasBandFilter = bands?.length > 0;
+    const hasTechFilter = technologies?.length > 0;
+
+    if (hasProviderFilter || hasBandFilter || hasTechFilter) {
+      data = data.filter(item => {
+        // Provider Check
+        if (hasProviderFilter && !providers.includes(item.provider)) return false;
+        
+        // Technology Check
+        if (hasTechFilter && !technologies.includes(normalizeTechName(item.networkType))) return false;
+        
+        // Band Check: Match Neighbor Band OR Primary Band
+        if (hasBandFilter) {
+           const nb = String(item.neighbourBand);
+           const pb = String(item.primaryBand);
+           if (!bands.includes(nb) && !bands.includes(pb)) return false;
+        }
+        return true;
+      });
+    }
+
+    return data;
+  }, [sessionNeighborData, onlyInsidePolygons, showPolygons, polygons, dataFilters]);
 
   const handlePolygonMouseOver = useCallback((poly, e) => {
     setHoveredPolygon(poly);
@@ -2180,11 +2212,11 @@ useEffect(() => {
   onFilteredLocationsChange={setMapVisibleLocations}
   opacity={opacity}
   
-  // ========= NEW: Neighbor Props =========
-  neighborData={sessionNeighborData}
+  // ========= UPDATED: Neighbor Props =========
+  neighborData={filteredNeighbors} // Pass FILTERED neighbors instead of raw
   showNeighbors={showSessionNeighbors}
-  neighborSquareSize={25}  // Size in meters
-  neighborOpacity={0.7}
+  neighborSquareSize={15}  // Size in meters
+  neighborOpacity={0.5}
   onNeighborClick={(neighbor) => {
     console.log('Neighbor clicked:', neighbor);
   }}

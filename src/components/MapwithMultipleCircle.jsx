@@ -565,7 +565,7 @@ const MapWithMultipleCircles = ({
   defaultZoom = 14,
   fitToLocations = true,
   onLoad: onLoadProp,
-  pointRadius = 8,
+  pointRadius = 20,
   children,
   projectId = null,
   polygonSource = "map",
@@ -586,7 +586,7 @@ const MapWithMultipleCircles = ({
   // Neighbor Props
   neighborData = [],
   showNeighbors = false,
-  neighborSquareSize = 25,
+  neighborSquareSize = 10,
   neighborOpacity = 0.7,
   onNeighborClick,
   onFilteredNeighborsChange,
@@ -778,22 +778,38 @@ const MapWithMultipleCircles = ({
     );
   }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, getMetricColor, thresholdsReady]);
 
-  // Color getter for primary locations
+  // ✅ UPDATED: Color getter for primary locations to respect colorBy
   const getPrimaryColor = useCallback((loc) => {
     if (!thresholdsReady) return '#808080';
     
-    // Use metric-based coloring
+    // 1. Check if coloring by a specific Category (Provider, Band, Technology)
+    if (colorBy && colorBy !== 'metric') {
+        const key = colorBy.toLowerCase();
+        // loc fields typically: provider, technology, band
+        const value = loc?.[key];
+        return getMetricColor(value, colorBy);
+    }
+    
+    // 2. Default: Color by the selected Numeric Metric
     const value = loc?.[selectedMetric];
     return getMetricColor(value, selectedMetric);
-  }, [selectedMetric, getMetricColor, thresholdsReady]);
+  }, [selectedMetric, colorBy, getMetricColor, thresholdsReady]);
 
-  // Color getter for neighbors
+  // ✅ UPDATED: Color getter for neighbors to respect colorBy
   const getNeighborColor = useCallback((neighbor) => {
     if (!thresholdsReady) return '#808080';
     
+    // 1. Check if coloring by a specific Category
+    if (colorBy && colorBy !== 'metric') {
+        const key = colorBy.toLowerCase();
+        const value = neighbor?.[key];
+        return getMetricColor(value, colorBy);
+    }
+    
+    // 2. Default
     const value = neighbor?.metricValue ?? neighbor?.[selectedMetric];
     return getMetricColor(value, selectedMetric);
-  }, [selectedMetric, getMetricColor, thresholdsReady]);
+  }, [selectedMetric, colorBy, getMetricColor, thresholdsReady]);
 
   // Compute center
   const computedCenter = useMemo(() => {
@@ -922,7 +938,7 @@ const MapWithMultipleCircles = ({
             locations={showPoints ? locationsToRender : []}
             getColor={getPrimaryColor}
             radius={pointRadius}
-            opacity={opacity}
+            opacity={1} // ✅ CHANGED: Hardcoded to 1 for solid visibility
             selectedIndex={activeMarkerIndex}
             onClick={handlePrimaryClick}
             radiusMinPixels={2}
@@ -1043,45 +1059,7 @@ const MapWithMultipleCircles = ({
             </div>
           )}
         </div>
-      )}
-
-      {/* Debug panel */}
-      {debugMode && (
-        <div className="absolute top-4 left-4 bg-black/90 text-white p-3 rounded-lg z-50 text-xs font-mono min-w-[280px] max-h-[400px] overflow-auto">
-          <div className="font-bold text-green-400 mb-2 border-b border-gray-600 pb-1">
-            🔍 Map Debug Panel
-          </div>
-          <div className="space-y-2">
-            <div className="border-b border-gray-700 pb-2">
-              <div className="text-yellow-400 font-bold mb-1">Thresholds</div>
-              <div>Ready: <span className={thresholdsReady ? 'text-green-400' : 'text-red-400'}>{thresholdsReady ? '✅' : '❌'}</span></div>
-              <div>Loading: <span className={thresholdsLoading ? 'text-yellow-400' : 'text-gray-400'}>{thresholdsLoading ? '⏳' : 'No'}</span></div>
-              <div>Metric: <span className="text-blue-400">{selectedMetric}</span></div>
-            </div>
-            
-            <div className="border-b border-gray-700 pb-2">
-              <div className="text-yellow-400 font-bold mb-1">Primary Logs</div>
-              <div>Raw: <span className="text-blue-400">{locations?.length || 0}</span></div>
-              <div>Filtered: <span className="text-green-400">{locationsToRender?.length || 0}</span></div>
-              <div>Showing: <span className={showPoints ? 'text-green-400' : 'text-red-400'}>{showPoints ? '✅' : '❌'}</span></div>
-            </div>
-            
-            <div className="border-b border-gray-700 pb-2">
-              <div className="text-yellow-400 font-bold mb-1">Neighbors</div>
-              <div>Raw: <span className="text-blue-400">{neighborData?.length || 0}</span></div>
-              <div>Processed: <span className="text-purple-400">{processedNeighbors?.length || 0}</span></div>
-              <div>Showing: <span className={showNeighbors ? 'text-green-400' : 'text-red-400'}>{showNeighbors ? '✅' : '❌'}</span></div>
-            </div>
-            
-            <div>
-              <div className="text-yellow-400 font-bold mb-1">Polygon Filter</div>
-              <div>Enabled: <span className={enablePolygonFilter ? 'text-green-400' : 'text-gray-400'}>{enablePolygonFilter ? 'Yes' : 'No'}</span></div>
-              <div>Polygons: <span className="text-blue-400">{polygonData?.length || 0}</span></div>
-              <div>Fetched: <span className={polygonsFetched ? 'text-green-400' : 'text-yellow-400'}>{polygonsFetched ? '✅' : '⏳'}</span></div>
-            </div>
-          </div>
-        </div>
-      )}
+      )} 
 
       {/* Tech handover panel */}
       {techHandOver && technologyTransitions.length > 0 && (

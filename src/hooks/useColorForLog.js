@@ -1,6 +1,7 @@
 // src/hooks/useColorForLog.js
 import { settingApi } from "@/api/apiEndpoints";
 import { useCallback, useEffect, useState } from "react";
+import { getLogColor } from "@/utils/colorUtils"; // ✅ Import color utility
 
 function useColorForLog() {
     const [parsedData, setParsedData] = useState(null);
@@ -44,6 +45,14 @@ function useColorForLog() {
     }, []);
 
     const getMetricColor = useCallback((value, metric) => {
+        const lowerMetric = metric?.toLowerCase();
+
+        // ✅ 1. Handle Categorical Coloring (Provider, Technology, Band)
+        if (['provider', 'technology', 'band'].includes(lowerMetric)) {
+            return getLogColor(lowerMetric, value);
+        }
+
+        // 2. Handle Numeric/Threshold Coloring
         if (value === null || value === undefined || isNaN(value)) {
             return "#808080";
         }
@@ -66,11 +75,12 @@ function useColorForLog() {
             'coveragehole': 'coverageHole'
         };
 
-        const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();
+        const key = metricKeyMap[lowerMetric] || lowerMetric;
         const thresholds = parsedData[key];
 
         if (!thresholds || !Array.isArray(thresholds)) {
-            console.warn(`No thresholds found for metric type: ${metric}`);
+            // Only warn if it's not a known category we just handled
+            // console.warn(`No thresholds found for metric type: ${metric}`);
             return "#808080";
         }
 
@@ -83,6 +93,7 @@ function useColorForLog() {
             }
         }
 
+        // Handle edge cases (above max or below min)
         const lastThreshold = thresholds[thresholds.length - 1];
         if (value >= parseFloat(lastThreshold.max)) {
             return lastThreshold.color;

@@ -131,32 +131,7 @@ const DeckGLOverlay = ({
     const layers = [];
 
     // Primary locations layer (Circles)
-    if (showPrimaryLogs && primaryData.length > 0) {
-      const scatterLayer = new ScatterplotLayer({
-        id: 'primary-logs-layer',
-        data: primaryData,
-        getPosition: d => d.position,
-        getFillColor: d => d.color,
-        getRadius: d => d.index === selectedIndex ? radius * 1.5 : radius,
-        radiusMinPixels,
-        radiusMaxPixels,
-        opacity,
-        pickable,
-        autoHighlight,
-        highlightColor: [255, 255, 0, 200],
-        onClick: handlePrimaryClick,
-        updateTriggers: {
-          getFillColor: [getColor],
-          getRadius: [selectedIndex, radius],
-        },
-        // Performance optimizations
-        parameters: {
-          depthTest: false,
-        },
-        extensions: [],
-      });
-      layers.push(scatterLayer);
-    }
+    
 
     // Neighbor locations layer (Squares)
     if (showNeighbors && neighborData.length > 0) {
@@ -189,6 +164,33 @@ const DeckGLOverlay = ({
         },
       });
       layers.push(polygonLayer);
+    }
+
+    if (showPrimaryLogs && primaryData.length > 0) {
+      const scatterLayer = new ScatterplotLayer({
+        id: 'primary-logs-layer',
+        data: primaryData,
+        getPosition: d => d.position,
+        getFillColor: d => d.color,
+        getRadius: d => d.index === selectedIndex ? radius * 1 : radius,
+        radiusMinPixels,
+        radiusMaxPixels,
+        opacity,
+        pickable,
+        autoHighlight,
+        highlightColor: [255, 255, 0, 200],
+        onClick: handlePrimaryClick,
+        updateTriggers: {
+          getFillColor: [getColor],
+          getRadius: [selectedIndex, radius],
+        },
+        // Performance optimizations
+        parameters: {
+          depthTest: false,
+        },
+        extensions: [],
+      });
+      layers.push(scatterLayer);
     }
 
     layersRef.current = layers;

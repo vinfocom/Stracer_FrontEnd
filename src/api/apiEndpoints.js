@@ -3,6 +3,19 @@ import { CleaningServices } from "@mui/icons-material";
 import { api } from "./apiService"; // C# Backend
 import { pythonApi } from "./pythonApiService"; // Python Backend
 import axios from "axios";
+import { isCancelledError } from './apiService'; // Import the utility
+
+const isRequestCancelled =   (error) => {
+  if (!error) return false;
+  return (
+    error.isCancelled === true ||
+    error.name === 'AbortError' ||
+    error.name === 'CanceledError' ||
+    error.code === 'ERR_CANCELED' ||
+    error.message?.toLowerCase().includes('cancel') ||
+    error.message?.toLowerCase().includes('abort')
+  );
+};
 
 export const generalApi = {
   healthCheck: async () => {
@@ -717,6 +730,7 @@ getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
   
  // apiEndpoints.js
 
+// apiEndpoints.js
 getSessionNeighbour: async ({ sessionIds, signal }) => {
   try {
     const idsParam = Array.isArray(sessionIds) ? sessionIds.join(",") : sessionIds;
@@ -727,21 +741,19 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
       '/api/MapView/GetN78Neighbours', 
       { 
         params: {
-          session_Ids: idsParam  // ✅ Capital 'I' - THIS IS CRITICAL!
+          session_Ids: idsParam
         },
-        signal 
+        signal,
+        dedupe: false  // ⬅️ Important: Disable deduplication for cancellable requests
       }
     );
     
     console.log("📥 N78 API raw response:", response);
-    console.log("📥 N78 API response.data:", response?.data);
     
-    // Handle different response structures
     if (response?.data) {
       return response.data;
     }
     
-    // Some axios configs return data directly
     if (response?.Status !== undefined) {
       return response;
     }
@@ -750,10 +762,19 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
     return response;
     
   } catch (error) {
+    // ✅ Don't log cancelled requests as errors
+    if (isCancelledError(error) || isRequestCancelled(error)) {
+      // Silently re-throw - the calling hook will handle this
+      throw error;
+    }
+    
     console.error("❌ N78 API Error:", error);
     throw error;
   }
 },
+
+// Helper function (add near the top of the file)
+
   getDistanceSession: (session) =>
     api.get("/api/MapView/sessionsDistance", {
        params:session 
