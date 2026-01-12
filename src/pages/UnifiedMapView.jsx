@@ -1,4 +1,3 @@
-// src/pages/UnifiedMapView.jsx
 import React, {
   useState,
   useEffect,
@@ -22,7 +21,6 @@ import UnifiedHeader from "@/components/unifiedMap/unifiedMapHeader";
 import UnifiedDetailLogs from "@/components/unifiedMap/UnifiedDetailLogs";
 import MapLegend from "@/components/map/MapLegend";
 import { useNeighborCollisions } from "@/hooks/useNeighborCollisions";
-import NeighborHeatmapLayer from "@/components/unifiedMap/NeighborHeatmapLayer";
 import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import {
   normalizeProviderName,
@@ -337,68 +335,7 @@ const parseLogEntry = (log, sessionId) => {
   };
 };
 
-// const extractLogsFromResponse = (data) => {
-//   if (Array.isArray(data)) return data;
-//   if (data?.data && Array.isArray(data.data)) return data.data;
-//   if (data?.Data && Array.isArray(data.Data)) return data.Data;
-//   if (data?.logs && Array.isArray(data.logs)) return data.logs;
-//   if (data?.networkLogs && Array.isArray(data.networkLogs)) return data.networkLogs;
-//   if (data?.result && Array.isArray(data.result)) return data.result;
-//   return [];
-// };
 
-const useThresholdSettings = () => {
-  const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    const abortController = new AbortController();
-
-    const fetchThresholds = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const res = await settingApi.getThresholdSettings({
-          signal: abortController.signal,
-        });
-
-        if (!isMounted) return;
-
-        const d = res?.Data;
-        if (d) {
-          setThresholds({
-            rsrp: cleanThresholds(JSON.parse(d.rsrp_json || "[]")),
-            rsrq: cleanThresholds(JSON.parse(d.rsrq_json || "[]")),
-            sinr: cleanThresholds(JSON.parse(d.sinr_json || "[]")),
-            dl_thpt: cleanThresholds(JSON.parse(d.dl_thpt_json || "[]")),
-            ul_thpt: cleanThresholds(JSON.parse(d.ul_thpt_json || "[]")),
-            mos: cleanThresholds(JSON.parse(d.mos_json || "[]")),
-            lte_bler: cleanThresholds(JSON.parse(d.lte_bler_json || "[]")),
-          });
-        }
-      } catch (err) {
-        if (err.name === "AbortError") return;
-        if (isMounted) {
-          setError(err.message);
-        }
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    fetchThresholds();
-
-    return () => {
-      isMounted = false;
-      abortController.abort();
-    };
-  }, []);
-
-  return { thresholds, loading, error };
-};
 
 const isRequestCancelled = (error) => {
   if (!error) return false;
@@ -636,6 +573,12 @@ const useSampleData = (sessionIds, enabled) => {
           atIndex: i,
           lat: locations[i].lat,
           lng: locations[i].lng,
+          rsrp: locations[i].rsrp,
+          nextRsrp: locations[i + 1].rsrp,
+          rsrq: locations[i].rsrq,
+          nextRsrq: locations[i + 1].rsrq,
+          pci: locations[i].pci,
+          nextPci: locations[i + 1].pci,
           timestamp: locations[i].timestamp,
           session_id: locations[i].session_id,
         });
@@ -2074,6 +2017,8 @@ useEffect(() => {
           logArea={logArea}
           indoor={indoor}
           outdoor={outdoor}
+          technologyTransitions={technologyTransitions}
+          techHandOver={techHandOver}
           dataFilters={dataFilters}
           bestNetworkEnabled={bestNetworkEnabled}
           bestNetworkStats={bestNetworkStats}
@@ -2201,7 +2146,7 @@ useEffect(() => {
   defaultZoom={13}
   fitToLocations={(locationsToDisplay?.length || 0) > 0}
   onLoad={handleMapLoad}
-  pointRadius={5}
+  pointRadius={15}
   projectId={projectId}
   polygonSource={polygonSource}
   enablePolygonFilter={true}

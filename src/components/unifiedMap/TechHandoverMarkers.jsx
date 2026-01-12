@@ -1,14 +1,115 @@
-import React, { useMemo, memo } from "react";
+import React, { useMemo, memo, useState, useCallback } from "react";
 import { OverlayView, Polyline } from "@react-google-maps/api";
-import { ArrowRightLeft, Zap } from "lucide-react";
+import { ArrowRightLeft, Zap, Download } from "lucide-react";
 import { COLOR_SCHEMES, normalizeTechName } from "@/utils/colorUtils";
-
-
 
 const getTechColor = (tech) => {
   const normalized = normalizeTechName(tech);
-  return COLOR_SCHEMES.technology[normalized]?? COLOR_SCHEMES.technology.Unknown;
+  return COLOR_SCHEMES.technology[normalized] ?? COLOR_SCHEMES.technology.Unknown;
 };
+
+// CSV Download Utility Function
+const downloadCSV = (transitions, filename = "handover_data.csv") => {
+  if (!transitions || transitions.length === 0) {
+    alert("No data to download");
+    return;
+  }
+
+  // Define CSV headers
+  const headers = [
+    "Index",
+    "From Technology",
+    "To Technology",
+    "Handover Type",
+    "Latitude",
+    "Longitude",
+    "Timestamp",
+    "Session ID",
+    "Log Index"
+  ];
+
+  // Convert transitions to CSV rows
+  const rows = transitions.map((t, index) => {
+    const handoverType = getHandoverType(t.from, t.to);
+    return [
+      index + 1,
+      t.from || "",
+      t.to || "",
+      handoverType,
+      t.lat?.toFixed(6) || "",
+      t.lng?.toFixed(6) || "",
+      t.timestamp ? new Date(t.timestamp).toISOString() : "",
+      t.session_id || "",
+      t.atIndex ?? ""
+    ];
+  });
+
+  // Create CSV content
+  const csvContent = [
+    headers.join(","),
+    ...rows.map(row => 
+      row.map(cell => {
+        // Escape quotes and wrap in quotes if contains comma
+        const cellStr = String(cell);
+        if (cellStr.includes(",") || cellStr.includes('"') || cellStr.includes("\n")) {
+          return `"${cellStr.replace(/"/g, '""')}"`;
+        }
+        return cellStr;
+      }).join(",")
+    )
+  ].join("\n");
+
+  // Create and trigger download
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+// Download Button Component
+const DownloadButton = memo(({ transitions, className = "" }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownload = useCallback(() => {
+    setIsDownloading(true);
+    try {
+      const timestamp = new Date().toISOString().split("T")[0];
+      downloadCSV(transitions, `handover_data_${timestamp}.csv`);
+    } catch (error) {
+      console.error("Error downloading CSV:", error);
+      alert("Failed to download CSV");
+    } finally {
+      setTimeout(() => setIsDownloading(false), 500);
+    }
+  }, [transitions]);
+
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={isDownloading || !transitions?.length}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md 
+        transition-all duration-200 
+        ${transitions?.length 
+          ? "bg-blue-500 hover:bg-blue-600 text-white cursor-pointer" 
+          : "bg-gray-300 text-gray-500 cursor-not-allowed"
+        }
+        ${isDownloading ? "opacity-50" : ""}
+        ${className}`}
+    >
+      <Download className={`h-3.5 w-3.5 ${isDownloading ? "animate-bounce" : ""}`} />
+      {isDownloading ? "Downloading..." : "Download CSV"}
+    </button>
+  );
+});
+
+DownloadButton.displayName = "DownloadButton";
 
 // Handover Summary Component
 export const HandoverSummary = memo(({ transitions }) => {
@@ -34,6 +135,11 @@ export const HandoverSummary = memo(({ transitions }) => {
 
   return (
     <div className="space-y-2 mt-2 pt-2 border-t border-gray-200">
+      {/* Download Button */}
+      <div className="flex justify-end">
+        <DownloadButton transitions={transitions} />
+      </div>
+
       <div className="grid grid-cols-3 gap-1 text-center">
         <div className="bg-green-50 rounded p-1">
           <div className="text-green-600 font-bold">{summary.counts.upgrade}</div>
@@ -65,6 +171,7 @@ export const HandoverSummary = memo(({ transitions }) => {
 });
 
 HandoverSummary.displayName = "HandoverSummary";
+
 // Determine if it's an upgrade or downgrade
 const getHandoverType = (from, to) => {
   const techOrder = { "5G": 5, "5G NR": 5, "NR": 5, "4G": 4, "LTE": 4, "4G LTE": 4, "3G": 3, "WCDMA": 3, "UMTS": 3, "2G": 2, "GSM": 2, "EDGE": 2 };
@@ -205,6 +312,10 @@ const HandoverPopup = memo(({ transition, onClose }) => {
   
   const { from, to, lat, lng, timestamp, session_id, atIndex } = transition;
   const handoverType = getHandoverType(from, to);
+
+  const handleDownloadSingle = () => {
+    downloadCSV([transition], `handover_${from}_to_${to}.csv`);
+  };
   
   return (
     <OverlayView
@@ -284,6 +395,17 @@ const HandoverPopup = memo(({ transition, onClose }) => {
                 </div>
               )}
             </div>
+
+            {/* Download Single Record Button */}
+            <button
+              onClick={handleDownloadSingle}
+              className="w-full mt-2 flex items-center justify-center gap-1.5 px-2 py-1.5 
+                text-xs font-medium rounded bg-slate-700 hover:bg-slate-600 
+                text-slate-200 transition-colors"
+            >
+              <Download className="h-3 w-3" />
+              Download Record
+            </button>
           </div>
         </div>
         
@@ -302,9 +424,10 @@ const TechHandoverMarkers = ({
   show = false,
   compactMode = false,
   showConnections = true,
+  showDownloadButton = true,
   onTransitionClick,
 }) => {
-  const [selectedTransition, setSelectedTransition] = React.useState(null);
+  const [selectedTransition, setSelectedTransition] = useState(null);
 
   const handleMarkerClick = (transition) => {
     setSelectedTransition(transition);
@@ -346,6 +469,9 @@ const TechHandoverMarkers = ({
 
   return (
     <>
+      {/* Floating Download Button */}
+      
+
       {/* Connection Lines */}
       {showConnections &&
         connectionPaths.map((connection) => (
@@ -394,4 +520,5 @@ const TechHandoverMarkers = ({
   );
 };
 
+export { downloadCSV, DownloadButton };
 export default memo(TechHandoverMarkers);

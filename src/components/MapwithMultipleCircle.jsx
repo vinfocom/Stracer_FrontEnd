@@ -4,7 +4,7 @@ import { GoogleMap, PolygonF, RectangleF, InfoWindow } from "@react-google-maps/
 import { mapViewApi } from "../api/apiEndpoints";
 import DeckGLOverlay from "./maps/DeckGLOverlay";
 import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
-import TechHandoverMarkers from "./maps/TechHandoverMarkers";
+import TechHandoverMarkers from "./unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
@@ -565,7 +565,7 @@ const MapWithMultipleCircles = ({
   defaultZoom = 14,
   fitToLocations = true,
   onLoad: onLoadProp,
-  pointRadius = 20,
+  pointRadius = 16,
   children,
   projectId = null,
   polygonSource = "map",
@@ -583,7 +583,7 @@ const MapWithMultipleCircles = ({
   opacity = 1,
   showPoints: showPointsProp = true,
   
-  // Neighbor Props
+  
   neighborData = [],
   showNeighbors = false,
   neighborSquareSize = 10,
@@ -938,10 +938,10 @@ const MapWithMultipleCircles = ({
             locations={showPoints ? locationsToRender : []}
             getColor={getPrimaryColor}
             radius={pointRadius}
-            opacity={1} // ✅ CHANGED: Hardcoded to 1 for solid visibility
+            opacity={opacity} // ✅ CHANGED: Hardcoded to 1 for solid visibility
             selectedIndex={activeMarkerIndex}
             onClick={handlePrimaryClick}
-            radiusMinPixels={2}
+            radiusMinPixels={4}
             radiusMaxPixels={40}
             showPrimaryLogs={showPoints}
             // Neighbors (squares)
