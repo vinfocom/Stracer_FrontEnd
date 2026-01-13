@@ -1,7 +1,8 @@
 // src/hooks/useColorForLog.js
 import { settingApi } from "@/api/apiEndpoints";
 import { useCallback, useEffect, useState } from "react";
-import { getLogColor } from "@/utils/colorUtils";
+import { getLogColor } from "@/utils/colorUtils"; 
+import { getPciColor } from "@/utils/metrics"; // ✅ IMPORT THIS
 
 function useColorForLog() {
     const [parsedData, setParsedData] = useState(null);
@@ -16,7 +17,7 @@ function useColorForLog() {
                 
                 if (res.Status === 1) {
                     const data = res.Data;
-                    // ✅ FIX: Using snake_case keys to match src/utils/metrics.js
+                    // Ensure these keys match src/utils/metrics.js expectations (snake_case)
                     const parsed = {
                         id: data.id,
                         userId: data.user_id,
@@ -25,10 +26,10 @@ function useColorForLog() {
                         rsrp: JSON.parse(data.rsrp_json),
                         rsrq: JSON.parse(data.rsrq_json),
                         sinr: JSON.parse(data.sinr_json),
-                        dl_thpt: JSON.parse(data.dl_thpt_json), // Fixed key
-                        ul_thpt: JSON.parse(data.ul_thpt_json), // Fixed key
+                        dl_thpt: JSON.parse(data.dl_thpt_json),
+                        ul_thpt: JSON.parse(data.ul_thpt_json),
                         volteCall: JSON.parse(data.volte_call),
-                        lte_bler: JSON.parse(data.lte_bler_json), // Fixed key
+                        lte_bler: JSON.parse(data.lte_bler_json),
                         mos: JSON.parse(data.mos_json)
                     };
                     setParsedData(parsed);
@@ -52,7 +53,12 @@ function useColorForLog() {
             return getLogColor(lowerMetric, value);
         }
 
-        // 2. Handle Numeric/Threshold Coloring
+        // ✅ 2. Handle PCI specifically (Algorithmic coloring, not threshold-based)
+        if (lowerMetric === 'pci') {
+            return getPciColor(value);
+        }
+
+        // 3. Handle Numeric/Threshold Coloring
         if (value === null || value === undefined || isNaN(value)) {
             return "#808080";
         }
@@ -61,7 +67,6 @@ function useColorForLog() {
             return "#808080";
         }
 
-        // ✅ FIX: Map all input keys to the snake_case keys in parsedData
         const metricKeyMap = {
             'rsrp': 'rsrp',
             'rsrq': 'rsrq',

@@ -39,20 +39,19 @@ const formatDuration = (seconds) => {
   return `${secs}s`;
 };
 
-const formatSpeed = (kbps) => {
-  if (!kbps || kbps <= 0) return "N/A";
-  const mbps = kbps / 1024;
-  return mbps >= 1 ? `${mbps.toFixed(2)} Mbps` : `${kbps.toFixed(0)} kbps`;
+const formatSpeed = (mbps) => {
+  if (!mbps || mbps <= 0) return "N/A";
+  return mbps >= 1 ? `${mbps.toFixed(2)} Mbps` : `${(mbps * 1000).toFixed(0)} kbps`;
 };
 
-const formatBytes = (kb, toUnit = "GB") => {
-  if (!kb || kb <= 0) return "0.00";
+const formatBytes = (gb, toUnit = "GB") => {
+  if (!gb || gb <= 0) return "0.00";
   if (toUnit === "GB") {
-    return (kb / 1024 / 1024/10).toFixed(2);
+    return gb.toFixed(2);
   } else if (toUnit === "MB") {
-    return (kb / 1024/10).toFixed(2);
+    return (gb * 1024).toFixed(2);
   }
-  return kb.toFixed(2);
+  return gb.toFixed(2);
 };
 
 export const OverviewTab = ({
@@ -179,8 +178,8 @@ export const OverviewTab = ({
 
     if (typeof tptVolume.dl_kb === "number") {
       return {
-        dlGb: formatBytes(tptVolume.dl_kb, "GB"),
-        ulGb: formatBytes(tptVolume.ul_kb, "GB"),
+        dlGb: formatBytes(tptVolume.dl_kb / 1024 / 1024, "GB"),
+        ulGb: formatBytes(tptVolume.ul_kb / 1024 / 1024, "GB"),
       };
     }
 
@@ -195,8 +194,8 @@ export const OverviewTab = ({
     });
 
     return {
-      dlGb: formatBytes(totalDlKb, "GB"),
-      ulGb: formatBytes(totalUlKb, "GB"),
+      dlGb: formatBytes(totalDlKb / 1024 / 1024, "GB"),
+      ulGb: formatBytes(totalUlKb / 1024 / 1024, "GB"),
     };
   }, [tptVolume]);
 
@@ -207,8 +206,8 @@ export const OverviewTab = ({
       .filter(([_, item]) => item && typeof item === "object")
       .map(([session, item]) => ({
         session,
-        dl: formatBytes(item?.dl_kb || 0, "GB"),
-        ul: formatBytes(item?.ul_kb || 0, "GB"),
+        dl: formatBytes((item?.dl_kb || 0) / 1024 / 1024, "GB"),
+        ul: formatBytes((item?.ul_kb || 0) / 1024 / 1024, "GB"),
       }));
   }, [tptVolume]);
 
@@ -230,20 +229,20 @@ export const OverviewTab = ({
 
         Object.entries(techs).forEach(([tech, volumeData]) => {
           const normalizedTech = normalizeTechName(tech);
-         if (!normalizedTech || normalizedTech === "Unknown") return;
+          if (!normalizedTech || normalizedTech === "Unknown") return;
 
           if (volumeData && typeof volumeData === "object") {
-             const key = `${normalizedProvider.toLowerCase()}_${normalizedTech.toLowerCase()}`;
+            const key = `${normalizedProvider.toLowerCase()}_${normalizedTech.toLowerCase()}`;
 
             if (!aggregated[key]) {
               aggregated[key] = {
                 provider: normalizedProvider,
                 technology: normalizedTech,
-                downloadKb: 0,
-                uploadKb: 0,
+                dl_gb: 0,
+                ul_gb: 0,
                 durationSec: 0,
-                avgDlSpeedKbps: [],
-                avgUlSpeedKbps: [],
+                avgDlSpeedMbps: [],
+                avgUlSpeedMbps: [],
                 sessionCount: 0,
                 sessions: [],
                 providerColor: getLogColor("provider", normalizedProvider),
@@ -251,15 +250,15 @@ export const OverviewTab = ({
               };
             }
 
-            aggregated[key].downloadKb += volumeData?.dl_kb || 0;
-            aggregated[key].uploadKb += volumeData?.ul_kb || 0;
+            aggregated[key].dl_gb += volumeData?.dl_gb || 0;
+            aggregated[key].ul_gb += volumeData?.ul_gb || 0;
             aggregated[key].durationSec += volumeData?.duration_sec || 0;
 
-            if (volumeData?.avg_dl_speed_kbps) {
-              aggregated[key].avgDlSpeedKbps.push(volumeData.avg_dl_speed_kbps);
+            if (volumeData?.avg_dl_mbps) {
+              aggregated[key].avgDlSpeedMbps.push(volumeData.avg_dl_mbps);
             }
-            if (volumeData?.avg_ul_speed_kbps) {
-              aggregated[key].avgUlSpeedKbps.push(volumeData.avg_ul_speed_kbps);
+            if (volumeData?.avg_ul_mbps) {
+              aggregated[key].avgUlSpeedMbps.push(volumeData.avg_ul_mbps);
             }
 
             aggregated[key].sessionCount += 1;
@@ -273,28 +272,28 @@ export const OverviewTab = ({
 
     const processed = Object.values(aggregated).map((item) => {
       const avgDlSpeed =
-        item.avgDlSpeedKbps.length > 0
-          ? item.avgDlSpeedKbps.reduce((a, b) => a + b, 0) /
-            item.avgDlSpeedKbps.length
+        item.avgDlSpeedMbps.length > 0
+          ? item.avgDlSpeedMbps.reduce((a, b) => a + b, 0) /
+            item.avgDlSpeedMbps.length
           : 0;
       const avgUlSpeed =
-        item.avgUlSpeedKbps.length > 0
-          ? item.avgUlSpeedKbps.reduce((a, b) => a + b, 0) /
-            item.avgUlSpeedKbps.length
+        item.avgUlSpeedMbps.length > 0
+          ? item.avgUlSpeedMbps.reduce((a, b) => a + b, 0) /
+            item.avgUlSpeedMbps.length
           : 0;
 
       return {
         provider: item.provider,
         technology: item.technology,
-        downloadGb: formatBytes(item.downloadKb, "GB"),
-        uploadGb: formatBytes(item.uploadKb, "GB"),
-        totalGb: formatBytes(item.downloadKb + item.uploadKb, "GB"),
-        downloadKb: item.downloadKb,
-        uploadKb: item.uploadKb,
+        downloadGb: formatBytes(item.dl_gb, "GB"),
+        uploadGb: formatBytes(item.ul_gb, "GB"),
+        totalGb: formatBytes(item.dl_gb + item.ul_gb, "GB"),
+        dl_gb: item.dl_gb,
+        ul_gb: item.ul_gb,
         durationSec: item.durationSec,
         durationFormatted: formatDuration(item.durationSec),
-        avgDlSpeedKbps: avgDlSpeed,
-        avgUlSpeedKbps: avgUlSpeed,
+        avgDlSpeedMbps: avgDlSpeed,
+        avgUlSpeedMbps: avgUlSpeed,
         avgDlSpeedFormatted: formatSpeed(avgDlSpeed),
         avgUlSpeedFormatted: formatSpeed(avgUlSpeed),
         sessionCount: item.sessionCount,
@@ -317,12 +316,12 @@ export const OverviewTab = ({
     if (!processedProviderVolume || processedProviderVolume.length === 0)
       return null;
 
-    const totalDownloadKb = processedProviderVolume.reduce(
-      (sum, item) => sum + (item.downloadKb || 0),
+    const totalDownloadGb = processedProviderVolume.reduce(
+      (sum, item) => sum + (item.dl_gb || 0),
       0
     );
-    const totalUploadKb = processedProviderVolume.reduce(
-      (sum, item) => sum + (item.uploadKb || 0),
+    const totalUploadGb = processedProviderVolume.reduce(
+      (sum, item) => sum + (item.ul_gb || 0),
       0
     );
     const totalDurationSec = processedProviderVolume.reduce(
@@ -331,10 +330,10 @@ export const OverviewTab = ({
     );
 
     const allDlSpeeds = processedProviderVolume
-      .map((item) => item.avgDlSpeedKbps)
+      .map((item) => item.avgDlSpeedMbps)
       .filter(Boolean);
     const allUlSpeeds = processedProviderVolume
-      .map((item) => item.avgUlSpeedKbps)
+      .map((item) => item.avgUlSpeedMbps)
       .filter(Boolean);
 
     const avgDlSpeed =
@@ -354,15 +353,15 @@ export const OverviewTab = ({
       if (!byProvider[providerKey]) {
         byProvider[providerKey] = {
           name: item.provider,
-          downloadKb: 0,
-          uploadKb: 0,
+          dl_gb: 0,
+          ul_gb: 0,
           durationSec: 0,
           technologies: [],
           color: item.providerColor,
         };
       }
-      byProvider[providerKey].downloadKb += item.downloadKb || 0;
-      byProvider[providerKey].uploadKb += item.uploadKb || 0;
+      byProvider[providerKey].dl_gb += item.dl_gb || 0;
+      byProvider[providerKey].ul_gb += item.ul_gb || 0;
       byProvider[providerKey].durationSec += item.durationSec || 0;
       if (!byProvider[providerKey].technologies.includes(item.technology)) {
         byProvider[providerKey].technologies.push(item.technology);
@@ -376,21 +375,21 @@ export const OverviewTab = ({
       const techKey = item.technology.toUpperCase();
       if (!byTech[techKey]) {
         byTech[techKey] = {
-          downloadKb: 0,
-          uploadKb: 0,
+          dl_gb: 0,
+          ul_gb: 0,
           durationSec: 0,
           color: item.techColor,
         };
       }
-      byTech[techKey].downloadKb += item.downloadKb || 0;
-      byTech[techKey].uploadKb += item.uploadKb || 0;
+      byTech[techKey].dl_gb += item.dl_gb || 0;
+      byTech[techKey].ul_gb += item.ul_gb || 0;
       byTech[techKey].durationSec += item.durationSec || 0;
     });
 
     return {
-      totalDownload: formatBytes(totalDownloadKb, "GB"),
-      totalUpload: formatBytes(totalUploadKb, "GB"),
-      totalData: formatBytes(totalDownloadKb + totalUploadKb, "GB"),
+      totalDownload: formatBytes(totalDownloadGb, "GB"),
+      totalUpload: formatBytes(totalUploadGb, "GB"),
+      totalData: formatBytes(totalDownloadGb + totalUploadGb, "GB"),
       totalDuration: formatDuration(totalDurationSec),
       avgDlSpeed: formatSpeed(avgDlSpeed),
       avgUlSpeed: formatSpeed(avgUlSpeed),
@@ -483,9 +482,9 @@ export const OverviewTab = ({
         />
       )}
 
-      {volume && (
+      {/* {volume && (
         <DataVolumeCard volume={volume} sessionWiseVolume={sessionWiseVolume} />
-      )}
+      )} */}
 
       {durationData && durationData.length > 0 && (
         <DurationData durationData={durationData} />
@@ -669,15 +668,6 @@ const ProviderVolumeCard = ({
     };
   };
 
-  const getProviderBadgeStyle = (provider) => {
-    const color = getLogColor("provider", provider);
-    return {
-      backgroundColor: `${color}20`,
-      borderColor: `${color}50`,
-      color: color,
-    };
-  };
-
   const filteredProviderVolume = useMemo(() => {
     if (!providerVolume || !Array.isArray(providerVolume)) return [];
 
@@ -702,8 +692,8 @@ const ProviderVolumeCard = ({
       const normalizedTech = normalizeTechName(tech);
       if (normalizedTech === "Unknown") return;
 
-      const dlValue = parseFloat(data.downloadKb) || 0;
-      const ulValue = parseFloat(data.uploadKb) || 0;
+      const dlValue = parseFloat(data.dl_gb) || 0;
+      const ulValue = parseFloat(data.ul_gb) || 0;
 
       if (dlValue > 0 || ulValue > 0) {
         filtered[tech] = data;
@@ -875,8 +865,8 @@ const ProviderVolumeCard = ({
                   >
                     <span className="font-medium">{tech}</span>
                     <span className="text-xs opacity-80">
-                      {formatBytes(data.downloadKb, "GB")} GB /{" "}
-                      {formatBytes(data.uploadKb, "GB")} GB
+                      {formatBytes(data.dl_gb, "GB")} GB /{" "}
+                      {formatBytes(data.ul_gb, "GB")} GB
                     </span>
                   </div>
                 ))}
@@ -889,7 +879,7 @@ const ProviderVolumeCard = ({
   );
 };
 
-const DurationData =({durationData}) =>(
+const DurationData = ({ durationData }) => (
   <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
     <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
       <Clock className="h-4 w-4" />
@@ -899,19 +889,37 @@ const DurationData =({durationData}) =>(
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-700">
-            <th className="text-left px-3 py-2 text-white font-medium">Provider</th>
-            <th className="text-left px-3 py-2 text-white font-medium">Network Type</th>
-            <th className="text-right px-3 py-2 text-white font-medium">Total Time</th>
+            <th className="text-left px-3 py-2 text-white font-medium">
+              Provider
+            </th>
+            <th className="text-left px-3 py-2 text-white font-medium">
+              Network Type
+            </th>
+            <th className="text-right px-3 py-2 text-white font-medium">
+              Total Time
+            </th>
           </tr>
         </thead>
         <tbody>
-          {durationData?.filter(item => (item.provider || "").trim() !== "UNKNOWN" && (item.provider || "").trim() !== "Unknown" && (item.provider || "").trim() !== "").map((item, idx) => (
-            <tr key={idx} className="border-b border-slate-800 hover:bg-slate-700/30 transition-colors">
-              <td className="px-3 py-2 text-white">{item.provider}</td>
-              <td className="px-3 py-2 text-white">{item.networkType}</td>
-              <td className="px-3 py-2 text-right text-white">{item.totaltime}</td>
-            </tr>
-          ))}
+          {durationData
+            ?.filter(
+              (item) =>
+                (item.provider || "").trim() !== "UNKNOWN" &&
+                (item.provider || "").trim() !== "Unknown" &&
+                (item.provider || "").trim() !== ""
+            )
+            .map((item, idx) => (
+              <tr
+                key={idx}
+                className="border-b border-slate-800 hover:bg-slate-700/30 transition-colors"
+              >
+                <td className="px-3 py-2 text-white">{item.provider}</td>
+                <td className="px-3 py-2 text-white">{item.networkType}</td>
+                <td className="px-3 py-2 text-right text-white">
+                  {item.totaltime}
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
     </div>
