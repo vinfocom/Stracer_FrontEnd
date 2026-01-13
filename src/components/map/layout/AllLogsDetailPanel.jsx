@@ -579,7 +579,7 @@ const AllLogsDetailPanel = ({
                 <div className="font-semibold mb-2">Operator vs Network</div>
                 <div className="space-y-2">
                   {providerNetworkTop
-                    .filter((item) => item.provider && item.network)
+                    .filter((item) => item.provider )
                     .map((item) => (
                       <ProgressBar
                         key={`${item.provider}-${item.network}`}

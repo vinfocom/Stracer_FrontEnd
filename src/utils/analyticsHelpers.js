@@ -3,24 +3,28 @@ export const calculateStats = (locations, metric) => {
 
   const values = locations
     .map(loc => loc[metric])
-    .filter(val => val != null && !isNaN(val));
+    .filter(val => val != null && !isNaN(val) && val !== '');
 
   if (!values.length) return null;
 
-  const sorted = [...values].sort((a, b) => a - b);
-  const sum = values.reduce((acc, val) => acc + val, 0);
-  const avg = sum / values.length;
+  // Convert all values to numbers
+  const numericValues = values.map(val => Number(val));
+  
+  const sorted = [...numericValues].sort((a, b) => a - b);
+  const sum = numericValues.reduce((acc, val) => acc + val, 0);
+  const avg = sum / numericValues.length;
   const mid = Math.floor(sorted.length / 2);
+  
   const median = sorted.length % 2 === 0
     ? (sorted[mid - 1] + sorted[mid]) / 2
     : sorted[mid];
 
   return {
     avg: Number(avg.toFixed(2)),
-    min: Number(Math.min(...values).toFixed(2)),
-    max: Number(Math.max(...values).toFixed(2)),
+    min: Number(Math.min(...numericValues).toFixed(2)),
+    max: Number(Math.max(...numericValues).toFixed(2)),
     median: Number(median.toFixed(2)),
-    count: values.length,
+    count: numericValues.length,
   };
 };
 
