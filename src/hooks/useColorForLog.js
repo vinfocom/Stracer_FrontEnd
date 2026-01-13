@@ -1,7 +1,7 @@
 // src/hooks/useColorForLog.js
 import { settingApi } from "@/api/apiEndpoints";
 import { useCallback, useEffect, useState } from "react";
-import { getLogColor } from "@/utils/colorUtils"; // ✅ Import color utility
+import { getLogColor } from "@/utils/colorUtils";
 
 function useColorForLog() {
     const [parsedData, setParsedData] = useState(null);
@@ -13,10 +13,10 @@ function useColorForLog() {
             try {
                 setLoading(true);
                 const res = await settingApi.getThresholdSettings();
-                console.log("hook for color", res);
                 
                 if (res.Status === 1) {
                     const data = res.Data;
+                    // ✅ FIX: Using snake_case keys to match src/utils/metrics.js
                     const parsed = {
                         id: data.id,
                         userId: data.user_id,
@@ -25,10 +25,10 @@ function useColorForLog() {
                         rsrp: JSON.parse(data.rsrp_json),
                         rsrq: JSON.parse(data.rsrq_json),
                         sinr: JSON.parse(data.sinr_json),
-                        dlThpt: JSON.parse(data.dl_thpt_json),
-                        ulThpt: JSON.parse(data.ul_thpt_json),
+                        dl_thpt: JSON.parse(data.dl_thpt_json), // Fixed key
+                        ul_thpt: JSON.parse(data.ul_thpt_json), // Fixed key
                         volteCall: JSON.parse(data.volte_call),
-                        lteBler: JSON.parse(data.lte_bler_json),
+                        lte_bler: JSON.parse(data.lte_bler_json), // Fixed key
                         mos: JSON.parse(data.mos_json)
                     };
                     setParsedData(parsed);
@@ -47,7 +47,7 @@ function useColorForLog() {
     const getMetricColor = useCallback((value, metric) => {
         const lowerMetric = metric?.toLowerCase();
 
-        // ✅ 1. Handle Categorical Coloring (Provider, Technology, Band)
+        // 1. Handle Categorical Coloring (Provider, Technology, Band)
         if (['provider', 'technology', 'band'].includes(lowerMetric)) {
             return getLogColor(lowerMetric, value);
         }
@@ -61,16 +61,17 @@ function useColorForLog() {
             return "#808080";
         }
 
+        // ✅ FIX: Map all input keys to the snake_case keys in parsedData
         const metricKeyMap = {
             'rsrp': 'rsrp',
             'rsrq': 'rsrq',
             'sinr': 'sinr',
-            'dl_thpt': 'dlThpt',
-            'dl_tpt': 'dlThpt',
-            'ul_thpt': 'ulThpt',
-            'ul_tpt': 'ulThpt',
+            'dl_thpt': 'dl_thpt',
+            'dl_tpt': 'dl_thpt',
+            'ul_thpt': 'ul_thpt',
+            'ul_tpt': 'ul_thpt',
             'mos': 'mos',
-            'lte_bler': 'lteBler',
+            'lte_bler': 'lte_bler',
             'volte_call': 'volteCall',
             'coveragehole': 'coverageHole'
         };
@@ -79,8 +80,6 @@ function useColorForLog() {
         const thresholds = parsedData[key];
 
         if (!thresholds || !Array.isArray(thresholds)) {
-            // Only warn if it's not a known category we just handled
-            // console.warn(`No thresholds found for metric type: ${metric}`);
             return "#808080";
         }
 
@@ -93,7 +92,7 @@ function useColorForLog() {
             }
         }
 
-        // Handle edge cases (above max or below min)
+        // Handle edge cases
         const lastThreshold = thresholds[thresholds.length - 1];
         if (value >= parseFloat(lastThreshold.max)) {
             return lastThreshold.color;
@@ -116,12 +115,12 @@ function useColorForLog() {
             'rsrp': 'rsrp',
             'rsrq': 'rsrq',
             'sinr': 'sinr',
-            'dl_thpt': 'dlThpt',
-            'dl_tpt': 'dlThpt',
-            'ul_thpt': 'ulThpt',
-            'ul_tpt': 'ulThpt',
+            'dl_thpt': 'dl_thpt',
+            'dl_tpt': 'dl_thpt',
+            'ul_thpt': 'ul_thpt',
+            'ul_tpt': 'ul_thpt',
             'mos': 'mos',
-            'lte_bler': 'lteBler'
+            'lte_bler': 'lte_bler'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();
@@ -153,12 +152,12 @@ function useColorForLog() {
             'rsrp': 'rsrp',
             'rsrq': 'rsrq',
             'sinr': 'sinr',
-            'dl_thpt': 'dlThpt',
-            'dl_tpt': 'dlThpt',
-            'ul_thpt': 'ulThpt',
-            'ul_tpt': 'ulThpt',
+            'dl_thpt': 'dl_thpt',
+            'dl_tpt': 'dl_thpt',
+            'ul_thpt': 'ul_thpt',
+            'ul_tpt': 'ul_thpt',
             'mos': 'mos',
-            'lte_bler': 'lteBler'
+            'lte_bler': 'lte_bler'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();

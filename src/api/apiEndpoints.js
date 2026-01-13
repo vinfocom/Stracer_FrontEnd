@@ -768,12 +768,12 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
       throw error;
     }
     
-    console.error("❌ N78 API Error:", error);
+    console.error(" N78 API Error:", error);
     throw error;
   }
 },
 
-// Helper function (add near the top of the file)
+
 
   getDistanceSession: (session) =>
     api.get("/api/MapView/sessionsDistance", {

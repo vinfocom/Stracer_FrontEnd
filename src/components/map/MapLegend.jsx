@@ -16,13 +16,21 @@ const getNormalizedKey = (log, colorBy, scheme) => {
       return normalizeProviderName(log.provider || log.Provider || log.carrier) || "Unknown";
       
     case "technology":
-      // ✅ FIX: Extract band and pass it to normalizeTechName
-      const tech = log.network || log.Network || log.technology;
-      const band = log.band || log.Band;
+      const tech = log.network || log.Network || log.technology || log.networkType;
+      const band = log.band || log.Band || log.neighbourBand || log.neighborBand || log.neighbour_band;
       return normalizeTechName(tech, band);
 
     case "band": {
-      const b = String(log.band || log.Band || "").trim();
+      // ✅ FIX: Prioritize neighbor band fields first so "n78" is picked up instead of the primary band
+      const b = String(
+        log.neighbourBand || 
+        log.neighborBand || 
+        log.neighbour_band || 
+        log.band || 
+        log.Band || 
+        ""
+      ).trim();
+      
       return b === "-1" || b === "" ? "Unknown" : (scheme[b] ? b : "Unknown");
     }
     default:

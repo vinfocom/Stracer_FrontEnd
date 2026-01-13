@@ -753,7 +753,7 @@ const useSessionNeighbors = (sessionIds, enabled) => {
       return;
     }
 
-    // Abort any previous request
+    
     if (abortControllerRef.current) {
       console.log('[useSessionNeighbors] Aborting previous request');
       abortControllerRef.current.abort();
@@ -805,6 +805,9 @@ const useSessionNeighbors = (sessionIds, enabled) => {
               return null;
             }
 
+            // ✅ FIX: Capture both neighbour_band (snake_case) or neighbor_band (US spelling)
+            const neighbourBand = item.neighbour_band || item.neighbor_band;
+
             return {
               id: item.id,
               sessionId: item.session_id,
@@ -825,7 +828,9 @@ const useSessionNeighbors = (sessionIds, enabled) => {
 
               // Provider and network
               provider: normalizeProviderName(item.provider || ""),
-              networkType: normalizeTechName(item.primary_network),
+              // ✅ FIX: Use the extracted neighbourBand to normalize technology (enables 5G detection)
+              networkType: normalizeTechName(item.primary_network, neighbourBand),
+              technology: normalizeTechName(item.primary_network, neighbourBand),
 
               // Quality metrics
               mos: parseFloat(item.mos) || null,
@@ -833,7 +838,7 @@ const useSessionNeighbors = (sessionIds, enabled) => {
               ulTpt: parseFloat(item.ul_tpt) || null,
 
               // Neighbour cell info
-              neighbourBand: item.neighbour_band,
+              neighbourBand: neighbourBand,
               neighbourRsrp: parseFloat(item.neighbour_rsrp) || null,
               neighbourRsrq: parseFloat(item.neighbour_rsrq) || null,
               neighbourPci: item.neighbour_pci,
@@ -926,7 +931,7 @@ const useSessionNeighbors = (sessionIds, enabled) => {
         return; // Don't update state or show error for cancelled requests
       }
       
-      console.error('[useSessionNeighbors] ❌ API Error:', err.message);
+      console.error('[useSessionNeighbors]  API Error:', err.message);
       
       if (mountedRef.current) {
         setError(err.message);
@@ -1353,6 +1358,9 @@ const UnifiedMapView = () => {
   const [hoveredPolygon, setHoveredPolygon] = useState(null);
   const [hoverPosition, setHoverPosition] = useState(null);
   const [mapVisibleLocations, setMapVisibleLocations] = useState([]);
+  
+  // ✅ ADDED: State to track visible neighbors for Legend
+  const [mapVisibleNeighbors, setMapVisibleNeighbors] = useState([]);
 
   const [isOpacityCollapsed, setIsOpacityCollapsed] = useState(true);
   const [opacity, setOpacity] = useState(0.8);
@@ -2102,7 +2110,8 @@ useEffect(() => {
             showTechnologies={colorBy === "technology"}
             showSignalQuality={!colorBy || colorBy === "metric"}
             availableFilterOptions={availableFilterOptions}
-            logs={mapVisibleLocations}
+            // ✅ FIX: Pass BOTH Primary Logs and Neighbors to Legend so it counts "n78"
+            logs={[...mapVisibleLocations, ...mapVisibleNeighbors]}
           />
         )}
 
@@ -2146,7 +2155,7 @@ useEffect(() => {
   defaultZoom={13}
   fitToLocations={(locationsToDisplay?.length || 0) > 0}
   onLoad={handleMapLoad}
-  pointRadius={15}
+  pointRadius={12}
   projectId={projectId}
   polygonSource={polygonSource}
   enablePolygonFilter={true}
@@ -2165,9 +2174,8 @@ useEffect(() => {
   onNeighborClick={(neighbor) => {
     console.log('Neighbor clicked:', neighbor);
   }}
-  onFilteredNeighborsChange={(filtered) => {
-    console.log('Filtered neighbors:', filtered.length);
-  }}
+  // ✅ UPDATED: Capture visible neighbors
+  onFilteredNeighborsChange={setMapVisibleNeighbors}
   debugNeighbors={true}  // Set to false in production
 >
   {/* Other children like SiteMarkers, NetworkPlannerMap, Polygons, etc. */}

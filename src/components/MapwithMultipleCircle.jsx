@@ -565,7 +565,7 @@ const MapWithMultipleCircles = ({
   defaultZoom = 14,
   fitToLocations = true,
   onLoad: onLoadProp,
-  pointRadius = 16,
+  pointRadius = 14,
   children,
   projectId = null,
   polygonSource = "map",
@@ -802,7 +802,13 @@ const MapWithMultipleCircles = ({
     // 1. Check if coloring by a specific Category
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
-        const value = neighbor?.[key];
+        
+        // ✅ FIX: If coloring by band, prioritize the neighbor band
+        let value = neighbor?.[key];
+        if (key === 'band') {
+            value = neighbor?.neighbourBand || neighbor?.neighborBand || value;
+        }
+
         return getMetricColor(value, colorBy);
     }
     
@@ -891,7 +897,7 @@ const MapWithMultipleCircles = ({
           ...options,
           gestureHandling: 'greedy',
           disableDefaultUI: false,
-          maxZoom: 20,
+          // maxZoom: 20,
         }}
         center={computedCenter}
         zoom={defaultZoom}
