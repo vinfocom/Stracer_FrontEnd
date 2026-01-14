@@ -23,10 +23,10 @@ const DriveTestSessionsPage = () => {
     const [loading, setLoading] = useState(true);
     const [selectedSessions, setSelectedSessions] = useState([]); 
     const navigate = useNavigate();
-    const [searchTerm, setSearchTerm] = useState(""); // State for search term
+    const [searchTerm, setSearchTerm] = useState(""); 
 
     const [currentPage, setCurrentPage] = useState(1);
-    const [sessionsPerPage] = useState(10); // Number of sessions per page
+    const [sessionsPerPage] = useState(10); 
 
     const fetchSessions = useCallback(async () => {
         try {
@@ -202,7 +202,8 @@ const DriveTestSessionsPage = () => {
                             </TableHead>
                             <TableHead>SessionId</TableHead>
                             <TableHead>User Details</TableHead>
-                            <TableHead>Start Time - End Time</TableHead>
+                            <TableHead>Start Time </TableHead>
+                            <TableHead>End Time</TableHead>
                             <TableHead>Start Location</TableHead>
                             <TableHead>End Location</TableHead>
                             <TableHead>Distance(in Km)</TableHead>
@@ -243,8 +244,9 @@ const DriveTestSessionsPage = () => {
                                     </TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">
                                         <div>{formatDate(session.start_time)}</div>
-                                        <div>{formatDate(session.end_time)}</div>
+                                       
                                     </TableCell>
+                                    <TableCell className="whitespace-normal break-words max-w-[200px]"> <div>{formatDate(session.end_time)}</div></TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">{session.start_address}</TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">{session.end_address}</TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[100px]">{session.distance_km ? `${session.distance_km.toFixed(2)} km` : 'N/A'}</TableCell>
