@@ -6,6 +6,9 @@ import DeckGLOverlay from "./maps/DeckGLOverlay";
 import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
 import TechHandoverMarkers from "./unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
+import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
+// ✅ Import helpers for normalization
+import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 
@@ -591,6 +594,7 @@ const MapWithMultipleCircles = ({
   onNeighborClick,
   onFilteredNeighborsChange,
   debugMode = false,
+  legendFilter = null,
 }) => {
   // Use the color hook
   const { 
@@ -669,19 +673,57 @@ const MapWithMultipleCircles = ({
   // Filter primary locations by polygon
   const locationsToRender = useMemo(() => {
     if (!locations?.length) return [];
-    if (!enablePolygonFilter) return locations;
-    if (!polygonsFetched) return [];
-    if (polygonData.length === 0) return locations;
+    
+    let filtered = locations;
 
-    const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
-    return checker.filterLocations(locations);
-  }, [locations, polygonData, polygonsFetched, enablePolygonFilter]);
+    // A. Apply Polygon Filter
+    if (enablePolygonFilter && polygonsFetched && polygonData.length > 0) {
+      const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
+      filtered = checker.filterLocations(filtered);
+    }
 
-  // Process and filter neighbor data by polygon
+    // B. Apply Legend Filter (Highlight)
+    if (legendFilter) {
+      filtered = filtered.filter(log => {
+        if (legendFilter.type === 'metric') {
+          const val = getMetricValueFromLog(log, legendFilter.metric);
+          return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
+        }
+
+        if (legendFilter.type === 'pci') {
+          const val = getMetricValueFromLog(log, 'pci');
+          return Math.floor(val) === legendFilter.value;
+        }
+
+        if (legendFilter.type === 'category') {
+           const scheme = COLOR_SCHEMES[legendFilter.key];
+           let key = "Unknown";
+           if (legendFilter.key === 'provider') {
+             key = normalizeProviderName(log.provider || log.Provider || log.carrier) || "Unknown";
+           } else if (legendFilter.key === 'technology') {
+             const tech = log.network || log.Network || log.technology || log.networkType;
+             const band = log.band || log.Band || log.neighbourBand || log.neighborBand || log.neighbour_band;
+             key = normalizeTechName(tech, band);
+           } else if (legendFilter.key === 'band') {
+             const b = String(log.neighbourBand || log.neighborBand || log.neighbour_band || log.band || log.Band || "").trim();
+             key = (b === "-1" || b === "") ? "Unknown" : (scheme?.[b] ? b : "Unknown");
+           }
+           
+           return key === legendFilter.value;
+        }
+        
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [locations, polygonData, polygonsFetched, enablePolygonFilter, legendFilter, selectedMetric]);
+
+  // Process and filter neighbor data by polygon AND Legend
   const processedNeighbors = useMemo(() => {
     if (!showNeighbors || !neighborData?.length) return [];
 
-    const parsed = neighborData
+    let parsed = neighborData
       .filter(n => {
         const lat = parseFloat(n.lat ?? n.latitude ?? n.Lat);
         const lng = parseFloat(n.lng ?? n.longitude ?? n.Lng ?? n.lon);
@@ -731,14 +773,54 @@ const MapWithMultipleCircles = ({
         };
       });
 
-    // Apply polygon filter
+    // A. Apply Polygon Filter
     if (enablePolygonFilter && polygonsFetched && polygonData.length > 0) {
       const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
-      return checker.filterLocations(parsed);
+      parsed = checker.filterLocations(parsed);
+    }
+
+    // B. Apply Legend Filter (Highlight for Neighbors)
+    if (legendFilter) {
+      parsed = parsed.filter(n => {
+        // Metric Filter
+        if (legendFilter.type === 'metric') {
+          // Use the metric value selected for map visualization (e.g. 'rsrp', 'rsrq')
+          // Neighbors object keys are normalized above to: rsrp, rsrq, sinr
+          const val = n[legendFilter.metric];
+          return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
+        }
+
+        // PCI Filter
+        if (legendFilter.type === 'pci') {
+          // Filter by the PCI being visualized (usually Primary PCI for map view)
+          const val = n.pci;
+          return Math.floor(val) === legendFilter.value;
+        }
+
+        // Category Filter (Provider, Band, Technology)
+        if (legendFilter.type === 'category') {
+           const scheme = COLOR_SCHEMES[legendFilter.key];
+           let key = "Unknown";
+           
+           if (legendFilter.key === 'provider') {
+             key = normalizeProviderName(n.provider) || "Unknown";
+           } else if (legendFilter.key === 'technology') {
+             key = normalizeTechName(n.technology || n.networkType, n.band);
+           } else if (legendFilter.key === 'band') {
+             // CAREFUL: Neighbors use neighbourBand for coloring preference
+             const b = String(n.neighbourBand || n.neighborBand || n.band || "").trim();
+             key = (b === "-1" || b === "") ? "Unknown" : (scheme?.[b] ? b : "Unknown");
+           }
+           
+           return key === legendFilter.value;
+        }
+        
+        return true;
+      });
     }
 
     return parsed;
-  }, [neighborData, showNeighbors, enablePolygonFilter, polygonsFetched, polygonData, selectedMetric, getThresholdInfo]);
+  }, [neighborData, showNeighbors, enablePolygonFilter, polygonsFetched, polygonData, selectedMetric, getThresholdInfo, legendFilter]);
 
   // Build spatial index
   useEffect(() => {
@@ -778,32 +860,27 @@ const MapWithMultipleCircles = ({
     );
   }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, getMetricColor, thresholdsReady]);
 
-  // ✅ UPDATED: Color getter for primary locations to respect colorBy
+  // Color getter for primary locations to respect colorBy
   const getPrimaryColor = useCallback((loc) => {
     if (!thresholdsReady) return '#808080';
     
-    // 1. Check if coloring by a specific Category (Provider, Band, Technology)
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
-        // loc fields typically: provider, technology, band
         const value = loc?.[key];
         return getMetricColor(value, colorBy);
     }
     
-    // 2. Default: Color by the selected Numeric Metric
     const value = loc?.[selectedMetric];
     return getMetricColor(value, selectedMetric);
   }, [selectedMetric, colorBy, getMetricColor, thresholdsReady]);
 
-  // ✅ UPDATED: Color getter for neighbors to respect colorBy
+  // Color getter for neighbors to respect colorBy
   const getNeighborColor = useCallback((neighbor) => {
     if (!thresholdsReady) return '#808080';
     
-    // 1. Check if coloring by a specific Category
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
         
-        // ✅ FIX: If coloring by band, prioritize the neighbor band
         let value = neighbor?.[key];
         if (key === 'band') {
             value = neighbor?.neighbourBand || neighbor?.neighborBand || value;
@@ -812,7 +889,6 @@ const MapWithMultipleCircles = ({
         return getMetricColor(value, colorBy);
     }
     
-    // 2. Default
     const value = neighbor?.metricValue ?? neighbor?.[selectedMetric];
     return getMetricColor(value, selectedMetric);
   }, [selectedMetric, colorBy, getMetricColor, thresholdsReady]);
@@ -944,7 +1020,7 @@ const MapWithMultipleCircles = ({
             locations={showPoints ? locationsToRender : []}
             getColor={getPrimaryColor}
             radius={pointRadius}
-            opacity={opacity} // ✅ CHANGED: Hardcoded to 1 for solid visibility
+            opacity={opacity}
             selectedIndex={activeMarkerIndex}
             onClick={handlePrimaryClick}
             radiusMinPixels={4}

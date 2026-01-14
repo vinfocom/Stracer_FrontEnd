@@ -1,16 +1,16 @@
 // src/pages/ViewProjectsPage.jsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Map, Folder, Calendar, Building2, RefreshCw } from "lucide-react";
+import { Map, Folder, Calendar, Building2, RefreshCw, Search, Eye } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import Spinner from "@/components/common/Spinner";
 import { mapViewApi } from "@/api/apiEndpoints";
 
@@ -18,6 +18,7 @@ const ViewProjectsPage = () => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const formatDate = (d) => (d ? new Date(d).toLocaleDateString() : "N/A");
 
@@ -32,7 +33,6 @@ const ViewProjectsPage = () => {
         toast.warn("No projects found.");
       }
     } catch (error) {
-      console.error("❌ Failed to fetch projects:", error);
       toast.error("Failed to load projects.");
     } finally {
       setLoading(false);
@@ -42,6 +42,19 @@ const ViewProjectsPage = () => {
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
+
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery.trim()) return projects;
+    
+    const query = searchQuery.toLowerCase();
+    return projects.filter((project) => {
+      return (
+        project.project_name?.toLowerCase().includes(query) ||
+        project.provider?.toLowerCase().includes(query) ||
+        project.id?.toString().includes(query)
+      );
+    });
+  }, [projects, searchQuery]);
 
   const handleViewOnMap = (project) => {
     if (!project || !project.id) {
@@ -73,8 +86,20 @@ const ViewProjectsPage = () => {
       {/* Projects Card */}
       <Card className="h-full">
         <CardHeader>
-          <CardTitle>Project List</CardTitle>
-          
+          <div className="flex items-center justify-between">
+            <CardTitle>Project List</CardTitle>
+            {/* Search Input */}
+            <div className="relative w-72">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent>
@@ -82,67 +107,79 @@ const ViewProjectsPage = () => {
             <div className="flex justify-center items-center h-40">
               <Spinner />
             </div>
-          ) : projects.length ? (
-            <div className="max-h-[500px] overflow-y-auto pr-2">
-              <div className="  grid 
-      gap-4 
-      sm:grid-cols-2 
-      md:grid-cols-3 
-      lg:grid-cols-4 
-      xl:grid-cols-5 
-      2xl:grid-cols-6">
-              {/* <div className=" flex justify-start flex-wrap w-full gap-4"> */}
-            
-                {projects.map((p) => (
-                  <div
-                    key={p.id}
-                    className="group relative flex wrap-normal border-1 rounded-md flex-col items-center p-4 min-w-[100px] hover:bg-gray-50 transition-all duration-200 cursor-pointer"
-                    onClick={() => handleViewOnMap(p)}
-                  >
-                    <div className="relative mb-3 ">
-                      <Map />
-                      <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                        
+          ) : filteredProjects.length ? (
+            <div className="max-h-[500px] overflow-y-auto">
+              <table className="w-full border-collapse">
+                <thead className="sticky top-0 bg-gray-100">
+                  <tr>
+                    <th className="text-left p-3 font-semibold text-gray-700 border-b">
+                      <div className="flex items-center gap-2">
+                        <Map className="h-4 w-4" />
+                        Project Name
                       </div>
-                    </div>
-
-                    <h3 className="text-sm font-medium text-center text-gray-900 mb-1 line-clamp-2 w-full">
-                      {p.project_name}
-                    </h3>
-
-                    {/* Tooltip on hover */}
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                      <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1 mb-1">
-                          <Calendar className="h-3 w-3" />
-                          <span>{formatDate(p.created_on)}</span>
-                        </div>
-                        {p.provider && (
-                          <div className="flex items-center gap-1">
-                            <Building2 className="h-3 w-3" />
-                            <span>{p.provider}</span>
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full">
-                          <div className="border-4 border-transparent border-t-gray-900"></div>
-                        </div>
+                    </th>
+                    {/* <th className="text-left p-3 font-semibold text-gray-700 border-b">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        Provider
                       </div>
-                    </div>
-
-                    <span className="text-xs text-gray-500">
-                      {formatDate(p.created_on)}
-                    </span>
-                    
-                  </div>
-                  
-                ))}
-                
-              </div>
+                    </th> */}
+                    <th className="text-left p-3 font-semibold text-gray-700 border-b">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Created On
+                      </div>
+                    </th>
+                    <th className="text-center p-3 font-semibold text-gray-700 border-b">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProjects.map((project) => (
+                    <tr
+                      key={project.id}
+                      className="hover:bg-gray-50 transition-colors border-b last:border-b-0"
+                    >
+                      <td className="p-3">
+                        <span className="font-medium text-gray-900">
+                          {project.project_name}
+                        </span>
+                      </td>
+                      {/* <td className="p-3 text-gray-600">
+                        {project.provider || "N/A"}
+                      </td> */}
+                      <td className="p-3 text-gray-600">
+                        {formatDate(project.created_on)}
+                      </td>
+                      <td className="p-3 text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewOnMap(project)}
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          View on Map
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-40 text-gray-500">
               <Folder className="h-12 w-12 mb-2 text-gray-300" />
-              <span>No projects found.</span>
+              <span>
+                {searchQuery ? "No projects match your search." : "No projects found."}
+              </span>
+            </div>
+          )}
+
+          {/* Results count */}
+          {!loading && projects.length > 0 && (
+            <div className="mt-4 text-sm text-gray-500 text-right">
+              Showing {filteredProjects.length} of {projects.length} projects
             </div>
           )}
         </CardContent>

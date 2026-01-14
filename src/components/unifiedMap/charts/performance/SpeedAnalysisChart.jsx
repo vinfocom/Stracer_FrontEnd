@@ -40,6 +40,10 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations }, ref) => {
       });
   }, [locations]);
 
+const handleclick = () =>{
+  console.log("clicked");
+}
+
   const stats = useMemo(() => {
     if (!data.length) return null;
 

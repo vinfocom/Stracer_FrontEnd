@@ -1,8 +1,7 @@
-import { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, memo } from "react";
 import { toast } from "react-toastify";
 
-// --- Geo Utilities ---
-
+// --- Helper Functions (Keep exactly as they were) ---
 function toLatLng(item) {
   const lat = Number(item.lat ?? item.latitude ?? item.start_lat ?? item.Latitude ?? item.LAT);
   const lng = Number(item.lng ?? item.lon ?? item.longitude ?? item.start_lon ?? item.LNG);
@@ -106,8 +105,6 @@ function filterItemsInside(type, overlay, items) {
     return false;
   });
 }
-
-// --- Pixelation Logic ---
 
 function pixelateShape(type, overlay, logs, selectedMetric, thresholds, cellSizeMeters, map, gridOverlays, colorizeCells) {
   const gm = window.google.maps;
@@ -217,9 +214,10 @@ function serializeOverlay(type, overlay) {
   return { type };
 }
 
-// --- Component ---
+// --- Component Definition ---
 
-export default function DrawingToolsLayer({
+// Define as a named function first to avoid HMR issues with anonymous memo components
+function DrawingToolsLayerComponent({
   map,
   enabled,
   logs,
@@ -403,3 +401,6 @@ export default function DrawingToolsLayer({
 
   return null;
 }
+
+// Export the memoized component
+export default memo(DrawingToolsLayerComponent);

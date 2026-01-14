@@ -1,6 +1,6 @@
 // src/components/map/MapLegend.jsx
 import React, { useMemo, useState } from "react";
-import { ChevronDown, Layers } from "lucide-react";
+import { ChevronDown, Layers, X } from "lucide-react";
 import {
   PCI_COLOR_PALETTE,
   COLOR_SCHEMES,
@@ -21,7 +21,6 @@ const getNormalizedKey = (log, colorBy, scheme) => {
       return normalizeTechName(tech, band);
 
     case "band": {
-      // ✅ FIX: Prioritize neighbor band fields first so "n78" is picked up instead of the primary band
       const b = String(
         log.neighbourBand || 
         log.neighborBand || 
@@ -38,13 +37,12 @@ const getNormalizedKey = (log, colorBy, scheme) => {
   }
 };
 
-// ✅ Color Scheme Legend - UPDATED to hide "Unknown"
-const ColorSchemeLegend = ({ colorBy, logs }) => {
+// ✅ Color Scheme Legend
+const ColorSchemeLegend = ({ colorBy, logs, activeFilter, onFilterChange }) => {
   const scheme = COLOR_SCHEMES[colorBy];
   if (!scheme) return null;
 
   const { counts, total, usedEntries } = useMemo(() => {
-    // Initialize counts for all scheme keys
     const tempCounts = Object.fromEntries(Object.keys(scheme).map(k => [k, 0]));
 
     logs?.forEach((log) => {
@@ -53,14 +51,20 @@ const ColorSchemeLegend = ({ colorBy, logs }) => {
     });
 
     const used = Object.entries(scheme)
-      .filter(([key]) => 
-        tempCounts[key] > 0 && 
-        key !== "Unknown" // 👈 ADDED: Filter out Unknown entries
-      )
+      .filter(([key]) => tempCounts[key] > 0 && key !== "Unknown")
       .sort((a, b) => tempCounts[b[0]] - tempCounts[a[0]]);
 
     return { counts: tempCounts, total: logs?.length || 0, usedEntries: used };
   }, [logs, colorBy, scheme]);
+
+  const handleRowClick = (key) => {
+    // Toggle: if already active, clear it.
+    if (activeFilter?.type === 'category' && activeFilter?.value === key) {
+      onFilterChange(null);
+    } else {
+      onFilterChange({ type: 'category', value: key, key: colorBy });
+    }
+  };
 
   if (!usedEntries.length) {
     return <div className="text-xs text-white text-center py-3">No data available</div>;
@@ -69,15 +73,23 @@ const ColorSchemeLegend = ({ colorBy, logs }) => {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto max-h-[200px] space-y-0.5 pr-1 custom-scrollbar">
-        {usedEntries.map(([key, color]) => (
-          <LegendRow
-            key={key}
-            color={color}
-            label={key}
-            count={counts[key]}
-            total={total}
-          />
-        ))}
+        {usedEntries.map(([key, color]) => {
+          const isActive = activeFilter?.type === 'category' && activeFilter?.value === key;
+          const isDimmed = activeFilter && !isActive;
+          
+          return (
+            <LegendRow
+              key={key}
+              color={color}
+              label={key}
+              count={counts[key]}
+              total={total}
+              onClick={() => handleRowClick(key)}
+              isActive={isActive}
+              isDimmed={isDimmed}
+            />
+          );
+        })}
       </div>
       <LegendFooter total={total} />
     </div>
@@ -85,7 +97,7 @@ const ColorSchemeLegend = ({ colorBy, logs }) => {
 };
 
 // ✅ PCI Legend
-const PciLegend = ({ logs }) => {
+const PciLegend = ({ logs, activeFilter, onFilterChange }) => {
   const pciStats = useMemo(() => {
     const pciMap = new Map();
     let validCount = 0, invalidCount = 0;
@@ -111,6 +123,14 @@ const PciLegend = ({ logs }) => {
   const getPciColor = (pci) =>
     PCI_COLOR_PALETTE[Math.abs(Math.floor(pci)) % PCI_COLOR_PALETTE.length];
 
+  const handleRowClick = (pci) => {
+    if (activeFilter?.type === 'pci' && activeFilter?.value === pci) {
+      onFilterChange(null);
+    } else {
+      onFilterChange({ type: 'pci', value: pci });
+    }
+  };
+
   if (!pciStats.allPcis.length) {
     return <div className="text-xs text-gray-500 text-center py-3">No PCI data available</div>;
   }
@@ -118,15 +138,23 @@ const PciLegend = ({ logs }) => {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto max-h-[200px] space-y-0.5 pr-1 custom-scrollbar">
-        {pciStats.allPcis.map(([pci, count]) => (
-          <LegendRow
-            key={pci}
-            color={getPciColor(pci)}
-            label={pci}
-            count={count}
-            total={pciStats.validCount}
-          />
-        ))}
+        {pciStats.allPcis.map(([pci, count]) => {
+          const isActive = activeFilter?.type === 'pci' && activeFilter?.value === pci;
+          const isDimmed = activeFilter && !isActive;
+
+          return (
+            <LegendRow
+              key={pci}
+              color={getPciColor(pci)}
+              label={pci}
+              count={count}
+              total={pciStats.validCount}
+              onClick={() => handleRowClick(pci)}
+              isActive={isActive}
+              isDimmed={isDimmed}
+            />
+          );
+        })}
       </div>
       <LegendFooter
         total={pciStats.validCount}
@@ -138,7 +166,7 @@ const PciLegend = ({ logs }) => {
 };
 
 // ✅ Metric Threshold Legend
-const MetricThresholdLegend = ({ thresholds, selectedMetric, logs }) => {
+const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter, onFilterChange }) => {
   const config = getMetricConfig(selectedMetric);
   const list = thresholds?.[config.thresholdKey] || [];
 
@@ -159,6 +187,7 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs }) => {
       }
 
       valid++;
+      // Exact range match
       const idx = list.findIndex((t) => {
         const min = parseFloat(t.min), max = parseFloat(t.max);
         return Number.isFinite(min) && Number.isFinite(max) && val >= min && val <= max;
@@ -167,7 +196,7 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs }) => {
       if (idx !== -1) {
         tempCounts[idx]++;
       } else {
-        // Handle edge cases
+        // Handle edge cases (catch-all for values outside defined ranges)
         const mins = list.map((t) => parseFloat(t.min)).filter(Number.isFinite);
         const maxs = list.map((t) => parseFloat(t.max)).filter(Number.isFinite);
         
@@ -192,6 +221,21 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs }) => {
     };
   }, [logs, list, selectedMetric]);
 
+  const handleRowClick = (threshold) => {
+    const id = `metric-${threshold.min}-${threshold.max}`;
+    if (activeFilter?.id === id) {
+      onFilterChange(null);
+    } else {
+      onFilterChange({ 
+        type: 'metric', 
+        id, 
+        min: parseFloat(threshold.min), 
+        max: parseFloat(threshold.max),
+        metric: selectedMetric
+      });
+    }
+  };
+
   if (!list.length) {
     return <div className="text-xs text-gray-500 text-center py-3">No thresholds configured</div>;
   }
@@ -203,15 +247,24 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs }) => {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto max-h-[200px] space-y-0.5 pr-1 custom-scrollbar">
-        {usedThresholds.map((t) => (
-          <LegendRow
-            key={t.idx}
-            color={t.color}
-            label={t.range || t.label || `${t.min} → ${t.max}`}
-            count={t.count}
-            total={validCount}
-          />
-        ))}
+        {usedThresholds.map((t) => {
+          const id = `metric-${t.min}-${t.max}`;
+          const isActive = activeFilter?.id === id;
+          const isDimmed = activeFilter && !isActive;
+
+          return (
+            <LegendRow
+              key={t.idx}
+              color={t.color}
+              label={t.range || t.label || `${t.min} → ${t.max}`}
+              count={t.count}
+              total={validCount}
+              onClick={() => handleRowClick(t)}
+              isActive={isActive}
+              isDimmed={isDimmed}
+            />
+          );
+        })}
       </div>
       <LegendFooter total={validCount} invalidCount={invalidCount} invalidLabel="No value" />
     </div>
@@ -219,11 +272,15 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs }) => {
 };
 
 // ✅ Reusable Legend Row Component
-const LegendRow = ({ color, label, count, total }) => {
-  const pct = total > 0 ? ((count / total) * 100).toFixed(1) : 0;
-
+const LegendRow = ({ color, label, count, total, onClick, isActive, isDimmed }) => {
   return (
-    <div className="flex items-center gap-3 py-1.5 px-1 rounded hover:bg-white/5 transition-colors">
+    <div 
+      onClick={onClick}
+      className={`flex items-center gap-3 py-1.5 px-1 rounded transition-all cursor-pointer border border-transparent
+        ${isActive ? 'bg-white/10 border-white/20' : 'hover:bg-white/5'}
+        ${isDimmed ? 'opacity-30 hover:opacity-50' : 'opacity-100'}
+      `}
+    >
       <div
         className="w-2.5 h-2.5 rounded-full flex-shrink-0"
         style={{ backgroundColor: color }}
@@ -232,7 +289,6 @@ const LegendRow = ({ color, label, count, total }) => {
       <span className="text-sm tabular-nums text-white min-w-[36px] text-right">
         {count.toLocaleString()}
       </span>
-      
     </div>
   );
 };
@@ -265,19 +321,27 @@ export default function MapLegend({
   selectedMetric,
   colorBy = null,
   logs = [],
+  activeFilter = null,
+  onFilterChange = () => {},
 }) {
   const [collapsed, setCollapsed] = useState(false);
+
+  // Clear filter button if active
+  const clearFilter = (e) => {
+    e.stopPropagation();
+    onFilterChange(null);
+  };
 
   const { content, title } = useMemo(() => {
     if (colorBy) {
       return {
-        content: <ColorSchemeLegend colorBy={colorBy} logs={logs} />,
+        content: <ColorSchemeLegend colorBy={colorBy} logs={logs} activeFilter={activeFilter} onFilterChange={onFilterChange} />,
         title: colorBy.charAt(0).toUpperCase() + colorBy.slice(1),
       };
     }
     
     if (selectedMetric?.toLowerCase() === "pci") {
-      return { content: <PciLegend logs={logs} />, title: "PCI" };
+      return { content: <PciLegend logs={logs} activeFilter={activeFilter} onFilterChange={onFilterChange} />, title: "PCI" };
     }
 
     const config = getMetricConfig(selectedMetric);
@@ -287,11 +351,13 @@ export default function MapLegend({
           thresholds={thresholds}
           selectedMetric={selectedMetric}
           logs={logs}
+          activeFilter={activeFilter}
+          onFilterChange={onFilterChange}
         />
       ),
       title: `${config.label}${config.unit ? ` (${config.unit})` : ""}`,
     };
-  }, [colorBy, selectedMetric, thresholds, logs]);
+  }, [colorBy, selectedMetric, thresholds, logs, activeFilter, onFilterChange]);
 
   if (!content) return null;
 
@@ -312,17 +378,32 @@ export default function MapLegend({
         >
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-white/5 rounded-lg transition-colors"
+            className="w-full px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-white/5 rounded-lg transition-colors group"
           >
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-gray-400" />
               <span className="text-sm font-medium text-gray-100">{title}</span>
+              {activeFilter && (
+                <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse ml-1" />
+              )}
             </div>
-            <ChevronDown
-              className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
-                collapsed ? "" : "rotate-180"
-              }`}
-            />
+            
+            <div className="flex items-center gap-1">
+              {activeFilter && (
+                <div 
+                  onClick={clearFilter}
+                  className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white mr-1"
+                  title="Clear filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </div>
+              )}
+              <ChevronDown
+                className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
+                  collapsed ? "" : "rotate-180"
+                }`}
+              />
+            </div>
           </button>
 
           {!collapsed && (

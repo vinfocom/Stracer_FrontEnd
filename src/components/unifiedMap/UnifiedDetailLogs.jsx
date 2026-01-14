@@ -1,4 +1,4 @@
-// src/components/unifiedMap/UnifiedDetailLogs.jsx
+// UnifiedDetailLogs.jsx
 import React, {
   useState,
   useRef,

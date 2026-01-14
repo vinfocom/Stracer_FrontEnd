@@ -5,6 +5,7 @@ import { LogOut, Filter, ChartBar, ChevronDown, ChevronUp } from "lucide-react";
 import { useLocation, Link, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
 import ProjectsDropdown from "../project/ProjectsDropdown";
+import DrawingControlsPanel from "../map/layout/DrawingControlsPanel";
 
 export default function UnifiedHeader({
   onToggleControls,
@@ -18,6 +19,8 @@ export default function UnifiedHeader({
   setIsOpacityCollapsed,
   opacity,
   setOpacity,
+  onUIChange,
+  ui,
 }) {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -144,6 +147,10 @@ export default function UnifiedHeader({
             </div>
           </>
         )}
+      </div>
+
+      <div>
+        {isMapPage && <DrawingControlsPanel position="relative" onUIChange={onUIChange} ui={ui} />}
       </div>
 
       <div className="flex items-center space-x-4">

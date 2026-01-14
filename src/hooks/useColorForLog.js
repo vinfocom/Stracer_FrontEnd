@@ -136,7 +136,7 @@ function useColorForLog() {
         }
 
         for (const thres of thresholds) {
-            if (value >= parseFloat(thres.min) && value <= parseFloat(thres.max)) {
+            if (value >= parseFloat(thres.min) && value < parseFloat(thres.max)) {
                 return {
                     color: thres.color,
                     label: thres.label,

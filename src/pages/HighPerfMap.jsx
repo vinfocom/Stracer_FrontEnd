@@ -1,3 +1,4 @@
+// src/pages/HighPerfMap.jsx
 import React, {
   useCallback,
   useEffect,
@@ -38,6 +39,8 @@ import { loadSavedViewport, saveViewport } from "@/utils/viewport";
 import { parseWKTToCoordinates } from "@/utils/wkt";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import { normalizeBandName, normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
+// ✅ Import COLOR_SCHEMES for consistent category filtering
+import { COLOR_SCHEMES } from "@/utils/metrics";
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
 const DEFAULT_CENTER = { lat: 28.6139, lng: 77.209 };
@@ -50,7 +53,7 @@ const toYmdLocal = (d) => {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 };
 
-// Helper to extract logs array from various response formats
+// ... (Helper functions: extractLogsFromResponse, extractAppSummary, mergeAppSummaries remain the same) ...
 const extractLogsFromResponse = (response) => {
   if (!response) return [];
   if (Array.isArray(response)) return response;
@@ -62,13 +65,11 @@ const extractLogsFromResponse = (response) => {
   return [];
 };
 
-// Helper to extract app_summary from response
 const extractAppSummary = (response) => {
   if (!response) return null;
   return response.app_summary || response.appSummary || response.App_Summary || null;
 };
 
-// Helper to merge app summaries from multiple sources
 const mergeAppSummaries = (summary1, summary2) => {
   if (!summary1 && !summary2) return null;
   if (!summary1) return summary2;
@@ -113,51 +114,33 @@ const mergeAppSummaries = (summary1, summary2) => {
   return merged;
 };
 
-// Get metric value from log based on selected metric
+// ... (getMetricValue and getColorForMetricValue remain the same) ...
 const getMetricValue = (log, metric) => {
   if (!log || !metric) return null;
-  
   const metricKey = metric.toLowerCase();
-  
   switch (metricKey) {
-    case 'rsrp':
-      return parseFloat(log.rsrp ?? log.RSRP ?? log.Rsrp);
-    case 'rsrq':
-      return parseFloat(log.rsrq ?? log.RSRQ ?? log.Rsrq);
-    case 'sinr':
-      return parseFloat(log.sinr ?? log.SINR ?? log.Sinr);
+    case 'rsrp': return parseFloat(log.rsrp ?? log.RSRP ?? log.Rsrp);
+    case 'rsrq': return parseFloat(log.rsrq ?? log.RSRQ ?? log.Rsrq);
+    case 'sinr': return parseFloat(log.sinr ?? log.SINR ?? log.Sinr);
     case 'dl_thpt':
     case 'dl_tpt':
-    case 'dl_throughput':
-      return parseFloat(log.dl_tpt ?? log.dl_thpt ?? log.dlTpt ?? log.dl_throughput ?? log.DL_Tpt);
+    case 'dl_throughput': return parseFloat(log.dl_tpt ?? log.dl_thpt ?? log.dlTpt ?? log.dl_throughput ?? log.DL_Tpt);
     case 'ul_thpt':
     case 'ul_tpt':
-    case 'ul_throughput':
-      return parseFloat(log.ul_tpt ?? log.ul_thpt ?? log.ulTpt ?? log.ul_throughput ?? log.UL_Tpt);
-    case 'mos':
-      return parseFloat(log.mos ?? log.MOS ?? log.Mos);
+    case 'ul_throughput': return parseFloat(log.ul_tpt ?? log.ul_thpt ?? log.ulTpt ?? log.ul_throughput ?? log.UL_Tpt);
+    case 'mos': return parseFloat(log.mos ?? log.MOS ?? log.Mos);
     case 'lte_bler':
-    case 'bler':
-      return parseFloat(log.lte_bler ?? log.bler ?? log.BLER);
-    default:
-      return parseFloat(log[metricKey] ?? log[metric]);
+    case 'bler': return parseFloat(log.lte_bler ?? log.bler ?? log.BLER);
+    default: return parseFloat(log[metricKey] ?? log[metric]);
   }
 };
 
-// Get color based on metric value and thresholds
 const getColorForMetricValue = (value, metric, thresholds) => {
-  if (value === null || value === undefined || isNaN(value)) {
-    return '#9CA3AF'; // Gray for invalid values
-  }
-  
+  if (value === null || value === undefined || isNaN(value)) return '#9CA3AF';
   const metricKey = metric.toLowerCase().replace('_thpt', '_thpt').replace('_tpt', '_thpt');
   const thresholdArray = thresholds[metricKey] || thresholds[metric] || [];
+  if (!Array.isArray(thresholdArray) || thresholdArray.length === 0) return '#3B82F6';
   
-  if (!Array.isArray(thresholdArray) || thresholdArray.length === 0) {
-    return '#3B82F6'; // Default blue
-  }
-  
-  // Sort thresholds by min value (descending for most metrics, ascending for some)
   const sortedThresholds = [...thresholdArray].sort((a, b) => {
     const aMin = parseFloat(a.min ?? a.Min ?? -Infinity);
     const bMin = parseFloat(b.min ?? b.Min ?? -Infinity);
@@ -167,18 +150,14 @@ const getColorForMetricValue = (value, metric, thresholds) => {
   for (const threshold of sortedThresholds) {
     const min = parseFloat(threshold.min ?? threshold.Min ?? -Infinity);
     const max = parseFloat(threshold.max ?? threshold.Max ?? Infinity);
-    
     if (value >= min && value <= max) {
       return threshold.color || threshold.Color || '#3B82F6';
     }
   }
-  
-  // Return the color of the lowest threshold if value is below all
   if (sortedThresholds.length > 0) {
     const lastThreshold = sortedThresholds[sortedThresholds.length - 1];
     return lastThreshold.color || lastThreshold.Color || '#EF4444';
   }
-  
   return '#9CA3AF';
 };
 
@@ -190,6 +169,7 @@ const coordinatesToWktPolygon = (coords) => {
 };
 
 const MAP_STYLES = {
+  // ... (Styles remain the same) ...
   default: null,
   clean: [
     { featureType: "poi", stylers: [{ visibility: "off" }] },
@@ -292,6 +272,9 @@ export default function HighPerfMap() {
   const [neighbourAppSummary, setNeighbourAppSummary] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  // ✅ State for Legend Filter
+  const [legendFilter, setLegendFilter] = useState(null);
+
   // Combined logs with metric value and color pre-computed
   const combinedDisplayedLogs = useMemo(() => {
     const processLogs = (logs, isNeighbour) => {
@@ -319,6 +302,58 @@ export default function HighPerfMap() {
     return mainLogsProcessed;
   }, [displayedLogs, displayedNeighbourLogs, ui.showNeighbours, selectedMetric, thresholds]);
 
+  // ✅ NEW: Apply Legend Filter specifically for the Map Layer
+  const mapVisibleLogs = useMemo(() => {
+    // If no filter, show everything
+    if (!legendFilter) return combinedDisplayedLogs;
+
+    return combinedDisplayedLogs.filter(log => {
+      // 1. Metric Filter
+      if (legendFilter.type === 'metric') {
+        const val = log.metricValue;
+        // Strict inequality for max to match previous implementation
+        return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
+      }
+
+      // 2. PCI Filter
+      if (legendFilter.type === 'pci') {
+        // Handle both main pci and neighbor pci
+        const val = log.pci || log.Pci || log.PCI;
+        return Math.floor(val) === legendFilter.value;
+      }
+
+      // 3. Category Filter
+      if (legendFilter.type === 'category') {
+        const scheme = COLOR_SCHEMES[legendFilter.key];
+        let key = "Unknown";
+
+        if (legendFilter.key === 'provider') {
+          key = normalizeProviderName(log.provider || log.Provider || log.carrier) || "Unknown";
+        } else if (legendFilter.key === 'technology') {
+          key = normalizeTechName(
+            log.network || log.Network || log.technology || log.networkType, 
+            log.band || log.Band || log.neighbourBand || log.neighborBand
+          );
+        } else if (legendFilter.key === 'band') {
+          // Replicate MapLegend normalization logic for Bands
+          const b = String(
+            log.neighbourBand || 
+            log.neighborBand || 
+            log.neighbour_band || 
+            log.band || 
+            log.Band || 
+            ""
+          ).trim();
+          key = (b === "-1" || b === "") ? "Unknown" : (scheme?.[b] ? b : "Unknown");
+        }
+
+        return key === legendFilter.value;
+      }
+
+      return true;
+    });
+  }, [combinedDisplayedLogs, legendFilter]);
+
   // Combined app summary
   const combinedAppSummary = useMemo(() => {
     if (ui.showNeighbours) {
@@ -329,7 +364,6 @@ export default function HighPerfMap() {
 
   const availableFilterOptions = useMemo(() => {
     const allLogs = [...rawLogs, ...neighbourLogs];
-    
     if (!allLogs || allLogs.length === 0) {
       return { providers: [], technologies: [], bands: [] };
     }
@@ -341,10 +375,10 @@ export default function HighPerfMap() {
     allLogs.forEach(log => {
       const provider = normalizeProviderName(log.provider || log.Provider || log.carrier);
       if (provider && provider !== "Unknown") providerSet.add(provider);
-     const tech = normalizeTechName(
-    log.network || log.Network || log.technology, 
-    log.band || log.Band
-);
+      const tech = normalizeTechName(
+        log.network || log.Network || log.technology, 
+        log.band || log.Band
+      );
       if (tech && tech !== "Unknown") techSet.add(tech);
       const band = String(normalizeBandName(log.band || log.Band || "")).trim();
       if (band && band !== "-1" && band !== "" && band !== "undefined") bandSet.add(band);
@@ -356,6 +390,8 @@ export default function HighPerfMap() {
       bands: Array.from(bandSet).sort((a, b) => parseInt(a) - parseInt(b)).map(name => ({ id: name, name })),
     };
   }, [rawLogs, neighbourLogs]);
+
+  // ... (fetchThresholds, fetchAllSessions, fetchLogsFromApi, applyLocalFilters, handleFetchLogsForPolygon remain same) ...
 
   useEffect(() => {
     const fetchThresholds = async () => {
@@ -401,162 +437,86 @@ export default function HighPerfMap() {
     if (!activeFilters) fetchAllSessions();
   }, [isLoaded, activeFilters, fetchAllSessions]);
 
-  // Main function to fetch logs from both APIs
-  // In HighPerfMap.jsx
+  const fetchLogsFromApi = useCallback(async (dateFilters) => {
+    setLogsLoading(true);
+    try {
+      const startDateStr = toYmdLocal(dateFilters.startDate);
+      const endDateStr = toYmdLocal(dateFilters.endDate);
+      const mainApiParams = {
+        StartDate: startDateStr,
+        EndDate: endDateStr,
+        StartTime: dateFilters.startTime || "00:00:00",
+        EndTime: dateFilters.endTime || "23:59:59",
+      };
+      if (dateFilters.provider && dateFilters.provider !== "ALL") mainApiParams.Provider = dateFilters.provider;
+      if (dateFilters.technology && dateFilters.technology !== "ALL") mainApiParams.Technology = dateFilters.technology;
+      if (dateFilters.band && dateFilters.band !== "ALL") mainApiParams.Band = dateFilters.band;
 
-const fetchLogsFromApi = useCallback(async (dateFilters) => {
-  setLogsLoading(true);
+      const neighbourApiParams = { StartDate: startDateStr, EndDate: endDateStr };
 
-  console.log("=== DEBUG mapViewApi ===");
-  console.log("mapViewApi:", mapViewApi);
-  console.log("typeof getLogsByDateRange:", typeof mapViewApi.getLogsByDateRange);
-  console.log("typeof getLogsByneighbour:", typeof mapViewApi.getLogsByneighbour);
-  console.log("All keys:", Object.keys(mapViewApi));
-  console.log("========================");
-  
-  try {
-    // Prepare parameters
-    const startDateStr = toYmdLocal(dateFilters.startDate);
-    const endDateStr = toYmdLocal(dateFilters.endDate);
-    
-    // Main API params (full filters)
-    const mainApiParams = {
-      StartDate: startDateStr,
-      EndDate: endDateStr,
-      StartTime: dateFilters.startTime || "00:00:00",
-      EndTime: dateFilters.endTime || "23:59:59",
-    };
-    
-    if (dateFilters.provider && dateFilters.provider !== "ALL") {
-      mainApiParams.Provider = dateFilters.provider;
-    }
-    if (dateFilters.technology && dateFilters.technology !== "ALL") {
-      mainApiParams.Technology = dateFilters.technology;
-    }
-    if (dateFilters.band && dateFilters.band !== "ALL") {
-      mainApiParams.Band = dateFilters.band;
-    }
+      const [mainResponse, neighbourResponse] = await Promise.all([
+        mapViewApi.getLogsByDateRange(mainApiParams).catch(err => {
+          toast.error(`Main logs error: ${err.message}`);
+          return null;
+        }),
+        mapViewApi.getLogsByneighbour(neighbourApiParams).catch(() => null)
+      ]);
 
-    // Neighbour API params (only date range)
-    const neighbourApiParams = {
-      StartDate: startDateStr,
-      EndDate: endDateStr,
-    };
-
-    console.log("🔄 Fetching logs...");
-    console.log("   Main params:", mainApiParams);
-    console.log("   Neighbour params:", neighbourApiParams);
-
-    // ✅ Fetch both APIs in parallel
-    const [mainResponse, neighbourResponse] = await Promise.all([
-      mapViewApi.getLogsByDateRange(mainApiParams).catch(err => {
-        console.error("❌ Main logs API error:", err);
-        toast.error(`Main logs error: ${err.message}`);
-        return null;
-      }),
-      mapViewApi.getLogsByneighbour(neighbourApiParams).catch(err => {
-        console.error("❌ Neighbour logs API error:", err);
-        // Don't show error toast for neighbour - it's optional
-        return null;
-      })
-    ]);
-
-    // ✅ Log after await (correct way)
-    console.log("✅ Main Response:", mainResponse);
-    console.log("✅ Neighbour Response:", neighbourResponse);
-
-    // Extract logs from main response
-    let fetchedMainLogs = [];
-    let mainAppSummaryData = null;
-    
-    if (mainResponse) {
-      fetchedMainLogs = extractLogsFromResponse(mainResponse);
-      mainAppSummaryData = extractAppSummary(mainResponse);
-      console.log(`   Main logs count: ${fetchedMainLogs.length}`);
-    }
-
-    // Extract logs from neighbour response
-    let fetchedNeighbourLogs = [];
-    let neighbourAppSummaryData = null;
-    
-    if (neighbourResponse) {
-      fetchedNeighbourLogs = extractLogsFromResponse(neighbourResponse);
-      neighbourAppSummaryData = extractAppSummary(neighbourResponse);
-      console.log(`   Neighbour logs count: ${fetchedNeighbourLogs.length}`);
-    }
-
-    // Check if we have any data
-    const totalLogs = fetchedMainLogs.length + fetchedNeighbourLogs.length;
-    
-    if (totalLogs === 0) {
-      toast.warn("No logs found for the selected date range.");
-      setRawLogs([]);
-      setNeighbourLogs([]);
-      setDisplayedLogs([]);
-      setDisplayedNeighbourLogs([]);
-      setAppSummary(null);
-      setNeighbourAppSummary(null);
-      return { mainLogs: [], neighbourLogs: [] };
-    }
-
-    // Set state for both log types
-    setRawLogs(fetchedMainLogs);
-    setNeighbourLogs(fetchedNeighbourLogs);
-    setDisplayedLogs(fetchedMainLogs);
-    setDisplayedNeighbourLogs(fetchedNeighbourLogs);
-    setAppSummary(mainAppSummaryData);
-    setNeighbourAppSummary(neighbourAppSummaryData);
-
-    // Fit map to all logs
-    if (map) {
-      const allPoints = [
-        ...fetchedMainLogs.map(log => ({ 
-          lat: parseFloat(log.lat || log.Lat || log.latitude), 
-          lon: parseFloat(log.lon || log.Lon || log.lng || log.longitude) 
-        })),
-        ...fetchedNeighbourLogs.map(log => ({ 
-          lat: parseFloat(log.lat || log.Lat || log.latitude), 
-          lon: parseFloat(log.lon || log.Lon || log.lng || log.longitude) 
-        }))
-      ].filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-      
-      if (allPoints.length > 0) {
-        fitMapToMostlyLogs(map, allPoints);
+      let fetchedMainLogs = [], mainAppSummaryData = null;
+      if (mainResponse) {
+        fetchedMainLogs = extractLogsFromResponse(mainResponse);
+        mainAppSummaryData = extractAppSummary(mainResponse);
       }
+
+      let fetchedNeighbourLogs = [], neighbourAppSummaryData = null;
+      if (neighbourResponse) {
+        fetchedNeighbourLogs = extractLogsFromResponse(neighbourResponse);
+        neighbourAppSummaryData = extractAppSummary(neighbourResponse);
+      }
+
+      const totalLogs = fetchedMainLogs.length + fetchedNeighbourLogs.length;
+      if (totalLogs === 0) {
+        toast.warn("No logs found for the selected date range.");
+        setRawLogs([]); setNeighbourLogs([]); setDisplayedLogs([]); setDisplayedNeighbourLogs([]);
+        setAppSummary(null); setNeighbourAppSummary(null);
+        return { mainLogs: [], neighbourLogs: [] };
+      }
+
+      setRawLogs(fetchedMainLogs);
+      setNeighbourLogs(fetchedNeighbourLogs);
+      setDisplayedLogs(fetchedMainLogs);
+      setDisplayedNeighbourLogs(fetchedNeighbourLogs);
+      setAppSummary(mainAppSummaryData);
+      setNeighbourAppSummary(neighbourAppSummaryData);
+
+      if (map) {
+        const allPoints = [
+          ...fetchedMainLogs.map(log => ({ 
+            lat: parseFloat(log.lat || log.Lat || log.latitude), 
+            lon: parseFloat(log.lon || log.Lon || log.lng || log.longitude) 
+          })),
+          ...fetchedNeighbourLogs.map(log => ({ 
+            lat: parseFloat(log.lat || log.Lat || log.latitude), 
+            lon: parseFloat(log.lon || log.Lon || log.lng || log.longitude) 
+          }))
+        ].filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+        if (allPoints.length > 0) fitMapToMostlyLogs(map, allPoints);
+      }
+
+      toast.success(`✅ Loaded ${fetchedMainLogs.length} main + ${fetchedNeighbourLogs.length} neighbour logs`);
+      return { mainLogs: fetchedMainLogs, neighbourLogs: fetchedNeighbourLogs };
+    } catch (error) {
+      setRawLogs([]); setNeighbourLogs([]); setDisplayedLogs([]); setDisplayedNeighbourLogs([]);
+      setAppSummary(null); setNeighbourAppSummary(null);
+      return { mainLogs: [], neighbourLogs: [] };
+    } finally {
+      setLogsLoading(false);
     }
+  }, [map]);
 
-    // Show success toast
-    toast.success(
-      `✅ Loaded ${fetchedMainLogs.length} main + ${fetchedNeighbourLogs.length} neighbour logs`
-    );
-
-    return { 
-      mainLogs: fetchedMainLogs, 
-      neighbourLogs: fetchedNeighbourLogs 
-    };
-    
-  } catch (error) {
-    console.error("❌ Error fetching logs:", error);
-    
-    console.error(`Failed to fetch logs: ${error?.message || "Unknown error"}`);
-    setRawLogs([]);
-    setNeighbourLogs([]);
-    setDisplayedLogs([]);
-    setDisplayedNeighbourLogs([]);
-    setAppSummary(null);
-    setNeighbourAppSummary(null);
-    return { mainLogs: [], neighbourLogs: [] };
-  } finally {
-    setLogsLoading(false);
-  }
-}, [map]);
-
-  // Apply local filters to logs
   const applyLocalFilters = useCallback((logs, filters) => {
     if (!logs || logs.length === 0) return [];
-    
     let filtered = [...logs];
-    
     if (filters.provider && filters.provider !== "ALL") {
       filtered = filtered.filter(log => 
         normalizeProviderName(log.provider || log.Provider || log.carrier ) === filters.provider
@@ -564,16 +524,11 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
     }
     if (filters.technology && filters.technology !== "ALL") {
       filtered = filtered.filter(log => 
-  normalizeTechName(
-      log.network || log.Network || log.technology,
-      log.band || log.Band
-  ) === filters.technology
-);
+        normalizeTechName(log.network || log.Network || log.technology, log.band || log.Band) === filters.technology
+      );
     }
     if (filters.band && filters.band !== "ALL") {
-      filtered = filtered.filter(log => 
-        String(log.band || log.Band || "").trim() === filters.band
-      );
+      filtered = filtered.filter(log => String(log.band || log.Band || "").trim() === filters.band);
     }
     if (filters.coverageHoleOnly) {
       const threshold = thresholds.coveragehole || -110;
@@ -582,7 +537,6 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
         return Number.isFinite(rsrp) && rsrp < threshold;
       });
     }
-    
     return filtered;
   }, [thresholds]);
 
@@ -591,14 +545,12 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
       toast.error("Please draw a shape first.");
       return;
     }
-
     if (analysis.intersectingSessions && analysis.intersectingSessions.length > 0) {
       const sessionIds = analysis.intersectingSessions.map(s => s.id).join(",");
       toast.info(`Navigating to view logs for ${analysis.intersectingSessions.length} sessions...`);
       navigate(`/debug-map?sessionId=${sessionIds}`);
       return;
     }
-
     if (activeFilters) {
       toast.info("Fetching logs for selected area...");
       fetchLogsFromApi(activeFilters);
@@ -612,16 +564,8 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
     const dateChanged = !activeFilters || 
       toYmdLocal(filters.startDate) !== toYmdLocal(activeFilters.startDate) || 
       toYmdLocal(filters.endDate) !== toYmdLocal(activeFilters.endDate);
-    
-    const timeChanged = !activeFilters ||
-      filters.startTime !== activeFilters.startTime ||
-      filters.endTime !== activeFilters.endTime;
-
-    const apiFiltersChanged = dateChanged || 
-      timeChanged ||
-      filters.provider !== activeFilters?.provider || 
-      filters.technology !== activeFilters?.technology || 
-      filters.band !== activeFilters?.band;
+    const timeChanged = !activeFilters || filters.startTime !== activeFilters.startTime || filters.endTime !== activeFilters.endTime;
+    const apiFiltersChanged = dateChanged || timeChanged || filters.provider !== activeFilters?.provider || filters.technology !== activeFilters?.technology || filters.band !== activeFilters?.band;
 
     setActiveFilters(filters);
     setSelectedMetric(String(filters.measureIn || "rsrp").toLowerCase());
@@ -630,6 +574,9 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
     setUi(u => ({ ...u, showLogsCircles: true, showSessions: false }));
     setShowCoverageHoleOnly(filters.coverageHoleOnly || false);
     setColorBy(filters.colorBy || null);
+    
+    // ✅ Reset legend filter when applying new main filters
+    setLegendFilter(null);
 
     let mainLogsToFilter = rawLogs;
     let neighbourLogsToFilter = neighbourLogs;
@@ -640,34 +587,21 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
       neighbourLogsToFilter = result.neighbourLogs;
     }
     
-    // Apply local filters to both log sets
     const filteredMainLogs = applyLocalFilters(mainLogsToFilter, filters);
     const filteredNeighbourLogs = applyLocalFilters(neighbourLogsToFilter, filters);
-    
     setDisplayedLogs(filteredMainLogs);
     setDisplayedNeighbourLogs(filteredNeighbourLogs);
-    
   }, [activeFilters, rawLogs, neighbourLogs, fetchLogsFromApi, applyLocalFilters]);
 
   const handleClearFilters = useCallback(() => {
     setActiveFilters(null);
     setSelectedSessionData(null);
-    setRawLogs([]);
-    setNeighbourLogs([]);
-    setDisplayedLogs([]);
-    setDisplayedNeighbourLogs([]);
-    setAnalysis(null);
-    setColorBy(null);
-    setAppSummary(null);
-    setNeighbourAppSummary(null);
-    setUi((u) => ({
-      ...u,
-      showHeatmap: false,
-      drawEnabled: false,
-      timeFilterEnabled: false,
-      showLogsCircles: false,
-      showSessions: true,
-    }));
+    setRawLogs([]); setNeighbourLogs([]); setDisplayedLogs([]); setDisplayedNeighbourLogs([]);
+    setAnalysis(null); setColorBy(null);
+    setAppSummary(null); setNeighbourAppSummary(null);
+    // ✅ Clear legend filter
+    setLegendFilter(null);
+    setUi((u) => ({ ...u, showHeatmap: false, drawEnabled: false, timeFilterEnabled: false, showLogsCircles: false, showSessions: true }));
     fetchAllSessions();
   }, [fetchAllSessions]);
 
@@ -681,7 +615,7 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
       setSelectedSessionData({ session, logs });
       if (logs.length === 0) toast.warn(`No logs found for session ${session.id}`);
     } catch (e) {
-      toast.error(`Failed to fetch logs gtrsrdysgt for session ${session.id}: ${e?.message || "Unknown error"}`);
+      toast.error(`Failed to fetch logs for session ${session.id}: ${e?.message || "Unknown error"}`);
       setSelectedSessionData(null);
     } finally {
       setIsLoading(false);
@@ -739,6 +673,7 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
     setMap(null);
   }, []);
 
+  // ... (handleDownloadStatsCsv, handleDownloadRawCsv, handleSavePolygon, handleClearAnalysis remain same) ...
   const handleDownloadStatsCsv = useCallback(() => {
     if (!analysis || !analysis.stats) {
       toast.error("No polygon stats available. Draw a shape first.");
@@ -785,7 +720,6 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
       ...logsInside.map((log) => {
         return headers.map((h) => {
           let val = "";
-          
           if (h === "latitude") val = log.lat ?? log.latitude ?? "";
           else if (h === "longitude") val = log.lng ?? log.lon ?? log.longitude ?? "";
           else if (h === "dl_throughput") val = log.dl_tpt ?? log.dl_thpt ?? "";
@@ -794,7 +728,6 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
           else if (h === "technology") val = log.network ?? log.Network ?? "";
           else if (h === "isNeighbour") val = log.isNeighbour ? "Yes" : "No";
           else val = log[h] ?? "";
-          
           return typeof val === "string" && val.includes(",") ? `"${val}"` : val;
         }).join(",");
       }),
@@ -933,7 +866,8 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
           {activeFilters && combinedDisplayedLogs.length > 0 && (
             <LogCirclesLayer
               map={map}
-              logs={combinedDisplayedLogs}
+              // ✅ Pass the filtered logs to the map layer
+              logs={mapVisibleLogs}
               selectedMetric={selectedMetric}
               thresholds={thresholds}
               showCircles={ui.showLogsCircles && !(ui.drawPixelateRect && analysis)}
@@ -959,7 +893,8 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
             <DrawingToolsLayer
               map={map}
               enabled={ui.drawEnabled}
-              logs={combinedDisplayedLogs}
+              // ✅ Pass filtered logs to drawing tools so stats match what is seen
+              logs={mapVisibleLogs}
               selectedMetric={selectedMetric}
               thresholds={thresholds}
               sessions={allSessions}
@@ -974,18 +909,22 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
           )}
         </GoogleMap>
 
+        {/* ✅ Pass activeFilter state and ALL logs to MapLegend */}
         {activeFilters && (ui.showLogsCircles || ui.showHeatmap) && (
           <MapLegend
             thresholds={thresholds}
             selectedMetric={selectedMetric}
             colorBy={colorBy}
             logs={combinedDisplayedLogs}
+            activeFilter={legendFilter}
+            onFilterChange={setLegendFilter}
           />
         )}
 
-        {/* Simplified Stats Panel - No Drawing Count */}
+        {/* Stats Panel ... (remains the same) */}
         {analysis && (
           <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[260px] border border-gray-200">
+            {/* ... Content of Stats Panel ... */}
             <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
               <h3 className="font-semibold text-white text-sm">
                 {selectedMetric.toUpperCase()} Analysis
@@ -996,25 +935,19 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
             </div>
 
             <div className="p-3 text-xs space-y-3">
-              {/* Shape Info */}
               <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                 <span className="text-gray-500">Shape:</span>
                 <span className="font-medium text-gray-800 capitalize">{analysis.type}</span>
               </div>
-
-              {/* Area */}
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Area:</span>
                 <span className="font-medium text-gray-800">{formatArea(analysis.area)}</span>
               </div>
-
-              {/* Logs Count */}
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Logs Inside:</span>
                 <span className="font-bold text-blue-600">{analysis.count || 0}</span>
               </div>
 
-              {/* Metric Stats */}
               {analysis.stats?.count > 0 && (
                 <div className="pt-2 border-t border-gray-100">
                   <div className="text-[10px] text-gray-500 mb-2 uppercase tracking-wide">
@@ -1049,7 +982,6 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
                 </div>
               )}
 
-              {/* Sessions (only when no filters) */}
               {!activeFilters && analysis.intersectingSessions?.length > 0 && (
                 <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                   <span className="text-gray-500">Sessions:</span>
@@ -1058,7 +990,6 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
               )}
             </div>
 
-            {/* Actions */}
             <div className="px-3 py-2.5 border-t border-gray-200 bg-gray-50 rounded-b-lg space-y-2">
               <Button
                 size="sm"
@@ -1133,7 +1064,6 @@ const fetchLogsFromApi = useCallback(async (dateFilters) => {
           </div>
         )}
 
-        {/* Save Polygon Dialog */}
         <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
           <DialogContent className="sm:max-w-[425px] bg-white">
             <DialogHeader>
