@@ -7,8 +7,8 @@ import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
 import TechHandoverMarkers from "./unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
 import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
-// ✅ Import helpers for normalization
-import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
+// ✅ Import helpers for normalization and coloring
+import { normalizeProviderName, normalizeTechName, getLogColor } from "@/utils/colorUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 
@@ -198,6 +198,30 @@ const getPolygonBounds = (path) => {
   return { north: maxLat, south: minLat, east: maxLng, west: minLng };
 };
 
+// ============== Helper: Color Resolution ==============
+const getColorFromThresholds = (value, metricThresholds) => {
+  if (value == null || isNaN(value)) return "#808080";
+  if (!metricThresholds?.length) return "#808080";
+
+  // Sort thresholds by min value
+  const sorted = [...metricThresholds].sort((a, b) => parseFloat(a.min) - parseFloat(b.min));
+
+  for (const t of sorted) {
+    const min = parseFloat(t.min);
+    const max = parseFloat(t.max);
+    // Check range [min, max) or [min, max] for the last one
+    if (value >= min && value <= max) {
+      return t.color;
+    }
+  }
+  
+  // Handle out of bounds - clamp to nearest
+  if (value < parseFloat(sorted[0].min)) return sorted[0].color;
+  if (value > parseFloat(sorted[sorted.length - 1].max)) return sorted[sorted.length - 1].color;
+
+  return "#808080";
+};
+
 // ============== Grid Generator ==============
 const generateGridCellsOptimized = (
   polygonData, 
@@ -304,12 +328,12 @@ const generateGridCellsOptimized = (
 };
 
 // ============== Neighbor InfoWindow Component ==============
-const NeighborInfoWindow = React.memo(({ neighbor, onClose, getMetricColor }) => {
+const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
   if (!neighbor) return null;
 
-  const rsrpColor = getMetricColor?.(neighbor.rsrp, 'rsrp') || '#808080';
-  const rsrqColor = getMetricColor?.(neighbor.rsrq, 'rsrq') || '#808080';
-  const sinrColor = getMetricColor?.(neighbor.sinr, 'sinr') || '#808080';
+  const rsrpColor = resolveColor(neighbor.rsrp, 'rsrp');
+  const rsrqColor = resolveColor(neighbor.rsrq, 'rsrq');
+  const sinrColor = resolveColor(neighbor.sinr, 'sinr');
 
   return (
     <InfoWindow
@@ -425,7 +449,7 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, getMetricColor }) =>
             {neighbor.neighbourRsrp !== null && (
               <div className="flex justify-between text-xs items-center">
                 <span className="text-gray-500">RSRP</span>
-                <span className="font-semibold" style={{ color: getMetricColor?.(neighbor.neighbourRsrp, 'rsrp') }}>
+                <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrp, 'rsrp') }}>
                   {neighbor.neighbourRsrp?.toFixed?.(1)} dBm
                 </span>
               </div>
@@ -453,11 +477,11 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, getMetricColor }) =>
 NeighborInfoWindow.displayName = 'NeighborInfoWindow';
 
 // ============== Primary Log InfoWindow ==============
-const PrimaryLogInfoWindow = React.memo(({ log, onClose, getMetricColor, selectedMetric }) => {
+const PrimaryLogInfoWindow = React.memo(({ log, onClose, resolveColor, selectedMetric }) => {
   if (!log) return null;
 
   const metricValue = log[selectedMetric];
-  const metricColor = getMetricColor?.(metricValue, selectedMetric) || '#808080';
+  const metricColor = resolveColor(metricValue, selectedMetric);
 
   return (
     <InfoWindow
@@ -501,7 +525,7 @@ const PrimaryLogInfoWindow = React.memo(({ log, onClose, getMetricColor, selecte
           {log.rsrp !== null && log.rsrp !== undefined && (
             <div className="flex justify-between text-xs items-center">
               <span className="text-gray-500">RSRP</span>
-              <span className="font-semibold" style={{ color: getMetricColor?.(log.rsrp, 'rsrp') }}>
+              <span className="font-semibold" style={{ color: resolveColor(log.rsrp, 'rsrp') }}>
                 {log.rsrp?.toFixed?.(1)} dBm
               </span>
             </div>
@@ -510,7 +534,7 @@ const PrimaryLogInfoWindow = React.memo(({ log, onClose, getMetricColor, selecte
           {log.rsrq !== null && log.rsrq !== undefined && (
             <div className="flex justify-between text-xs items-center">
               <span className="text-gray-500">RSRQ</span>
-              <span className="font-medium" style={{ color: getMetricColor?.(log.rsrq, 'rsrq') }}>
+              <span className="font-medium" style={{ color: resolveColor(log.rsrq, 'rsrq') }}>
                 {log.rsrq?.toFixed?.(1)} dB
               </span>
             </div>
@@ -519,7 +543,7 @@ const PrimaryLogInfoWindow = React.memo(({ log, onClose, getMetricColor, selecte
           {log.sinr !== null && log.sinr !== undefined && (
             <div className="flex justify-between text-xs items-center">
               <span className="text-gray-500">SINR</span>
-              <span className="font-medium" style={{ color: getMetricColor?.(log.sinr, 'sinr') }}>
+              <span className="font-medium" style={{ color: resolveColor(log.sinr, 'sinr') }}>
                 {log.sinr?.toFixed?.(1)} dB
               </span>
             </div>
@@ -586,6 +610,7 @@ const MapWithMultipleCircles = ({
   opacity = 1,
   showPoints: showPointsProp = true,
   
+  thresholds = {}, // ✅ ACCEPT THRESHOLDS PROP
   
   neighborData = [],
   showNeighbors = false,
@@ -596,11 +621,11 @@ const MapWithMultipleCircles = ({
   debugMode = false,
   legendFilter = null,
 }) => {
-  // Use the color hook
+  // Use the color hook fallback
   const { 
-    getMetricColor, 
+    getMetricColor: getMetricColorFromHook, 
     getThresholdInfo, 
-    thresholds, 
+    thresholds: hookThresholds, 
     loading: thresholdsLoading, 
     isReady: thresholdsReady 
   } = useColorForLog();
@@ -625,6 +650,37 @@ const MapWithMultipleCircles = ({
   useEffect(() => {
     onFilteredNeighborsChangeRef.current = onFilteredNeighborsChange;
   }, [onFilteredNeighborsChange]);
+
+  // ✅ Unified Color Resolver
+  // Uses passed thresholds for metrics, or fallback to hook.
+  // Uses getLogColor for categorical types (Provider, Band, etc.)
+  const resolveColor = useCallback((value, metricOrType) => {
+    if (!metricOrType) return "#808080";
+
+    const typeKey = metricOrType.toLowerCase();
+    
+    // Categorical Coloring
+    if (['provider', 'technology', 'band', 'operator'].includes(typeKey)) {
+        return getLogColor(typeKey, value);
+    }
+    
+    // Threshold-based Coloring
+    // 1. Try passed thresholds prop
+    const metricKey = typeKey === 'dl_tpt' ? 'dl_thpt' : 
+                      typeKey === 'ul_tpt' ? 'ul_thpt' : typeKey;
+
+    if (thresholds && thresholds[metricKey]?.length > 0) {
+      return getColorFromThresholds(value, thresholds[metricKey]);
+    }
+    
+    // 2. Fallback to hook if ready
+    if (thresholdsReady) {
+      return getMetricColorFromHook(value, metricOrType);
+    }
+    
+    return "#808080";
+  }, [thresholds, thresholdsReady, getMetricColorFromHook]);
+
 
   // Fetch polygons
   useEffect(() => {
@@ -784,20 +840,17 @@ const MapWithMultipleCircles = ({
       parsed = parsed.filter(n => {
         // Metric Filter
         if (legendFilter.type === 'metric') {
-          // Use the metric value selected for map visualization (e.g. 'rsrp', 'rsrq')
-          // Neighbors object keys are normalized above to: rsrp, rsrq, sinr
           const val = n[legendFilter.metric];
           return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
         }
 
         // PCI Filter
         if (legendFilter.type === 'pci') {
-          // Filter by the PCI being visualized (usually Primary PCI for map view)
           const val = n.pci;
           return Math.floor(val) === legendFilter.value;
         }
 
-        // Category Filter (Provider, Band, Technology)
+        // Category Filter
         if (legendFilter.type === 'category') {
            const scheme = COLOR_SCHEMES[legendFilter.key];
            let key = "Unknown";
@@ -807,7 +860,6 @@ const MapWithMultipleCircles = ({
            } else if (legendFilter.key === 'technology') {
              key = normalizeTechName(n.technology || n.networkType, n.band);
            } else if (legendFilter.key === 'band') {
-             // CAREFUL: Neighbors use neighbourBand for coloring preference
              const b = String(n.neighbourBand || n.neighborBand || n.band || "").trim();
              key = (b === "-1" || b === "") ? "Unknown" : (scheme?.[b] ? b : "Unknown");
            }
@@ -847,51 +899,61 @@ const MapWithMultipleCircles = ({
 
   // Grid cells with hook-based coloring
   const gridCells = useMemo(() => {
-    if (!enableGrid || !polygonData.length || !locationsToRender.length || !thresholdsReady) return [];
+    if (!enableGrid || !polygonData.length || !locationsToRender.length) return [];
     
     return generateGridCellsOptimized(
       polygonData, 
       gridSizeMeters, 
       locationsToRender, 
       selectedMetric, 
-      getMetricColor,
+      resolveColor, // Use unified resolver
       gridAggregationMethod,
       spatialIndexRef.current
     );
-  }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, getMetricColor, thresholdsReady]);
+  }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, resolveColor]);
 
   // Color getter for primary locations to respect colorBy
   const getPrimaryColor = useCallback((loc) => {
-    if (!thresholdsReady) return '#808080';
-    
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
         const value = loc?.[key];
-        return getMetricColor(value, colorBy);
+        return resolveColor(value, colorBy);
     }
     
     const value = loc?.[selectedMetric];
-    return getMetricColor(value, selectedMetric);
-  }, [selectedMetric, colorBy, getMetricColor, thresholdsReady]);
+    return resolveColor(value, selectedMetric);
+  }, [selectedMetric, colorBy, resolveColor]);
 
-  // Color getter for neighbors to respect colorBy
+  // ✅ FIXED: Color getter for neighbors to respect colorBy and normalize TECH correctly
   const getNeighborColor = useCallback((neighbor) => {
-    if (!thresholdsReady) return '#808080';
-    
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
-        
-        let value = neighbor?.[key];
-        if (key === 'band') {
-            value = neighbor?.neighbourBand || neighbor?.neighborBand || value;
+        let value;
+
+        if (key === 'technology') {
+             // 1. Map 'technology' to 'networkType' (common in neighbor data)
+             const rawTech = neighbor?.technology || neighbor?.networkType;
+             // 2. Identify the best band to distinguish 5G (Neighbor Band > Band)
+             const bandForTech = neighbor?.neighbourBand || neighbor?.neighborBand || neighbor?.band;
+             // 3. Normalize explicitly to ensure 5G detection works
+             value = normalizeTechName(rawTech, bandForTech);
+        } 
+        else if (key === 'band') {
+             // Prefer neighbor band
+             value = neighbor?.neighbourBand || neighbor?.neighborBand || neighbor?.band;
+        } 
+        else {
+             // Default (Provider, etc.)
+             value = neighbor?.[key];
         }
 
-        return getMetricColor(value, colorBy);
+        return resolveColor(value, colorBy);
     }
     
+    // Fallback to metric value
     const value = neighbor?.metricValue ?? neighbor?.[selectedMetric];
-    return getMetricColor(value, selectedMetric);
-  }, [selectedMetric, colorBy, getMetricColor, thresholdsReady]);
+    return resolveColor(value, selectedMetric);
+  }, [selectedMetric, colorBy, resolveColor]);
 
   // Compute center
   const computedCenter = useMemo(() => {
@@ -1013,7 +1075,7 @@ const MapWithMultipleCircles = ({
         ))}
 
         {/* WebGL Layer for BOTH primary logs (circles) and neighbors (squares) */}
-        {map && thresholdsReady && (
+        {map && (
           <DeckGLOverlay
             map={map}
             // Primary logs (circles)
@@ -1041,7 +1103,7 @@ const MapWithMultipleCircles = ({
           <NeighborInfoWindow
             neighbor={selectedNeighbor}
             onClose={() => setSelectedNeighbor(null)}
-            getMetricColor={getMetricColor}
+            resolveColor={resolveColor}
           />
         )}
 
@@ -1050,7 +1112,7 @@ const MapWithMultipleCircles = ({
           <PrimaryLogInfoWindow
             log={selectedLog}
             onClose={() => setSelectedLog(null)}
-            getMetricColor={getMetricColor}
+            resolveColor={resolveColor}
             selectedMetric={selectedMetric}
           />
         )}

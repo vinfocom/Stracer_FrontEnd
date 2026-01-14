@@ -1,3 +1,4 @@
+// src/pages/UnifiedMapView.jsx
 import React, {
   useState,
   useEffect,
@@ -9,47 +10,46 @@ import { useSearchParams } from "react-router-dom";
 import { useJsApiLoader, Polygon } from "@react-google-maps/api";
 import { toast } from "react-toastify";
 
-import { mapViewApi, settingApi, areaBreakdownApi } from "../api/apiEndpoints";
+// API (Keep mapViewApi for Duration, IO, and Distance calls which are still local)
+import { mapViewApi } from "../api/apiEndpoints";
+
+// Components
 import Spinner from "../components/common/Spinner";
 import MapWithMultipleCircles from "../components/MapwithMultipleCircle";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import UnifiedMapSidebar from "@/components/unifiedMap/UnifiedMapSideBar.jsx";
 import SiteMarkers from "@/components/unifiedMap/SiteMarkers";
 import NetworkPlannerMap from "@/components/unifiedMap/NetworkPlannerMap";
-import { useSiteData } from "@/hooks/useSiteData";
 import UnifiedHeader from "@/components/unifiedMap/unifiedMapHeader";
 import UnifiedDetailLogs from "@/components/unifiedMap/UnifiedDetailLogs";
 import MapLegend from "@/components/map/MapLegend";
-import { useNeighborCollisions } from "@/hooks/useNeighborCollisions";
 import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
+import LoadingProgress from "@/components/LoadingProgress";
+
+// Hooks - Refactored Imports
+import { useSiteData } from "@/hooks/useSiteData";
+import { useNeighborCollisions } from "@/hooks/useNeighborCollisions";
+import useColorForLog from "@/hooks/useColorForLog";
+import { useBestNetworkCalculation, DEFAULT_WEIGHTS } from "@/hooks/useBestNetworkCalculation";
+
+// ✅ NEW HOOK IMPORTS
+import { useNetworkSamples } from "@/hooks/useNetworkSamples";
+import { usePredictionData } from "@/hooks/usePredictionData";
+import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
+import { useProjectPolygons } from "@/hooks/useProjectPolygons";
+import { useAreaPolygons } from "@/hooks/useAreaPolygons";
+
+// Utils
 import {
   normalizeProviderName,
   normalizeTechName,
   getBandColor,
   getTechnologyColor,
   getProviderColor,
-  COLOR_SCHEMES,
 } from "@/utils/colorUtils";
-import useColorForLog from "@/hooks/useColorForLog";
-
-import {
-  useBestNetworkCalculation,
-  DEFAULT_WEIGHTS,
-} from "@/hooks/useBestNetworkCalculation";
-import LoadingProgress from "@/components/LoadingProgress";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
-
-const DEFAULT_THRESHOLDS = {
-  rsrp: [],
-  rsrq: [],
-  sinr: [],
-  dl_thpt: [],
-  ul_thpt: [],
-  mos: [],
-  lte_bler: [],
-};
 
 const DEFAULT_COVERAGE_FILTERS = {
   rsrp: { enabled: false, threshold: -110 },
@@ -81,6 +81,8 @@ const COLOR_GRADIENT = [
   { min: 0.0, color: "#EF4444" },
 ];
 
+// --- Helper Functions (Kept local for coloring logic) ---
+
 const debounce = (fn, wait) => {
   let timeout;
   return (...args) => {
@@ -88,8 +90,6 @@ const debounce = (fn, wait) => {
     timeout = setTimeout(() => fn(...args), wait);
   };
 };
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const normalizeMetricValue = (value, metric) => {
   const config = METRIC_CONFIG[metric];
@@ -107,7 +107,6 @@ const normalizeMetricValue = (value, metric) => {
 
 const getColorFromNormalizedValue = (normalizedValue) => {
   if (normalizedValue == null || isNaN(normalizedValue)) return "#999999";
-
   for (const { min, color } of COLOR_GRADIENT) {
     if (normalizedValue >= min) return color;
   }
@@ -128,27 +127,21 @@ const getColorFromValueOrMetric = (value, thresholds, metric) => {
       .sort((a, b) => parseFloat(a.min) - parseFloat(b.min));
 
     let matchedThreshold = null;
-
     for (const t of sorted) {
       const min = parseFloat(t.min);
       const max = parseFloat(t.max);
       const isLastRange = t === sorted[sorted.length - 1];
-
       if (value >= min && (isLastRange ? value <= max : value < max)) {
         matchedThreshold = t;
       }
     }
-
     if (matchedThreshold?.color) return matchedThreshold.color;
-
     if (sorted.length > 0) {
       if (value < sorted[0].min) return sorted[0].color;
       if (value > sorted[sorted.length - 1].max) return sorted[sorted.length - 1].color;
     }
-
     return "#999999";
   }
-
   return getColorForMetricValue(value, metric);
 };
 
@@ -166,41 +159,9 @@ const getThresholdKey = (metric) => {
   return mapping[metric?.toLowerCase()] || metric;
 };
 
-const parseWKTToPolygons = (wkt) => {
-  if (!wkt?.trim()) return [];
-  try {
-    const match = wkt.trim().match(/POLYGON\s*\(\(([^)]+)\)\)/i);
-    if (!match) return [];
-
-    const points = match[1].split(",").reduce((acc, coord) => {
-      const [lng, lat] = coord.trim().split(/\s+/).map(parseFloat);
-      if (!isNaN(lat) && !isNaN(lng)) acc.push({ lat, lng });
-      return acc;
-    }, []);
-
-    return points.length >= 3 ? [{ paths: [points] }] : [];
-  } catch {
-    return [];
-  }
-};
-
-const computeBbox = (points) => {
-  if (!points?.length) return null;
-  return points.reduce(
-    (bbox, pt) => ({
-      north: Math.max(bbox.north, pt.lat),
-      south: Math.min(bbox.south, pt.lat),
-      east: Math.max(bbox.east, pt.lng),
-      west: Math.min(bbox.west, pt.lng),
-    }),
-    { north: -90, south: 90, east: -180, west: 180 }
-  );
-};
-
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
   if (!path?.length) return false;
-
   const lat = point.lat ?? point.latitude;
   const lng = point.lng ?? point.longitude;
   if (lat == null || lng == null) return false;
@@ -220,33 +181,13 @@ const calculateMedian = (values) => {
   if (!values?.length) return null;
   const validValues = values.filter((v) => v != null && !isNaN(v));
   if (!validValues.length) return null;
-
   const sorted = [...validValues].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
-const cleanThresholds = (thresholds) => {
-  if (!thresholds?.length) return [];
-
-  const valid = thresholds
-    .filter((t) => {
-      const min = parseFloat(t.min);
-      const max = parseFloat(t.max);
-      return !isNaN(min) && !isNaN(max) && min < max;
-    })
-    .map((t) => ({
-      ...t,
-      min: parseFloat(t.min),
-      max: parseFloat(t.max),
-    }));
-
-  return [...valid].sort((a, b) => a.min - b.min);
-};
-
 const calculateCategoryStats = (points, category, metric) => {
   if (!points?.length) return null;
-
   const grouped = {};
   points.forEach((pt) => {
     const key = String(pt[category] || "Unknown").trim();
@@ -281,793 +222,7 @@ const calculateCategoryStats = (points, category, metric) => {
   return { stats, dominant: stats[0], total: points.length };
 };
 
-const parseLogEntry = (log, sessionId) => {
-  if (!log || typeof log !== 'object') {
-    return null;
-  }
-
-  const lat = parseFloat(log.lat);
-  const lng = parseFloat(log.lon);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return null;
-  }
-
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    return null;
-  }
-
-  const parseNum = (val) => {
-    if (val === null || val === undefined || val === '') return null;
-    const num = parseFloat(val);
-    return Number.isFinite(num) ? num : null;
-  };
-
-  return {
-    id: log.id,
-    session_id: sessionId ?? log.session_id,
-    lat: lat,
-    lng: lng,
-    latitude: lat,
-    longitude: lng,
-    radius: 18,
-    timestamp: log.timestamp,
-    rsrp: parseNum(log.rsrp),
-    rsrq: parseNum(log.rsrq),
-    sinr: parseNum(log.sinr),
-    dl_tpt: parseNum(log.dl_tpt),
-    ul_tpt: parseNum(log.ul_tpt),
-    mos: parseNum(log.mos),
-    jitter: parseNum(log.jitter),
-    latency: parseNum(log.latency),
-    packet_loss: parseNum(log.packet_loss),
-    provider: normalizeProviderName(log.m_alpha_long || ''),
-    technology: normalizeTechName(log.network || ''),
-    band: log.band || '',
-    pci: log.pci || '',
-    nodeb_id: log.nodeb_id || '',
-    cell_id: log.cell_id || '',
-    num_cells: parseInt(log.num_cells) || null,
-    speed: parseNum(log.Speed),
-    battery: parseInt(log.battery) || null,
-    indoor_outdoor: log.indoor_outdoor || null,
-    apps: log.apps || '',
-    image_path: log.image_path || '',
-  };
-};
-
-const isRequestCancelled = (error) => {
-  if (!error) return false;
-  if (error.name === 'AbortError') return true;
-  if (error.name === 'CanceledError') return true;
-  if (error.code === 'ERR_CANCELED') return true;
-  if (typeof error.__CANCEL__ !== 'undefined') return true;
-  if (error.message?.toLowerCase().includes('cancel')) return true;
-  if (error.message?.toLowerCase().includes('abort')) return true;
-  return false;
-};
-
-const useSampleData = (sessionIds, enabled) => {
-  const [locations, setLocations] = useState([]);
-  const [appSummary, setAppSummary] = useState({});
-  const [inpSummary, setInpSummary] = useState({});
-  const [tptVolume, setTptVolume] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [progress, setProgress] = useState({ current: 0, total: 0, page: 0, totalPages: 0 });
-  const [technologyTransitions, setTechnologyTransitions] = useState([]);
-  
-  const abortControllerRef = useRef(null);
-  const isFetchingRef = useRef(false);
-  const mountedRef = useRef(true);
-  const lastFetchedKeyRef = useRef(null);
-  const fetchIdRef = useRef(0);
-
-  const fetchData = useCallback(async (forceRefresh = false) => {
-    const fetchKey = sessionIds?.sort().join(',') || '';
-    
-    if (!forceRefresh && fetchKey === lastFetchedKeyRef.current && locations.length > 0) {
-      return;
-    }
-
-    if (!sessionIds?.length || !enabled) {
-      setLocations([]);
-      setAppSummary({});
-      setInpSummary({});
-      setTptVolume({});
-      setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
-      return;
-    }
-
-    if (isFetchingRef.current && fetchKey === lastFetchedKeyRef.current) {
-      return;
-    }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    abortControllerRef.current = new AbortController();
-    const currentFetchId = ++fetchIdRef.current;
-
-    isFetchingRef.current = true;
-    setLoading(true);
-    setError(null);
-    setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
-
-    const PAGE_SIZE = 20000;
-    const allParsedLogs = [];
-    let summaryData = { app: {}, io: {}, tpt: null };
-
-    const startTime = performance.now();
-
-    try {
-      let currentPage = 1;
-      let totalCount = 0;
-      let totalPages = 1;
-      let hasMoreData = true;
-
-      while (hasMoreData) {
-        if (fetchIdRef.current !== currentFetchId || !mountedRef.current) {
-          return;
-        }
-
-        let response;
-        try {
-          response = await mapViewApi.getNetworkLog({
-            session_ids: sessionIds,
-            page: currentPage,
-            limit: PAGE_SIZE,
-            signal: abortControllerRef.current.signal,
-          });
-        } catch (fetchErr) {
-          if (isRequestCancelled(fetchErr)) {
-            return;
-          }
-          throw fetchErr;
-        }
-
-        if (fetchIdRef.current !== currentFetchId || !mountedRef.current) {
-          return;
-        }
-
-        let apiBody;
-        let logsArray;
-
-        if (response?.data && typeof response.data === 'object' && !Array.isArray(response.data) && response.data.data) {
-          apiBody = response.data;
-          logsArray = apiBody.data || [];
-        } else if (response?.data && Array.isArray(response.data)) {
-          apiBody = response;
-          logsArray = response.data;
-        } else if (Array.isArray(response)) {
-          apiBody = { data: response };
-          logsArray = response;
-        } else {
-          apiBody = response?.data || response || {};
-          logsArray = apiBody?.data || (Array.isArray(apiBody) ? apiBody : []);
-        }
-
-        if (currentPage === 1) {
-          totalCount = apiBody?.total_count || apiBody?.totalCount || apiBody?.TotalCount || 0;
-          
-          if (totalCount === 0 && logsArray.length > 0) {
-            totalCount = logsArray.length;
-          }
-          
-          totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-
-          if (apiBody?.app_summary) {
-            summaryData.app = apiBody.app_summary;
-          }
-          if (apiBody?.io_summary) {
-            summaryData.io = apiBody.io_summary;
-          }
-          if (apiBody?.tpt_volume) {
-            summaryData.tpt = apiBody.tpt_volume;
-          }
-        }
-
-        if (!Array.isArray(logsArray)) {
-          break;
-        }
-
-        let parsedCount = 0;
-
-        logsArray.forEach((log) => {
-          const parsed = parseLogEntry(log, log.session_id);
-          if (parsed) {
-            allParsedLogs.push(parsed);
-            parsedCount++;
-          }
-        });
-
-        if (mountedRef.current && fetchIdRef.current === currentFetchId) {
-          setProgress({
-            current: allParsedLogs.length,
-            total: totalCount,
-            page: currentPage,
-            totalPages: totalPages,
-          });
-        }
-
-        if (currentPage >= totalPages) {
-          hasMoreData = false;
-        } else if (logsArray.length < PAGE_SIZE) {
-          hasMoreData = false;
-        } else {
-          currentPage++;
-        }
-
-        if (currentPage > 100) {
-          hasMoreData = false;
-        }
-
-        if (hasMoreData) {
-          await delay(100);
-        }
-      }
-
-      if (fetchIdRef.current !== currentFetchId || !mountedRef.current) {
-        return;
-      }
-
-      const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
-
-      setLocations(allParsedLogs);
-      setAppSummary(summaryData.app);
-      setInpSummary(summaryData.io);
-      setTptVolume(summaryData.tpt);
-      lastFetchedKeyRef.current = fetchKey;
-
-      if (allParsedLogs.length > 0) {
-        const pageInfo = totalPages > 1 ? ` (${totalPages} pages)` : '';
-        toast.success(`${allParsedLogs.length.toLocaleString()} points loaded in ${fetchTime}s${pageInfo}`);
-      } else {
-        toast.warn('No valid log data found');
-      }
-
-    } catch (err) {
-      if (isRequestCancelled(err)) {
-        return;
-      }
-
-      if (mountedRef.current && fetchIdRef.current === currentFetchId) {
-        setError(err.message);
-        toast.error(`Error: ${err.message}`);
-
-        if (allParsedLogs.length > 0) {
-          setLocations(allParsedLogs);
-          setAppSummary(summaryData.app);
-          setInpSummary(summaryData.io);
-          setTptVolume(summaryData.tpt);
-          toast.info(`Loaded ${allParsedLogs.length.toLocaleString()} points before error`);
-        }
-      }
-    } finally {
-      if (fetchIdRef.current === currentFetchId) {
-        isFetchingRef.current = false;
-        if (mountedRef.current) {
-          setLoading(false);
-        }
-      }
-    }
-  }, [sessionIds, enabled]);
-
-  useEffect(() => {
-    if (!locations || locations.length < 2) {
-      setTechnologyTransitions([]);
-      return;
-    }
-
-    const transitions = [];
-    let prevTech = normalizeTechName(locations[0].technology);
-
-    for (let i = 1; i < locations.length; i++) {
-      const currTech = normalizeTechName(locations[i].technology);
-      if (currTech && prevTech && currTech !== prevTech) {
-        transitions.push({
-          from: prevTech,
-          to: currTech,
-          atIndex: i,
-          lat: locations[i].lat,
-          lng: locations[i].lng,
-          rsrp: locations[i].rsrp,
-          nextRsrp: locations[i + 1]?.rsrp,
-          rsrq: locations[i].rsrq,
-          nextRsrq: locations[i + 1]?.rsrq,
-          pci: locations[i].pci,
-          nextPci: locations[i + 1]?.pci,
-          timestamp: locations[i].timestamp,
-          session_id: locations[i].session_id,
-        });
-      }
-      prevTech = currTech;
-    }
-
-    setTechnologyTransitions(transitions);
-  }, [locations]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchData();
-    }, 50);
-    return () => clearTimeout(timeoutId);
-  }, [fetchData]);
-
-  return {
-    locations,
-    appSummary,
-    inpSummary,
-    tptVolume,
-    loading,
-    error,
-    progress,
-    refetch: useCallback(() => {
-      lastFetchedKeyRef.current = null;
-      fetchData(true);
-    }, [fetchData]),
-    technologyTransitions,
-  };
-};
-
-const usePredictionData = (projectId, selectedMetric, enabled) => {
-  const [locations, setLocations] = useState([]);
-  const [colorSettings, setColorSettings] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const abortControllerRef = useRef(null);
-
-  const fetchData = useCallback(async () => {
-    if (!projectId || !enabled) {
-      setLocations([]);
-      setColorSettings([]);
-      return;
-    }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await mapViewApi.getPredictionLog({
-        projectId: Number(projectId),
-        metric: selectedMetric.toUpperCase(),
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (res?.Status === 1 && res?.Data) {
-        const { dataList = [], colorSetting = [] } = res.Data;
-
-        const formatted = dataList
-          .map((pt) => {
-            const lat = parseFloat(pt.lat);
-            const lng = parseFloat(pt.lon);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-            return {
-              lat,
-              lng,
-              latitude: lat,
-              longitude: lng,
-              [selectedMetric]: pt.prm,
-              isPrediction: true,
-            };
-          })
-          .filter(Boolean);
-
-        setLocations(formatted);
-        setColorSettings(colorSetting);
-        toast.success(`${formatted.length} prediction points`);
-      } else {
-        toast.error(res?.Message || "No prediction data");
-        setLocations([]);
-      }
-    } catch (err) {
-      if (err.name === "AbortError") return;
-      toast.error(err.message);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, selectedMetric, enabled]);
-
-  useEffect(() => {
-    fetchData();
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [fetchData]);
-
-  return {
-    locations,
-    colorSettings,
-    loading,
-    error,
-    refetch: fetchData,
-  };
-};
-
-const useSessionNeighbors = (sessionIds, enabled) => {
-  const [neighborData, setNeighborData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState(null);
-  
-  const abortControllerRef = useRef(null);
-  const mountedRef = useRef(true);
-  const lastFetchKeyRef = useRef(null);
-  const isFetchingRef = useRef(false);
-
-  const fetchData = useCallback(async (force = false) => {
-    const fetchKey = sessionIds?.sort().join(',') || '';
-    
-    if (!sessionIds?.length || !enabled) {
-      if (mountedRef.current) {
-        setNeighborData([]);
-        setStats(null);
-        setError(null);
-      }
-      return;
-    }
-
-    if (!force && fetchKey === lastFetchKeyRef.current && neighborData.length > 0) {
-      return;
-    }
-
-    if (isFetchingRef.current && fetchKey === lastFetchKeyRef.current) {
-      return;
-    }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    abortControllerRef.current = new AbortController();
-    isFetchingRef.current = true;
-
-    if (mountedRef.current) {
-      setLoading(true);
-      setError(null);
-    }
-
-    try {
-      const res = await mapViewApi.getSessionNeighbour({
-        sessionIds: sessionIds,
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (!mountedRef.current) {
-        return;
-      }
-
-      if (res?.Status === 1 && res?.Data) {
-        const data = res.Data;
-
-        const formattedData = data
-          .map((item, index) => {
-            const lat = parseFloat(item.lat);
-            const lng = parseFloat(item.lon);
-
-            if (!isFinite(lat) || !isFinite(lng)) {
-              return null;
-            }
-
-            const neighbourBand = item.neighbour_band || item.neighbor_band;
-
-            return {
-              id: item.id,
-              sessionId: item.session_id,
-              timestamp: item.timestamp,
-              lat,
-              lng,
-              latitude: lat,
-              longitude: lng,
-              indoorOutdoor: item.indoor_outdoor,
-
-              primaryNetwork: item.primary_network,
-              primaryBand: item.primary_band,
-              primaryRsrp: parseFloat(item.primary_rsrp) || null,
-              primaryRsrq: parseFloat(item.primary_rsrq) || null,
-              primarySinr: parseFloat(item.primary_sinr) || null,
-              primaryPci: item.primary_pci,
-
-              provider: normalizeProviderName(item.provider || ""),
-              networkType: normalizeTechName(item.primary_network, neighbourBand),
-              technology: normalizeTechName(item.primary_network, neighbourBand),
-
-              mos: parseFloat(item.mos) || null,
-              dlTpt: parseFloat(item.dl_tpt) || null,
-              ulTpt: parseFloat(item.ul_tpt) || null,
-
-              neighbourBand: neighbourBand,
-              neighbourRsrp: parseFloat(item.neighbour_rsrp) || null,
-              neighbourRsrq: parseFloat(item.neighbour_rsrq) || null,
-              neighbourPci: item.neighbour_pci,
-
-              rsrp: parseFloat(item.primary_rsrp) || null,
-              rsrq: parseFloat(item.primary_rsrq) || null,
-              sinr: parseFloat(item.primary_sinr) || null,
-            };
-          })
-          .filter(Boolean);
-
-        const statsObj = {
-          sessionCount: res.SessionCount || 0,
-          recordCount: res.RecordCount || formattedData.length,
-          cached: res.Cached || false,
-          byProvider: {},
-          byPrimaryBand: {},
-          byNeighbourBand: {},
-          byNetwork: {},
-        };
-
-        formattedData.forEach((item) => {
-          if (item.provider) {
-            if (!statsObj.byProvider[item.provider]) {
-              statsObj.byProvider[item.provider] = { count: 0, avgRsrp: 0, values: [] };
-            }
-            statsObj.byProvider[item.provider].count++;
-            if (item.primaryRsrp) statsObj.byProvider[item.provider].values.push(item.primaryRsrp);
-          }
-
-          if (item.primaryBand) {
-            if (!statsObj.byPrimaryBand[item.primaryBand]) {
-              statsObj.byPrimaryBand[item.primaryBand] = { count: 0 };
-            }
-            statsObj.byPrimaryBand[item.primaryBand].count++;
-          }
-
-          if (item.neighbourBand) {
-            if (!statsObj.byNeighbourBand[item.neighbourBand]) {
-              statsObj.byNeighbourBand[item.neighbourBand] = { count: 0 };
-            }
-            statsObj.byNeighbourBand[item.neighbourBand].count++;
-          }
-
-          if (item.primaryNetwork) {
-            if (!statsObj.byNetwork[item.primaryNetwork]) {
-              statsObj.byNetwork[item.primaryNetwork] = { count: 0 };
-            }
-            statsObj.byNetwork[item.primaryNetwork].count++;
-          }
-        });
-
-        Object.keys(statsObj.byProvider).forEach((provider) => {
-          const values = statsObj.byProvider[provider].values;
-          if (values.length > 0) {
-            statsObj.byProvider[provider].avgRsrp =
-              values.reduce((a, b) => a + b, 0) / values.length;
-          }
-          delete statsObj.byProvider[provider].values;
-        });
-
-        if (mountedRef.current) {
-          setNeighborData(formattedData);
-          setStats(statsObj);
-          lastFetchKeyRef.current = fetchKey;
-          toast.success(`${formattedData.length} neighbor records loaded`);
-        }
-
-      } else {
-        if (mountedRef.current) {
-          toast.warn(res?.Message || "No neighbor data found");
-          setNeighborData([]);
-          setStats(null);
-        }
-      }
-    } catch (err) {
-      if (isRequestCancelled(err)) {
-        return;
-      }
-      
-      if (mountedRef.current) {
-        setError(err.message);
-        toast.error(`Failed to fetch neighbor data: ${err.message}`);
-      }
-    } finally {
-      isFetchingRef.current = false;
-      if (mountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [sessionIds, enabled]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    
-    return () => {
-      mountedRef.current = false;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchData();
-    }, 100);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [sessionIds?.join(','), enabled]);
-
-  const refetch = useCallback(() => {
-    lastFetchKeyRef.current = null;
-    fetchData(true);
-  }, [fetchData]);
-
-  return {
-    neighborData,
-    stats,
-    loading,
-    error,
-    refetch,
-  };
-};
-
-const useProjectPolygons = (projectId, showPolygons, polygonSource) => {
-  const [polygons, setPolygons] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const abortControllerRef = useRef(null);
-
-  const fetchData = useCallback(async () => {
-    if (!projectId || !showPolygons) {
-      setPolygons([]);
-      return;
-    }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await mapViewApi.getProjectPolygonsV2(projectId, polygonSource, {
-        signal: abortControllerRef.current.signal,
-      });
-
-      const items = res?.Data || res?.data?.Data || (Array.isArray(res) ? res : []);
-
-      const parsed = items.flatMap((item) => {
-        const wkt = item.Wkt || item.wkt;
-        if (!wkt) return [];
-        return parseWKTToPolygons(wkt).map((p, k) => ({
-          id: item.Id || item.id,
-          name: item.Name || item.name || `Polygon ${item.Id}`,
-          source: polygonSource,
-          uid: `${polygonSource}-${item.Id}-${k}`,
-          paths: p.paths,
-          bbox: computeBbox(p.paths[0]),
-        }));
-      });
-
-      setPolygons(parsed);
-      if (parsed.length) toast.success(`${parsed.length} polygon(s) loaded`);
-    } catch (err) {
-      if (err.name === "AbortError") return;
-      setError(err.message);
-      setPolygons([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, showPolygons, polygonSource]);
-
-  useEffect(() => {
-    fetchData();
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [fetchData]);
-
-  return { polygons, loading, error, refetch: fetchData };
-};
-
-const useAreaPolygons = (projectId, areaEnabled) => {
-  const [areaData, setAreaData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const abortControllerRef = useRef(null);
-
-  const fetchData = useCallback(async () => {
-    if (!projectId || !areaEnabled) {
-      setAreaData([]);
-      return;
-    }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await areaBreakdownApi.getAreaPolygons(projectId, {
-        signal: abortControllerRef.current.signal,
-      });
-
-      let zones = [];
-      if (res?.data?.ai_zones?.length > 0) zones = res.data.ai_zones;
-      else if (Array.isArray(res?.data)) zones = res.data;
-      else if (Array.isArray(res)) zones = res;
-
-      if (!zones?.length) {
-        toast.warning("No area zones found");
-        setAreaData([]);
-        return;
-      }
-
-      const parsed = zones
-        .map((zone, index) => {
-          const geometry = zone.geometry || zone.Geometry || zone.wkt || zone.Wkt;
-          if (!geometry) return null;
-
-          const poly = parseWKTToPolygons(geometry)[0];
-          if (!poly?.paths?.[0]?.length) return null;
-
-          return {
-            id: zone.id || zone.Id || index,
-            blockId: zone.block_id || zone.blockId,
-            name: zone.project_name || zone.name || `Block ${zone.block_id || index}`,
-            source: "area",
-            uid: `area-${zone.id || zone.Id || index}`,
-            paths: poly.paths,
-            bbox: computeBbox(poly.paths[0]),
-          };
-        })
-        .filter(Boolean);
-
-      setAreaData(parsed);
-      if (parsed.length > 0) toast.success(`${parsed.length} area zone(s) loaded`);
-    } catch (err) {
-      if (err.name === "AbortError") return;
-      toast.error(`Failed to load area zones: ${err.message}`);
-      setError(err.message);
-      setAreaData([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, areaEnabled]);
-
-  useEffect(() => {
-    fetchData();
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [fetchData]);
-
-  return { areaData, loading, error, refetch: fetchData };
-};
+// --- Sub Components ---
 
 const ZoneTooltip = React.memo(({ polygon, position, selectedMetric, selectedCategory }) => {
   if (!selectedCategory) return null;
@@ -1222,16 +377,13 @@ const ZoneTooltip = React.memo(({ polygon, position, selectedMetric, selectedCat
     </div>
   );
 });
-
 ZoneTooltip.displayName = "ZoneTooltip";
 
 const BestNetworkLegend = React.memo(({ stats, providerColors, enabled }) => {
   if (!enabled || !stats || Object.keys(stats).length === 0) return null;
-
   const sortedProviders = Object.entries(stats).sort(
     (a, b) => b[1].locationsWon - a[1].locationsWon
   );
-
   const totalZones = sortedProviders.reduce((sum, [, d]) => sum + d.locationsWon, 0);
 
   return (
@@ -1264,8 +416,9 @@ const BestNetworkLegend = React.memo(({ stats, providerColors, enabled }) => {
     </div>
   );
 });
-
 BestNetworkLegend.displayName = "BestNetworkLegend";
+
+// --- Main Component ---
 
 const UnifiedMapView = () => {
   const [searchParams] = useSearchParams();
@@ -1304,13 +457,10 @@ const UnifiedMapView = () => {
   });
 
   const [drawnPoints, setDrawnPoints] = useState(null);
-
   const [mapVisibleNeighbors, setMapVisibleNeighbors] = useState([]);
   const [legendFilter, setLegendFilter] = useState(null);
-
   const [isOpacityCollapsed, setIsOpacityCollapsed] = useState(true);
   const [opacity, setOpacity] = useState(0.8);
-
   const [showSessionNeighbors, setShowSessionNeighbors] = useState(true);
 
   const [bestNetworkEnabled, setBestNetworkEnabled] = useState(false);
@@ -1351,9 +501,9 @@ const UnifiedMapView = () => {
   }, [searchParams]);
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
-
   const { thresholds: baseThresholds } = useColorForLog();
 
+  // ✅ 1. Use Network Samples Hook (replaces local useSampleData)
   const {
     locations: sampleLocations,
     appSummary,
@@ -1364,11 +514,12 @@ const UnifiedMapView = () => {
     error: sampleError,
     refetch: refetchSample,
     technologyTransitions: technologyTransitions,
-  } = useSampleData(
+  } = useNetworkSamples(
     sessionIds,
     enableDataToggle && dataToggle === "sample"
   );
 
+  // ✅ 2. Use Prediction Data Hook
   const {
     locations: predictionLocations,
     colorSettings: predictionColorSettings,
@@ -1382,6 +533,7 @@ const UnifiedMapView = () => {
     (enableSiteToggle && siteToggle === "sites-prediction")
   );
 
+  // ✅ 3. Use Session Neighbors Hook
   const {
     neighborData: sessionNeighborData,
     stats: sessionNeighborStats,
@@ -1390,18 +542,21 @@ const UnifiedMapView = () => {
     refetch: refetchSessionNeighbors,
   } = useSessionNeighbors(sessionIds, showSessionNeighbors);
 
+  // ✅ 4. Use Project Polygons Hook
   const {
     polygons,
     loading: polygonLoading,
     refetch: refetchPolygons,
   } = useProjectPolygons(projectId, showPolygons, polygonSource);
 
+  // ✅ 5. Use Area Polygons Hook
   const {
     areaData,
     loading: areaLoading,
     refetch: refetchAreaPolygons,
   } = useAreaPolygons(projectId, areaEnabled);
 
+  // ✅ 6. Use Site Data (Existing)
   const {
     siteData: rawSiteData,
     loading: siteLoading,
@@ -1429,6 +584,7 @@ const UnifiedMapView = () => {
 
   const allNeighbors = rawAllNeighbors || [];
 
+  // --- Effects for specific local API data ---
   useEffect(() => {
     const timeData = async () => {
       if (!sessionIds?.length) return;
@@ -1471,17 +627,15 @@ const UnifiedMapView = () => {
     ioAnalysis();
   }, [sessionIds]);
 
+  // --- Derived State & Computations ---
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
-
     let mainLogs = [];
-
     if (enableDataToggle) {
       mainLogs = dataToggle === "sample" ? (sampleLocations || []) : (predictionLocations || []);
     } else if (enableSiteToggle && siteToggle === "sites-prediction") {
       mainLogs = predictionLocations || [];
     }
-
     return mainLogs;
   }, [enableDataToggle, enableSiteToggle, dataToggle, siteToggle, sampleLocations, predictionLocations]);
 
@@ -1578,7 +732,6 @@ const UnifiedMapView = () => {
 
   const polygonsWithColors = useMemo(() => {
     if (!showPolygons || !polygons?.length) return [];
-
     if (!onlyInsidePolygons || !locations?.length) {
       return polygons.map((p) => ({
         ...p,
@@ -1600,7 +753,6 @@ const UnifiedMapView = () => {
       if (!values.length) {
         return { ...poly, fillColor: "#ccc", fillOpacity: 0.3, pointCount: pointsInside.length };
       }
-
       const median = calculateMedian(values);
       const fillColor = getColorFromValueOrMetric(median, currentThresholds, selectedMetric);
 
@@ -1610,7 +762,6 @@ const UnifiedMapView = () => {
 
   const areaPolygonsWithColors = useMemo(() => {
     if (!areaEnabled || !areaData?.length) return [];
-
     if (!filteredLocations?.length) {
       return areaData.map((p) => ({
         ...p,
@@ -1632,7 +783,6 @@ const UnifiedMapView = () => {
 
     return areaData.map((poly) => {
       const pointsInside = filteredLocations.filter((pt) => isPointInPolygon(pt, poly));
-
       if (!pointsInside.length) {
         return {
           ...poly,
@@ -1671,7 +821,6 @@ const UnifiedMapView = () => {
             }
           }
         });
-
         return { best, value: bestValue === -Infinity || bestValue === Infinity ? null : bestValue };
       };
 
@@ -1680,7 +829,6 @@ const UnifiedMapView = () => {
       const { best: bestTechnology, value: bestTechnologyValue } = findBestByMetric(technologyStats);
 
       let fillColor;
-
       if (useCategorical) {
         switch (colorBy) {
           case "provider":
@@ -1725,13 +873,6 @@ const UnifiedMapView = () => {
     });
   }, [areaEnabled, areaData, filteredLocations, selectedMetric, baseThresholds, colorBy]);
 
-  const allBestNetworkPolygons = useMemo(() => {
-    if (bestNetworkEnabled && bestNetworkPolygons?.length > 0) {
-      return bestNetworkPolygons;
-    }
-    return [];
-  }, [bestNetworkEnabled, bestNetworkPolygons]);
-
   const visiblePolygons = useMemo(() => {
     if (!showPolygons || !polygonsWithColors?.length) return [];
     if (!viewport) return polygonsWithColors;
@@ -1762,25 +903,8 @@ const UnifiedMapView = () => {
   const locationsToDisplay = useMemo(() => {
     if (onlyInsidePolygons) return [];
     if (!showDataCircles) return [];
-
-    const hasCoverageFilters = Object.values(coverageHoleFilters).some((f) => f.enabled);
-    const hasDataFilters =
-      (dataFilters.providers?.length || 0) > 0 ||
-      (dataFilters.bands?.length || 0) > 0 ||
-      (dataFilters.technologies?.length || 0) > 0;
-
-    if (hasCoverageFilters || hasDataFilters) {
-      return finalDisplayLocations;
-    }
-
     return finalDisplayLocations;
-  }, [
-    showDataCircles,
-    coverageHoleFilters,
-    dataFilters,
-    finalDisplayLocations,
-    onlyInsidePolygons,
-  ]);
+  }, [showDataCircles, finalDisplayLocations, onlyInsidePolygons]);
 
   const mapOptions = useMemo(
     () => ({
@@ -1803,21 +927,17 @@ const UnifiedMapView = () => {
 
   const handleMapLoad = useCallback((map) => {
     mapRef.current = map;
-
     const updateViewport = () => {
       const bounds = map.getBounds();
       if (!bounds) return;
-
       const newViewport = {
         north: bounds.getNorthEast().lat(),
         south: bounds.getSouthWest().lat(),
         east: bounds.getNorthEast().lng(),
         west: bounds.getSouthWest().lng(),
       };
-
       debouncedSetViewport(newViewport);
     };
-
     map.addListener("idle", updateViewport);
     updateViewport();
   }, [debouncedSetViewport]);
@@ -1825,31 +945,21 @@ const UnifiedMapView = () => {
   const handleUIChange = useCallback((newUI) => {
     setUi((prev) => {
       const updated = { ...prev, ...newUI };
-
       if (newUI.basemapStyle && newUI.basemapStyle !== prev.basemapStyle) {
-        if (mapRef.current) {
-          mapRef.current.setMapTypeId(newUI.basemapStyle);
-        }
+        if (mapRef.current) mapRef.current.setMapTypeId(newUI.basemapStyle);
       }
-
-      if (
-        typeof newUI.drawClearSignal === "number" &&
-        newUI.drawClearSignal !== prev.drawClearSignal
-      ) {
+      if (typeof newUI.drawClearSignal === "number" && newUI.drawClearSignal !== prev.drawClearSignal) {
         setDrawnPoints(null);
       }
-
       return updated;
     });
   }, []);
 
   const handleDrawingsChange = useCallback((drawings) => {
     let newPoints = null;
-
     if (drawings && drawings.length > 0) {
       const uniqueLogs = new Map();
       let hasLogs = false;
-
       drawings.forEach((drawing) => {
         if (drawing.logs?.length > 0) {
           hasLogs = true;
@@ -1859,20 +969,14 @@ const UnifiedMapView = () => {
           });
         }
       });
-
-      if (hasLogs) {
-        newPoints = Array.from(uniqueLogs.values());
-      } else {
-        newPoints = [];
-      }
+      if (hasLogs) newPoints = Array.from(uniqueLogs.values());
+      else newPoints = [];
     }
-
     setDrawnPoints((prev) => {
       if (prev === null && newPoints === null) return prev;
       if (prev === null && newPoints !== null) return newPoints;
       if (prev !== null && newPoints === null) return null;
       if (prev.length !== newPoints.length) return newPoints;
-
       const prevIds = new Set(prev.map((p) => p.id));
       const hasDiff = newPoints.some((p) => !prevIds.has(p.id));
       return hasDiff ? newPoints : prev;
@@ -1893,31 +997,17 @@ const UnifiedMapView = () => {
     if (showNeighbors) refetchNeighbors();
     if (showSessionNeighbors) refetchSessionNeighbors();
   }, [
-    enableDataToggle,
-    enableSiteToggle,
-    dataToggle,
-    siteToggle,
-    showPolygons,
-    areaEnabled,
-    showNeighbors,
-    showSessionNeighbors,
-    refetchSample,
-    refetchPrediction,
-    refetchPolygons,
-    refetchAreaPolygons,
-    refetchSites,
-    refetchNeighbors,
-    refetchSessionNeighbors,
+    enableDataToggle, enableSiteToggle, dataToggle, siteToggle, showPolygons, areaEnabled,
+    showNeighbors, showSessionNeighbors, refetchSample, refetchPrediction,
+    refetchPolygons, refetchAreaPolygons, refetchSites, refetchNeighbors, refetchSessionNeighbors,
   ]);
 
   const filteredNeighbors = useMemo(() => {
     let data = sessionNeighborData || [];
     if (!data.length) return [];
-
     if (onlyInsidePolygons && showPolygons && polygons?.length) {
       data = data.filter((point) => polygons.some((poly) => isPointInPolygon(point, poly)));
     }
-
     const { providers, bands, technologies } = dataFilters;
     const hasProviderFilter = providers?.length > 0;
     const hasBandFilter = bands?.length > 0;
@@ -1935,7 +1025,6 @@ const UnifiedMapView = () => {
         return true;
       });
     }
-
     return data;
   }, [sessionNeighborData, onlyInsidePolygons, showPolygons, polygons, dataFilters]);
 
@@ -1953,21 +1042,8 @@ const UnifiedMapView = () => {
     setHoverPosition(null);
   }, []);
 
-  if (!isLoaded) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Spinner />
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="flex items-center justify-center h-screen text-red-500">
-        Map loading error: {loadError.message}
-      </div>
-    );
-  }
+  if (!isLoaded) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
+  if (loadError) return <div className="flex items-center justify-center h-screen text-red-500">Map loading error: {loadError.message}</div>;
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-800">

@@ -60,3 +60,37 @@ export function parseWKTToCoordinates(wkt) {
 }
 
 export default parseWKTToCoordinates;
+
+const parseWKTToPolygons = (wkt) => {
+  if (!wkt?.trim()) return [];
+  try {
+    const match = wkt.trim().match(/POLYGON\s*\(\(([^)]+)\)\)/i);
+    if (!match) return [];
+
+    const points = match[1].split(",").reduce((acc, coord) => {
+      const [lng, lat] = coord.trim().split(/\s+/).map(parseFloat);
+      if (!isNaN(lat) && !isNaN(lng)) acc.push({ lat, lng });
+      return acc;
+    }, []);
+
+    return points.length >= 3 ? [{ paths: [points] }] : [];
+  } catch {
+    return [];
+  }
+};
+
+
+const computeBbox = (points) => {
+  if (!points?.length) return null;
+  return points.reduce(
+    (bbox, pt) => ({
+      north: Math.max(bbox.north, pt.lat),
+      south: Math.min(bbox.south, pt.lat),
+      east: Math.max(bbox.east, pt.lng),
+      west: Math.min(bbox.west, pt.lng),
+    }),
+    { north: -90, south: 90, east: -180, west: 180 }
+  );
+};
+
+export { parseWKTToPolygons, computeBbox };

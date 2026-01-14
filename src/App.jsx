@@ -32,6 +32,7 @@ import PredictionMapPage from "./pages/PredictionMap";
 import GetReportPage from "./pages/GetReport";
 import ViewProjectsPage from "./pages/ViewProjects";
 import SessionMapDebug from "./pages/SessionMapDebug";
+import MultiViewPage from "./pages/MultiViewPage";
 
 const PrivateRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -192,6 +193,7 @@ function App() {
                   </PrivateRoute>
                 }
               />
+              <Route path="/multi-map" element={<MultiViewPage />} />
               
               <Route
                 path="/manage-users"
