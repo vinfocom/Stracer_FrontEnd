@@ -4,7 +4,8 @@ import { JitterLatencyChart } from "../charts/performance/JitterLatencyChart";
 import { SpeedAnalysisChart } from "../charts/performance/SpeedAnalysisChart";
 import { Activity } from "lucide-react";
 
-export const PerformanceTab = ({ locations, expanded, chartRefs }) => {
+// 1. Accept 'onHighlightLogs' prop from parent
+export const PerformanceTab = ({ locations, expanded, chartRefs, onHighlightLogs }) => {
  
   const hasSpeedData = useMemo(() => {
     if (!locations || locations.length === 0) return false;
@@ -51,13 +52,12 @@ export const PerformanceTab = ({ locations, expanded, chartRefs }) => {
     );
   }
 
-  // Determine grid layout based on what data is available
   const chartCount = (hasNetworkQualityData ? 1 : 0) + (hasSpeedData ? 1 : 0);
   const gridClass = expanded && chartCount > 1 ? "grid-cols-2" : "grid-cols-1";
 
   return (
     <div className={`grid ${gridClass} gap-4`}>
-      {/* Network Quality Metrics (Latency, Jitter, Packet Loss) */}
+      {/* Network Quality Metrics */}
       {hasNetworkQualityData && (
         <JitterLatencyChart 
           ref={chartRefs?.jitterLatency} 
@@ -65,15 +65,15 @@ export const PerformanceTab = ({ locations, expanded, chartRefs }) => {
         />
       )}
 
-      {/* Speed Analysis - Only render if speed data exists */}
+      {/* Speed Analysis */}
       {hasSpeedData && (
         <SpeedAnalysisChart 
           ref={chartRefs?.speed} 
-          locations={locations} 
+          locations={locations}
+          // 2. Pass the handler down to the chart
+          onBarClick={onHighlightLogs} 
         />
       )}
-
-      
     </div>
   );
 };

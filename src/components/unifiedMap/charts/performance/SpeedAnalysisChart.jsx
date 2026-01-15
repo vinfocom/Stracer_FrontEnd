@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react"; // [Change 1] Import useState
 import { Gauge } from "lucide-react";
 import {
   BarChart,
@@ -14,7 +14,10 @@ import { ChartContainer } from "../../common/ChartContainer";
 import { EmptyState } from "../../common/EmptyState";
 import { CHART_CONFIG } from "@/utils/constants";
 
-export const SpeedAnalysisChart = React.forwardRef(({ locations }, ref) => {
+// [Change 2] Add onBarClick to props
+export const SpeedAnalysisChart = React.forwardRef(({ locations, onBarClick }, ref) => {
+  const [activeIndex, setActiveIndex] = useState(null); 
+
   const data = useMemo(() => {
     if (!locations?.length) return [];
 
@@ -23,7 +26,7 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations }, ref) => {
         loc.speed != null && 
         !isNaN(loc.speed) && 
         isFinite(loc.speed) &&
-        parseFloat(loc.speed) > 0 // Filter out zero/negative speeds
+        parseFloat(loc.speed) > 0 
       )
       .map((loc, idx) => ({
         index: idx + 1,
@@ -31,6 +34,7 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations }, ref) => {
         timestamp: loc.timestamp,
         provider: loc.provider || "Unknown",
         band: loc.band || "Unknown",
+        originalLog: loc // Keep ref to original log
       }))
       .sort((a, b) => {
         if (a.timestamp && b.timestamp) {
@@ -40,9 +44,27 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations }, ref) => {
       });
   }, [locations]);
 
-const handleclick = () =>{
-  console.log("clicked");
-}
+  // [Change 4] Add Click Handler
+  const handleBarClick = (data, index) => {
+    // If clicking the same bar, deselect. Otherwise select.
+    const newIndex = activeIndex === index ? null : index;
+    setActiveIndex(newIndex);
+
+    if (onBarClick) {
+      if (newIndex === null) {
+        onBarClick(null); // Clear map filter
+      } else {
+        // Filter original locations based on the bucket's min/max
+        const { min, max } = data;
+        const filteredLogs = locations.filter(loc => {
+           if (loc.speed == null || isNaN(loc.speed)) return false;
+           const speedKmh = parseFloat(loc.speed) * 3.6;
+           return speedKmh >= min && speedKmh < max;
+        });
+        onBarClick(filteredLogs); // Pass filtered logs to parent
+      }
+    }
+  };
 
   const stats = useMemo(() => {
     if (!data.length) return null;
@@ -60,7 +82,6 @@ const handleclick = () =>{
 
     const buckets = [
       { range: "0-5", min: 0, max: 20, count: 0, color: "#ef4444", label: "Static/walking" },
-      
       { range: "5-20", min: 20, max: 40, count: 0, color: "#f59e0b", label: "Cycling" },
       { range: "20-40", min: 40, max: 60, count: 0, color: "#eab308", label: "Moderate" },
       { range: "40-80", min: 60, max: 80, count: 0, color: "#22c55e", label: "Fast" },
@@ -121,7 +142,18 @@ const handleclick = () =>{
 
       {/* Speed Distribution Bar Chart */}
       <div className="bg-slate-800/50 rounded-lg p-4">
-        <div className="text-sm font-medium text-slate-300 mb-3">Speed Distribution</div>
+        <div className="flex justify-between items-center mb-3">
+            <div className="text-sm font-medium text-slate-300">Speed Distribution</div>
+            {/* [Change 5] Optional clear button */}
+            {activeIndex !== null && (
+                <button 
+                onClick={() => handleBarClick(null, activeIndex)}
+                className="text-xs text-blue-400 hover:text-blue-300 underline"
+                >
+                Clear Selection
+                </button>
+            )}
+        </div>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={speedDistribution} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
             <CartesianGrid {...CHART_CONFIG.grid} />
@@ -160,9 +192,22 @@ const handleclick = () =>{
               }}
               labelFormatter={(label) => `${label} km/h`}
             />
-            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+            {/* [Change 6] Attach onClick to Bar */}
+            <Bar 
+                dataKey="count" 
+                radius={[4, 4, 0, 0]} 
+                onClick={handleBarClick} 
+                className="cursor-pointer"
+            >
               {speedDistribution.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+                <Cell 
+                    key={`cell-${index}`} 
+                    fill={entry.color} 
+                    // [Change 7] Visual feedback for selection
+                    opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
+                    stroke={activeIndex === index ? "#fff" : "none"}
+                    strokeWidth={activeIndex === index ? 2 : 0}
+                />
               ))}
             </Bar>
           </BarChart>
@@ -173,10 +218,15 @@ const handleclick = () =>{
           {speedDistribution.map((item, idx) => (
             <div
               key={idx}
-              className="flex items-center justify-between px-3 py-2 rounded-lg transition-colors hover:bg-slate-700/30"
+              // [Change 8] Allow clicking legend to filter as well
+              onClick={() => handleBarClick(item, idx)}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeIndex === idx ? "bg-slate-700 ring-1 ring-white/20" : "hover:bg-slate-700/30"
+              }`}
               style={{ 
-                backgroundColor: `${item.color}15`,
-                borderLeft: `3px solid ${item.color}`
+                backgroundColor: activeIndex === idx ? undefined : `${item.color}15`,
+                borderLeft: `3px solid ${item.color}`,
+                opacity: activeIndex === null || activeIndex === idx ? 1 : 0.5
               }}
             >
               <div className="flex items-center gap-2">

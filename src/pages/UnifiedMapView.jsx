@@ -10,7 +10,7 @@ import { useSearchParams } from "react-router-dom";
 import { useJsApiLoader, Polygon } from "@react-google-maps/api";
 import { toast } from "react-toastify";
 
-// API (Keep mapViewApi for Duration, IO, and Distance calls which are still local)
+
 import { mapViewApi } from "../api/apiEndpoints";
 
 // Components
@@ -61,6 +61,7 @@ const DEFAULT_DATA_FILTERS = {
   providers: [],
   bands: [],
   technologies: [],
+  indoorOutdoor: [],
 };
 
 const METRIC_CONFIG = {
@@ -428,6 +429,7 @@ const UnifiedMapView = () => {
   const [selectedMetric, setSelectedMetric] = useState("rsrp");
   const [viewport, setViewport] = useState(null);
   const [colorBy, setColorBy] = useState(null);
+  const [highlightedLogs, setHighlightedLogs] = useState(null);
 
   const [enableDataToggle, setEnableDataToggle] = useState(true);
   const [dataToggle, setDataToggle] = useState("sample");
@@ -481,6 +483,7 @@ const UnifiedMapView = () => {
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
   const [durationTime, setDurationTime] = useState([]);
   const [techHandOver, setTechHandOver] = useState(false);
+  const [showNumCells, setShowNumCells] = useState(false);
   const [indoor, setIndoor] = useState([]);
   const [outdoor, setOutdoor] = useState([]);
   const [distance, setDistance] = useState(null);
@@ -584,23 +587,34 @@ const UnifiedMapView = () => {
 
   const allNeighbors = rawAllNeighbors || [];
 
-  // --- Effects for specific local API data ---
+  // yaha pe duration data ke liye define kar eraha hoon
   useEffect(() => {
     const timeData = async () => {
       if (!sessionIds?.length) return;
       try {
         const res = await mapViewApi.getDuration({ sessionIds: sessionIds.join(",") });
-        const dataArray = res?.data?.data || res?.data || [];
+        
+        const dataArray = res?.Data || res?.data?.data || res?.data || [];
+        
         if (Array.isArray(dataArray)) {
           setDurationTime(
             dataArray.map((item) => ({
-              provider: normalizeProviderName(item.provider || ""),
-              networkType: normalizeTechName(item.network || ""),
-              totaltime: String(item.timeReadable || 0),
+              
+              provider: normalizeProviderName(item.Provider || item.provider || ""),
+              
+              
+              networkType: normalizeTechName(item.Network || item.network || ""),
+              
+              
+              totaltime: item.TotalDurationHours 
+                ? `${item.TotalDurationHours.toFixed(2)} hrs` 
+                : (item.timeReadable || "0s"),
             }))
           );
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error("Failed to fetch duration data", err);
+      }
     };
     timeData();
   }, [sessionIds]);
@@ -715,18 +729,21 @@ const UnifiedMapView = () => {
     if (providers?.length) result = result.filter((l) => providers.includes(l.provider));
     if (bands?.length) result = result.filter((l) => bands.includes(String(l.band)));
     if (technologies?.length) result = result.filter((l) => technologies.includes(normalizeTechName(l.technology)));
-    if (indoorOutdoor?.length > 0 && indoorOutdoor[0] !== "all") {
-      const filterValue = indoorOutdoor[0];
-      result = result.filter((l) => l.indoor_outdoor === filterValue);
+    if (indoorOutdoor?.length > 0) {
+      const lowerFilters = indoorOutdoor.map(v => v.toLowerCase());
+      result = result.filter((l) => 
+        l.indoor_outdoor && lowerFilters.includes(l.indoor_outdoor.toLowerCase())
+      );
     }
 
     return result;
   }, [locations, coverageHoleFilters, dataFilters]);
 
   const finalDisplayLocations = useMemo(() => {
-    if (drawnPoints !== null) {
-      return drawnPoints;
-    }
+    // if (drawnPoints !== null) {
+    //   return drawnPoints;
+    // }
+    if (highlightedLogs) return highlightedLogs;
     return filteredLocations;
   }, [drawnPoints, filteredLocations]);
 
@@ -1065,6 +1082,7 @@ const UnifiedMapView = () => {
       {showAnalytics && (
         <UnifiedDetailLogs
           locations={finalDisplayLocations}
+          onHighlightLogs={setHighlightedLogs}
           totalLocations={locations?.length || 0}
           filteredCount={finalDisplayLocations?.length || 0}
           dataToggle={dataToggle}
@@ -1101,6 +1119,10 @@ const UnifiedMapView = () => {
           bestNetworkEnabled={bestNetworkEnabled}
           bestNetworkStats={bestNetworkStats}
           onClose={() => setShowAnalytics(false)}
+          n78NeighborLoading={sessionNeighborLoading}
+          showN78Neighbors={showSessionNeighbors}
+          n78NeighborStats={sessionNeighborStats}
+          n78NeighborData={filteredNeighbors}
         />
       )}
 
@@ -1119,6 +1141,8 @@ const UnifiedMapView = () => {
         siteToggle={siteToggle}
         showSessionNeighbors={showSessionNeighbors}
         setShowSessionNeighbors={setShowSessionNeighbors}
+        showNumCells={showNumCells}
+        setShowNumCells={setShowNumCells}
         setSiteToggle={setSiteToggle}
         projectId={projectId}
         sessionIds={sessionIds}
@@ -1210,7 +1234,7 @@ const UnifiedMapView = () => {
             <MapWithMultipleCircles
               isLoaded={isLoaded}
               loadError={loadError}
-              locations={locationsToDisplay}
+              locations={finalDisplayLocations}
               thresholds={effectiveThresholds}
               selectedMetric={selectedMetric}
               technologyTransitions={technologyTransitions}
@@ -1222,6 +1246,7 @@ const UnifiedMapView = () => {
               center={mapCenter}
               defaultZoom={13}
               fitToLocations={(locationsToDisplay?.length || 0) > 0}
+              showNumCells={showNumCells}
               onLoad={handleMapLoad}
               pointRadius={12}
               projectId={projectId}

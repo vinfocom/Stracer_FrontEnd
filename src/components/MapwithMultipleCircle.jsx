@@ -582,6 +582,7 @@ const containerStyle = { width: "100%", height: "100%" };
 const MapWithMultipleCircles = ({
   isLoaded,
   loadError,
+  showNumCells = false,
   locations = [],
   selectedMetric = "rsrp",
   colorBy = null,
@@ -642,6 +643,18 @@ const MapWithMultipleCircles = ({
   const onFilteredNeighborsChangeRef = useRef(onFilteredNeighborsChange);
   const polygonCheckerRef = useRef(null);
   const spatialIndexRef = useRef(null);
+
+  // ✅ FIX: Use Refs for click handlers to prevent re-creating functions on parent re-renders
+  const onMarkerClickRef = useRef(onMarkerClick);
+  const onNeighborClickRef = useRef(onNeighborClick);
+
+  useEffect(() => {
+    onMarkerClickRef.current = onMarkerClick;
+  }, [onMarkerClick]);
+
+  useEffect(() => {
+    onNeighborClickRef.current = onNeighborClick;
+  }, [onNeighborClick]);
 
   useEffect(() => {
     onFilteredLocationsChangeRef.current = onFilteredLocationsChange;
@@ -1000,18 +1013,20 @@ const MapWithMultipleCircles = ({
     onLoadProp?.(mapInstance);
   }, [locationsToRender, processedNeighbors, locations, fitToLocations, computedCenter, defaultZoom, onLoadProp]);
 
-  // Click handlers
+  // ✅ Click handlers: STABILIZED with Refs
+  // This ensures handlePrimaryClick never changes identity, preventing DeckGL re-renders
   const handlePrimaryClick = useCallback((index, loc) => {
     setSelectedLog(loc);
     setSelectedNeighbor(null);
-    onMarkerClick?.(index, loc);
-  }, [onMarkerClick]);
+    onMarkerClickRef.current?.(index, loc);
+  }, []); // Empty dependency array ensures stability!
 
+  // Same for neighbor clicks
   const handleNeighborClick = useCallback((neighbor) => {
     setSelectedNeighbor(neighbor);
     setSelectedLog(null);
-    onNeighborClick?.(neighbor);
-  }, [onNeighborClick]);
+    onNeighborClickRef.current?.(neighbor);
+  }, []); // Empty dependency array ensures stability!
 
   if (loadError) {
     return (
@@ -1088,7 +1103,7 @@ const MapWithMultipleCircles = ({
             radiusMinPixels={4}
             radiusMaxPixels={40}
             showPrimaryLogs={showPoints}
-            // Neighbors (squares)
+            showNumCells={showNumCells}
             neighbors={processedNeighbors}
             getNeighborColor={getNeighborColor}
             neighborSquareSize={neighborSquareSize}

@@ -1,7 +1,8 @@
 // src/components/maps/DeckGLOverlay.jsx
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
-import { ScatterplotLayer, PolygonLayer } from '@deck.gl/layers';
+// ✅ FIX: Import TextLayer here
+import { ScatterplotLayer, PolygonLayer, TextLayer } from '@deck.gl/layers';
 
 // Convert meters to degrees for square bounds
 const metersToLatDeg = (meters) => meters / 111320;
@@ -39,7 +40,7 @@ const hexToRgb = (hex) => {
 
 const DeckGLOverlay = ({
   map,
-  // Primary locations (circles)
+  showNumCells = false,
   locations = [],
   getColor,
   radius = 8,
@@ -130,9 +131,6 @@ const DeckGLOverlay = ({
 
     const layers = [];
 
-    // Primary locations layer (Circles)
-    
-
     // Neighbor locations layer (Squares)
     if (showNeighbors && neighborData.length > 0) {
       const polygonLayer = new PolygonLayer({
@@ -166,6 +164,7 @@ const DeckGLOverlay = ({
       layers.push(polygonLayer);
     }
 
+    // Primary locations layer (Circles)
     if (showPrimaryLogs && primaryData.length > 0) {
       const scatterLayer = new ScatterplotLayer({
         id: 'primary-logs-layer',
@@ -191,6 +190,32 @@ const DeckGLOverlay = ({
         extensions: [],
       });
       layers.push(scatterLayer);
+
+      // ✅ Text Layer for Num Cells
+      if (showNumCells) {
+        const textLayer = new TextLayer({
+          id: 'primary-logs-text-layer',
+          data: primaryData,
+          getPosition: d => d.position,
+          getText: d => d.num_cells ? String(d.num_cells) : '', // Ensure string
+          getSize: 14, // Slightly larger font for visibility
+          getColor: [0, 0, 0, 255], // Black text
+          getAngle: 0,
+          getTextAnchor: 'middle',
+          getAlignmentBaseline: 'center',
+          fontFamily: 'Arial, sans-serif',
+          fontWeight: 'bold',
+          pickable: false, // Let clicks pass through to circles
+          billboard: true, // Face camera
+          background: true,
+          getBackgroundColor: [255, 255, 255, 200], // Semi-transparent white background
+          backgroundPadding: [2, 2],
+          updateTriggers: {
+            getText: [showNumCells]
+          }
+        });
+        layers.push(textLayer);
+      }
     }
 
     layersRef.current = layers;
@@ -202,6 +227,7 @@ const DeckGLOverlay = ({
         primaryCount: primaryData.length,
         neighborCount: neighborData.length,
         totalLayers: layers.length,
+        showNumCells
       });
     }
   }, [
@@ -218,6 +244,7 @@ const DeckGLOverlay = ({
     neighborOpacity,
     neighborSquareSize,
     pickable, 
+    showNumCells, // ✅ Added to dependency array
     autoHighlight,
     handlePrimaryClick,
     handleNeighborClick,

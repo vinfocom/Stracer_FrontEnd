@@ -39,6 +39,7 @@ import { NetworkTab } from "./tabs/NetworkTab";
 import { PerformanceTab } from "./tabs/PerformanceTab";
 import { ApplicationTab } from "./tabs/ApplicationTab";
 import { IOAnalysis } from "./tabs/IOAnalysis";
+import  N78AnalysisTab  from "./tabs/N78AnalysisTab";
 
 // Common
 import { TabButton } from "./common/TabButton";
@@ -696,293 +697,15 @@ const getSignalQuality = (value) => {
   return { label: "Very Poor", color: "#EF4444" };
 };
 
-// ============================================
-// N78 ANALYSIS TAB (keep existing)
-// ============================================
 
-const N78AnalysisTab = ({
-  n78NeighborData,
-  n78NeighborStats,
-  n78NeighborLoading,
-  thresholds,
-  expanded,
-}) => {
-  // Get RSRP thresholds
-  const rsrpThresholds = thresholds?.rsrp || [];
 
-  // Calculate detailed N78 statistics
-  const n78DetailedStats = useMemo(() => {
-    if (!n78NeighborData?.length) return null;
-
-    const neighborRsrpValues = n78NeighborData
-      .map((n) => n.neighborRsrp)
-      .filter((v) => v != null && !isNaN(v));
-
-    const neighborRsrqValues = n78NeighborData
-      .map((n) => n.neighborRsrq)
-      .filter((v) => v != null && !isNaN(v));
-
-    const primaryRsrpValues = n78NeighborData
-      .map((n) => n.rsrp)
-      .filter((v) => v != null && !isNaN(v));
-
-    const primaryRsrqValues = n78NeighborData
-      .map((n) => n.rsrq)
-      .filter((v) => v != null && !isNaN(v));
-
-    const sinrValues = n78NeighborData
-      .map((n) => n.sinr)
-      .filter((v) => v != null && !isNaN(v));
-
-    const mosValues = n78NeighborData
-      .map((n) => n.mos)
-      .filter((v) => v != null && !isNaN(v));
-
-    // Group by provider
-    const providerCounts = {};
-    const providerN78Rsrp = {};
-
-    // Group by primary band
-    const bandCounts = {};
-
-    // Group by network type
-    const networkCounts = {};
-
-    // Group by environment (indoor/outdoor)
-    const envCounts = { Indoor: 0, Outdoor: 0, Unknown: 0 };
-
-    // Signal quality distribution
-    const qualityDist = {
-      Excellent: 0,
-      Good: 0,
-      Fair: 0,
-      Poor: 0,
-      "Very Poor": 0,
-    };
-
-    n78NeighborData.forEach((n) => {
-      // Provider stats
-      if (n.provider) {
-        if (!providerCounts[n.provider]) {
-          providerCounts[n.provider] = 0;
-          providerN78Rsrp[n.provider] = [];
-        }
-        providerCounts[n.provider]++;
-        if (n.neighborRsrp != null) {
-          providerN78Rsrp[n.provider].push(n.neighborRsrp);
-        }
-      }
-
-      // Band stats
-      if (n.primaryBand) {
-        bandCounts[n.primaryBand] = (bandCounts[n.primaryBand] || 0) + 1;
-      }
-
-      // Network stats
-      if (n.network || n.networkType) {
-        const net = n.network || n.networkType;
-        networkCounts[net] = (networkCounts[net] || 0) + 1;
-      }
-
-      // Environment stats
-      const env = n.indoorOutdoor || "Unknown";
-      if (env.toLowerCase().includes("indoor")) {
-        envCounts.Indoor++;
-      } else if (env.toLowerCase().includes("outdoor")) {
-        envCounts.Outdoor++;
-      } else {
-        envCounts.Unknown++;
-      }
-
-      // Quality distribution
-      if (n.neighborRsrp != null) {
-        const quality = getSignalQuality(n.neighborRsrp);
-        qualityDist[quality.label]++;
-      }
-    });
-
-    // Calculate stats helper
-    const calcStats = (values) => {
-      if (!values.length)
-        return { min: null, max: null, avg: null, median: null, count: 0 };
-      const sorted = [...values].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-      return {
-        min: Math.min(...values),
-        max: Math.max(...values),
-        avg: values.reduce((a, b) => a + b, 0) / values.length,
-        median:
-          sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2,
-        count: values.length,
-      };
-    };
-
-    // Calculate provider averages
-    const providerStats = Object.entries(providerCounts)
-      .map(([name, count]) => ({
-        name,
-        count,
-        percentage: ((count / n78NeighborData.length) * 100).toFixed(1),
-        avgN78Rsrp:
-          providerN78Rsrp[name]?.length > 0
-            ? providerN78Rsrp[name].reduce((a, b) => a + b, 0) /
-              providerN78Rsrp[name].length
-            : null,
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    return {
-      total: n78NeighborData.length,
-      neighborRsrp: calcStats(neighborRsrpValues),
-      neighborRsrq: calcStats(neighborRsrqValues),
-      primaryRsrp: calcStats(primaryRsrpValues),
-      primaryRsrq: calcStats(primaryRsrqValues),
-      sinr: calcStats(sinrValues),
-      mos: calcStats(mosValues),
-      providers: providerStats,
-      bands: Object.entries(bandCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, count]) => ({
-          name,
-          count,
-          percentage: ((count / n78NeighborData.length) * 100).toFixed(1),
-        })),
-      networks: Object.entries(networkCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, count]) => ({
-          name,
-          count,
-          percentage: ((count / n78NeighborData.length) * 100).toFixed(1),
-        })),
-      environment: envCounts,
-      qualityDistribution: qualityDist,
-    };
-  }, [n78NeighborData]);
-
-  if (n78NeighborLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
-        <span className="ml-3 text-slate-400">
-          Loading N78 neighbor data...
-        </span>
-      </div>
-    );
-  }
-
-  if (!n78NeighborData?.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-        <Radio className="h-16 w-16 mb-4 opacity-50" />
-        <p className="text-lg font-medium">No N78 Neighbor Data Available</p>
-        <p className="text-sm mt-2">
-          Enable N78 neighbors in the sidebar to see analysis
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-blue-500/20 rounded-lg">
-          <Radio className="h-6 w-6 text-blue-400" />
-        </div>
-        <div>
-          <h3 className="font-semibold text-lg text-white">
-            N78 Neighbor Analysis
-          </h3>
-          <p className="text-xs text-slate-400">5G n78 Band Detection Points</p>
-        </div>
-        <div className="ml-auto bg-blue-500/20 px-3 py-1 rounded-full">
-          <span className="text-blue-400 font-bold">
-            {n78DetailedStats?.total.toLocaleString()}
-          </span>
-          <span className="text-slate-400 text-sm ml-1">records</span>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className={`grid ${expanded ? "grid-cols-4" : "grid-cols-2"} gap-3`}>
-        {/* Total Records */}
-        <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <Square className="h-4 w-4 text-blue-400" fill="currentColor" />
-            <span className="text-xs text-slate-400">Total Records</span>
-          </div>
-          <div className="text-2xl font-bold text-blue-400">
-            {n78DetailedStats?.total.toLocaleString()}
-          </div>
-        </div>
-
-        {/* Avg N78 RSRP */}
-        <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <Signal className="h-4 w-4 text-indigo-400" />
-            <span className="text-xs text-slate-400">Avg N78 RSRP</span>
-          </div>
-          <div
-            className="text-2xl font-bold"
-            style={{
-              color: getColorFromThresholds(
-                n78DetailedStats?.neighborRsrp.avg,
-                rsrpThresholds
-              ),
-            }}
-          >
-            {n78DetailedStats?.neighborRsrp.avg?.toFixed(1) ?? "N/A"}
-            <span className="text-sm font-normal text-slate-500 ml-1">dBm</span>
-          </div>
-        </div>
-
-        {/* Median N78 RSRP */}
-        <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <Activity className="h-4 w-4 text-purple-400" />
-            <span className="text-xs text-slate-400">Median N78 RSRP</span>
-          </div>
-          <div
-            className="text-2xl font-bold"
-            style={{
-              color: getColorFromThresholds(
-                n78DetailedStats?.neighborRsrp.median,
-                rsrpThresholds
-              ),
-            }}
-          >
-            {n78DetailedStats?.neighborRsrp.median?.toFixed(1) ?? "N/A"}
-            <span className="text-sm font-normal text-slate-500 ml-1">dBm</span>
-          </div>
-        </div>
-
-        {/* Sessions */}
-        <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="h-4 w-4 text-green-400" />
-            <span className="text-xs text-slate-400">Sessions</span>
-          </div>
-          <div className="text-2xl font-bold text-green-400">
-            {n78NeighborStats?.sessionCount || "-"}
-          </div>
-        </div>
-      </div>
-
-      {/* Rest of the N78 Analysis content - keeping it same as original */}
-      {/* ... Signal Range Bar, Quality Distribution, Comparison, etc. ... */}
-    </div>
-  );
-};
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function UnifiedDetailLogs({
   locations = [],
   distance,
   totalLocations = 0,
   filteredCount = 0,
+  onHighlightLogs,
   selectedMetric,
   siteData = [],
   siteToggle,
@@ -1058,7 +781,7 @@ export default function UnifiedDetailLogs({
     }
 
     if (showN78Neighbors && n78NeighborData?.length > 0) {
-      tabs.push({ id: "n78", label: "N78 Analysis" });
+      tabs.push({ id: "n78", label: "Unlatched Analysis" });
     }
 
     return tabs;
@@ -1220,12 +943,7 @@ export default function UnifiedDetailLogs({
               Filtered
             </span>
           )}
-          {showN78Neighbors && n78NeighborData?.length > 0 && (
-            <span className="bg-purple-500 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
-              <Radio className="h-3 w-3" />
-              N78: {n78NeighborData.length.toLocaleString()}
-            </span>
-          )}
+          
           {(isFilterLoading || n78NeighborLoading) && (
             <div className="flex items-center gap-1 text-sm text-blue-400">
               <div className="animate-spin rounded-full h-3 w-3 border border-blue-400 border-t-transparent" />
@@ -1235,7 +953,7 @@ export default function UnifiedDetailLogs({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Enhanced Export Dropdown */}
+          
           <ExportDropdown
             locations={filteredLocations}
             stats={stats}
@@ -1300,13 +1018,13 @@ export default function UnifiedDetailLogs({
 
           {dataFilters.providers?.length > 0 && (
             <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded border border-blue-700/30 text-xs font-medium">
-              📡 Providers: {dataFilters.providers.join(", ")}
+               Providers: {dataFilters.providers.join(", ")}
             </span>
           )}
 
           {dataFilters.bands?.length > 0 && (
             <span className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-700/30 text-xs font-medium">
-              📶 Bands: {dataFilters.bands.join(", ")}
+               Bands: {dataFilters.bands.join(", ")}
             </span>
           )}
 
@@ -1419,6 +1137,7 @@ export default function UnifiedDetailLogs({
             locations={filteredLocations}
             expanded={expanded}
             chartRefs={chartRefs}
+            onHighlightLogs={onHighlightLogs}
           />
         )}
 
@@ -1455,6 +1174,8 @@ export default function UnifiedDetailLogs({
             n78NeighborLoading={n78NeighborLoading}
             thresholds={thresholds}
             expanded={expanded}
+            primaryData={locations}
+            selectedMetric={selectedMetric}
           />
         )}
       </div>

@@ -8,10 +8,20 @@ import {
   Filter,
   Minus,
   Plus,
+  ChevronDown,
+  ChevronRight,
+  Database,
+  Radio,
+  Hexagon,
+  Palette,
+  MapPin,
+  Grid3X3,
+  Thermometer,
+  ArrowLeftRight,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Palette } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -21,25 +31,159 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 
-const PanelSection = memo(({ title, icon: Icon, children, className = "" }) => (
-  <div className={`space-y-2 ${className}`}>
-    {title && (
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-100">
-        {Icon && <Icon className="h-4 w-4" />}
-        <span>{title}</span>
-      </div>
-    )}
-    <div className="rounded-lg border border-slate-700 p-3 bg-slate-900">
-      {children}
-    </div>
-  </div>
-));
-PanelSection.displayName = "PanelSection";
+// Custom Checkbox Component - Fully Visible
+const Checkbox = memo(
+  ({ checked, onChange, disabled = false, className = "" }) => (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange?.(!checked)}
+      className={`
+      w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0
+      ${
+        checked
+          ? "bg-blue-600 border-blue-600"
+          : "bg-slate-700 border-slate-500 hover:border-slate-400"
+      }
+      ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+      ${className}
+    `}
+    >
+      {checked && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
+    </button>
+  )
+);
+Checkbox.displayName = "Checkbox";
 
-const ToggleButton = memo(
-  ({ value, onChange, options, disabled, className = "" }) => (
+// Custom Toggle Switch - Fully Visible
+const ToggleSwitch = memo(({ checked, onChange, disabled = false }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    disabled={disabled}
+    onClick={() => !disabled && onChange?.(!checked)}
+    className={`
+      relative w-11 h-6 rounded-full transition-all shrink-0
+      ${checked ? "bg-blue-600" : "bg-slate-600"}
+      ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+    `}
+  >
+    <span
+      className={`
+        absolute top-1 w-4 h-4 rounded-full bg-white  transition-all
+        ${checked ? "left-6" : "left-1"}
+      `}
+    />
+  </button>
+));
+ToggleSwitch.displayName = "ToggleSwitch";
+
+// Collapsible Section Component
+const CollapsibleSection = memo(
+  ({ title, icon: Icon, children, defaultOpen = false, badge = null }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+
+    return (
+      <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-900/50">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full flex items-center justify-between p-3 hover:bg-slate-800/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            {Icon && <Icon className="h-4 w-4 text-blue-400" />}
+            <span className="text-sm font-medium text-slate-100">{title}</span>
+            {badge !== null && (
+              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-600 text-white rounded-full">
+                {badge}
+              </span>
+            )}
+          </div>
+          {isOpen ? (
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-slate-400" />
+          )}
+        </button>
+        {isOpen && (
+          <div className="px-3 pb-3 pt-1 space-y-3 border-t border-slate-700/50">
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+CollapsibleSection.displayName = "CollapsibleSection";
+
+// Toggle Row with Checkbox
+const ToggleRow = memo(
+  ({
+    label,
+    description,
+    checked,
+    onChange,
+    disabled = false,
+    useSwitch = false,
+  }) => (
+    <div className="flex items-center justify-between py-1.5 gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-slate-200">{label}</div>
+        {description && (
+          <div className="text-xs text-slate-500 truncate">{description}</div>
+        )}
+      </div>
+      {useSwitch ? (
+        <ToggleSwitch
+          checked={checked}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      ) : (
+        <Checkbox checked={checked} onChange={onChange} disabled={disabled} />
+      )}
+    </div>
+  )
+);
+ToggleRow.displayName = "ToggleRow";
+
+// Compact Select Row
+const SelectRow = memo(
+  ({
+    label,
+    value,
+    onChange,
+    options,
+    placeholder,
+    disabled = false,
+    className = "",
+  }) => (
+    <div className={`space-y-1.5 ${className}`}>
+      <Label className="text-xs text-slate-400">{label}</Label>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-sm">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+);
+SelectRow.displayName = "SelectRow";
+
+// Segmented Control
+const SegmentedControl = memo(
+  ({ value, onChange, options, disabled = false }) => (
     <div
-      className={`flex rounded-lg overflow-hidden border border-slate-600 ${className} ${
+      className={`flex rounded-md overflow-hidden border border-slate-600 ${
         disabled ? "opacity-50" : ""
       }`}
     >
@@ -48,11 +192,11 @@ const ToggleButton = memo(
           key={option.value}
           onClick={() => !disabled && onChange(option.value)}
           disabled={disabled}
-          className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+          className={`flex-1 px-2 py-1.5 text-xs font-medium transition-all ${
             value === option.value
               ? "bg-blue-600 text-white"
-              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-          } ${disabled ? "cursor-not-allowed" : ""}`}
+              : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+          } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
         >
           {option.label}
         </button>
@@ -60,20 +204,18 @@ const ToggleButton = memo(
     </div>
   )
 );
-ToggleButton.displayName = "ToggleButton";
+SegmentedControl.displayName = "SegmentedControl";
 
-const CompactThresholdInput = memo(
-  ({ value, onChange, min, max, step, disabled }) => {
+// Threshold Input with +/- buttons
+const ThresholdInput = memo(
+  ({ value, onChange, min, max, step, unit, disabled }) => {
     const [inputValue, setInputValue] = useState(String(value));
 
-    const handleIncrement = () => {
-      const newValue = Math.min(max, parseFloat(value) + step);
-      onChange(newValue);
-      setInputValue(String(newValue));
-    };
-
-    const handleDecrement = () => {
-      const newValue = Math.max(min, parseFloat(value) - step);
+    const handleChange = (delta) => {
+      const newValue =
+        delta > 0
+          ? Math.min(max, parseFloat(value) + step)
+          : Math.max(min, parseFloat(value) - step);
       onChange(newValue);
       setInputValue(String(newValue));
     };
@@ -81,9 +223,6 @@ const CompactThresholdInput = memo(
     const handleInputChange = (e) => {
       const val = e.target.value;
       setInputValue(val);
-
-      if (val === "" || val === "-") return;
-
       const numValue = parseFloat(val);
       if (!isNaN(numValue) && numValue >= min && numValue <= max) {
         onChange(numValue);
@@ -92,22 +231,12 @@ const CompactThresholdInput = memo(
 
     const handleBlur = () => {
       const numValue = parseFloat(inputValue);
-      if (isNaN(numValue) || inputValue === "" || inputValue === "-") {
+      if (isNaN(numValue)) {
         setInputValue(String(value));
       } else {
-        const clampedValue = Math.max(min, Math.min(max, numValue));
-        onChange(clampedValue);
-        setInputValue(String(clampedValue));
-      }
-    };
-
-    const handleKeyDown = (e) => {
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        handleIncrement();
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        handleDecrement();
+        const clamped = Math.max(min, Math.min(max, numValue));
+        onChange(clamped);
+        setInputValue(String(clamped));
       }
     };
 
@@ -115,44 +244,59 @@ const CompactThresholdInput = memo(
       <div className="flex items-center gap-1">
         <button
           type="button"
-          onClick={handleDecrement}
+          onClick={() => handleChange(-1)}
           disabled={disabled || value <= min}
-          className="p-1 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          title="Decrease"
+          className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-40 transition-colors text-white"
         >
           <Minus className="h-3 w-3" />
         </button>
-
         <Input
           type="text"
-          inputMode="decimal"
           value={inputValue}
           onChange={handleInputChange}
           onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
           disabled={disabled}
-          className="bg-slate-800 border-slate-700 text-white h-7 text-center text-xs w-16"
-          placeholder={String(value)}
+          className="bg-slate-800 border-slate-600 text-white h-6 text-center text-xs w-14 px-1"
         />
-
         <button
           type="button"
-          onClick={handleIncrement}
+          onClick={() => handleChange(1)}
           disabled={disabled || value >= max}
-          className="p-1 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          title="Increase"
+          className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-40 transition-colors text-white"
         >
           <Plus className="h-3 w-3" />
         </button>
+        <span className="text-[10px] text-slate-400 w-8">{unit}</span>
       </div>
     );
   }
 );
-CompactThresholdInput.displayName = "CompactThresholdInput";
+ThresholdInput.displayName = "ThresholdInput";
 
+// Info Badge
+const InfoBadge = memo(({ label, value, color = "blue" }) => {
+  const colors = {
+    blue: "text-blue-400",
+    green: "text-green-400",
+    orange: "text-orange-400",
+    yellow: "text-yellow-400",
+  };
+
+  return (
+    <div className="flex items-center justify-between text-xs py-1">
+      <span className="text-slate-500">{label}</span>
+      <span className={`font-medium ${colors[color]}`}>{value}</span>
+    </div>
+  );
+});
+InfoBadge.displayName = "InfoBadge";
+
+// Main Component
 const UnifiedMapSidebar = ({
   open,
   onOpenChange,
+  showNumCells,
+  setShowNumCells,
   enableDataToggle,
   setEnableDataToggle,
   dataToggle,
@@ -202,69 +346,47 @@ const UnifiedMapSidebar = ({
 }) => {
   const sideClasses = useMemo(() => {
     const base =
-      "fixed top-14 left-0 h-[calc(100vh-3.5rem)] z-50 w-[90vw] sm:w-[390px] bg-slate-950 text-white shadow-2xl transition-transform duration-200 ease-out overflow-hidden";
+      "fixed top-14 left-0 h-[calc(100vh-3.5rem)] z-50 w-[340px] bg-slate-950 text-white  transition-transform duration-200 ease-out flex flex-col";
     return open ? `${base} translate-x-0` : `${base} -translate-x-full`;
   }, [open]);
 
-  const handleApply = useCallback(() => {
-    reloadData?.();
-  }, [reloadData]);
-
-  const shouldShowMetricSelector = useMemo(
-    () =>
-      enableDataToggle ||
-      (enableSiteToggle && siteToggle === "sites-prediction") ||
-      showPolygons,
-    [enableDataToggle, enableSiteToggle, siteToggle, showPolygons]
+  // Metric options
+  const metricOptions = useMemo(
+    () => [
+      { value: "rsrp", label: "RSRP" },
+      { value: "rsrq", label: "RSRQ" },
+      { value: "sinr", label: "SINR" },
+      { value: "dl_tpt", label: "DL Throughput" },
+      { value: "ul_tpt", label: "UL Throughput" },
+      { value: "mos", label: "MOS" },
+      { value: "pci", label: "PCI" },
+    ],
+    []
   );
 
-  const updateCoverageFilter = useCallback(
-    (metric, field, value) => {
-      setCoverageHoleFilters?.((prev) => ({
-        ...prev,
-        [metric]: {
-          ...prev[metric],
-          [field]: value,
-        },
-      }));
-    },
-    [setCoverageHoleFilters]
+  const colorOptions = useMemo(
+    () => [
+      { value: "metric", label: "By Metric Value" },
+      { value: "provider", label: "By Provider" },
+      { value: "band", label: "By Band" },
+      { value: "technology", label: "By Technology" },
+    ],
+    []
   );
 
-  const activeCoverageFiltersCount = useMemo(() => {
-    if (!coverageHoleFilters) return 0;
-    return Object.values(coverageHoleFilters).filter((f) => f.enabled).length;
-  }, [coverageHoleFilters]);
-
-  const toggleAllCoverageFilters = useCallback(
-    (enabled) => {
-      setCoverageHoleFilters?.((prev) => ({
-        rsrp: { ...prev.rsrp, enabled },
-        rsrq: { ...prev.rsrq, enabled },
-        sinr: { ...prev.sinr, enabled },
-      }));
-    },
-    [setCoverageHoleFilters]
-  );
-
-  // ✅ Data filter handlers
-  // ✅ UPDATED: Data filter handler
+  // Filter handlers
   const updateDataFilter = useCallback(
     (filterType, value) => {
       setDataFilters?.((prev) => ({
         ...prev,
-        [filterType]: value === "all" ? [] : [value], // Use "all" instead of empty string
+        [filterType]: value === "all" ? [] : [value],
       }));
     },
     [setDataFilters]
   );
 
   const clearAllDataFilters = useCallback(() => {
-    setDataFilters?.({
-      providers: [],
-      bands: [],
-      technologies: [],
-    });
+    setDataFilters?.({ providers: [], bands: [], technologies: [] });
   }, [setDataFilters]);
 
   const activeDataFiltersCount = useMemo(() => {
@@ -276,716 +398,494 @@ const UnifiedMapSidebar = ({
     );
   }, [dataFilters]);
 
-  const siteToggleOptions = useMemo(
-    () => [
-      { value: "Cell", label: "Cell" },
-      { value: "NoML", label: "NoML" },
-      { value: "ML", label: "ML" },
-    ],
-    []
+  const updateCoverageFilter = useCallback(
+    (metric, field, value) => {
+      setCoverageHoleFilters?.((prev) => ({
+        ...prev,
+        [metric]: { ...prev[metric], [field]: value },
+      }));
+    },
+    [setCoverageHoleFilters]
   );
-  const handleColorByChange = useCallback(
-    (value) => {
-      console.log(" Layer Color changed to:", value, "Type:", typeof value);
 
-      if (value === "metric") {
-        console.log("  → Setting colorBy to NULL (use metric colors)");
-        setColorBy?.(null);
+  const activeCoverageFiltersCount = useMemo(() => {
+    if (!coverageHoleFilters) return 0;
+    return Object.values(coverageHoleFilters).filter((f) => f.enabled).length;
+  }, [coverageHoleFilters]);
+
+  const shouldShowMetricSelector = useMemo(
+    () =>
+      enableDataToggle ||
+      (enableSiteToggle && siteToggle === "sites-prediction") ||
+      showPolygons,
+    [enableDataToggle, enableSiteToggle, siteToggle, showPolygons]
+  );
+
+  const toggleEnvironment = useCallback((value) => {
+    setDataFilters?.((prev) => {
+      const current = prev.indoorOutdoor || [];
+      const exists = current.includes(value);
+      let newValues;
+      if (exists) {
+        newValues = current.filter(v => v !== value);
       } else {
-        console.log("  → Setting colorBy to:", value);
-        setColorBy?.(value);
+        newValues = [...current, value];
       }
-    },
-    [setColorBy]
-  );
+      return { ...prev, indoorOutdoor: newValues };
+    });
+  }, [setDataFilters]);
 
-  const dataToggleOptions = useMemo(
-    () => [
-      { value: "sample", label: "Sample" },
-      { value: "prediction", label: "Prediction" },
-    ],
-    []
-  );
-
-  const polygonToggleOptions = useMemo(
-    () => [
-      { value: "map", label: "Map Regions" },
-      { value: "save", label: "Buildings" },
-    ],
-    []
-  );
-
-  const handleDataToggleChange = useCallback(
-    (value) => setDataToggle?.(value),
-    [setDataToggle]
-  );
-
-  const handleSiteToggleChange = useCallback(
-    (value) => setSiteToggle?.(value),
-    [setSiteToggle]
-  );
-
-  const handleMetricChange = useCallback(
-    (value) => setMetric?.(value),
-    [setMetric]
-  );
-
-  const handlePolygonSourceChange = useCallback(
-    (value) => {
-      console.log(`🔄 Polygon source changed to: ${value}`);
-      setPolygonSource?.(value);
-    },
-    [setPolygonSource]
-  );
 
   return (
     <>
       {open && (
         <div
-          className="fixed inset-0  bg-black/40 "
+          className="fixed inset-0  "
           onClick={() => onOpenChange?.(false)}
         />
       )}
 
       <div className={sideClasses}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-900">
-          <h2 className="text-lg font-semibold">Map Controls</h2>
+        {/* Header */}
+        <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 shrink-0">
+          <h2 className="text-base font-semibold">Map Controls</h2>
           <button
-            className="p-1 rounded hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-md hover:bg-slate-800 transition-colors"
             onClick={() => onOpenChange?.(false)}
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="h-[calc(100%-140px)] overflow-y-auto p-4 space-y-4">
-          <PanelSection title="Current View">
-            <div className="space-y-2 text-sm">
-              {projectId && (
-                <div className="flex justify-between p-2 bg-slate-800 rounded">
-                  <span className="text-slate-400">Project ID:</span>
-                  <span className="font-semibold text-blue-400">
-                    {projectId}
-                  </span>
-                </div>
-              )}
-              {sessionIds && sessionIds.length > 0 && (
-                <div className="p-2 bg-slate-800 rounded">
-                  <div className="text-slate-400 mb-1">Session ID(s):</div>
-                  <div className="font-semibold text-green-400">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {/* Current View Info */}
+          {(projectId || sessionIds?.length > 0) && (
+            <div className="p-2.5 bg-slate-800/50 rounded-lg text-xs space-y-1 border border-slate-700/50">
+              {projectId && <InfoBadge label="Project" value={projectId} />}
+              {sessionIds?.length > 0 && (
+                <div className="text-xs">
+                  <div className="text-slate-500 mb-1">Sessions</div>
+                  <div className="bg-slate-900/60 border border-slate-700 rounded p-1.5 max-h-20 overflow-y-auto text-green-400 break-all">
                     {sessionIds.join(", ")}
                   </div>
                 </div>
               )}
-              {!projectId && (!sessionIds || sessionIds.length === 0) && (
-                <div className="text-slate-500 text-center py-2">
-                  No project or session linked
-                </div>
-              )}
             </div>
-          </PanelSection>
+          )}
 
-          <PanelSection title="Data Layer">
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={enableDataToggle}
-                  onChange={(e) => setEnableDataToggle?.(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm">Enable Data Layer</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={areaEnabled}
-                  onChange={(e) => setAreaEnabled?.(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <div className="flex-1">
-                  <div className="text-sm">Area Zones</div>
-                </div>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={enableGrid}
-                  onChange={(e) => setEnableGrid?.(e.target.checked)}
-                  disabled={!enableDataToggle}
-                  className="w-4 h-4"
-                />
-                <div className="flex-1">
-                  <div className="text-sm">Grid View</div>
-                  <div className="text-xs text-slate-400">
-                    Show data as grid cells
-                  </div>
-                </div>
-              </label>
+          {/* Data Layer */}
+          <CollapsibleSection
+            title="Data Layer"
+            icon={Database}
+            defaultOpen={true}
+          >
+            <ToggleRow
+              label="Enable Data"
+              checked={enableDataToggle}
+              onChange={setEnableDataToggle}
+              useSwitch={true}
+            />
 
-              {/* Grid Size Slider - only show when grid is enabled */}
-              {enableGrid && (
-                <div className="p-2 bg-slate-800 rounded">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-slate-300">Cell Size</span>
-                    <span className="text-xs font-semibold text-blue-400">
-                      {gridSizeMeters || 50}m
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="200"
-                    step="10"
-                    value={gridSizeMeters || 50}
-                    onChange={(e) =>
-                      setGridSizeMeters?.(parseInt(e.target.value))
-                    }
-                    className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+            {enableDataToggle && (
+              <>
+                <SegmentedControl
+                  value={dataToggle}
+                  onChange={setDataToggle}
+                  options={[
+                    { value: "sample", label: "Sample" },
+                    { value: "prediction", label: "Prediction" },
+                  ]}
+                />
+
+                <div className="space-y-2 pt-1">
+                  <ToggleRow
+                    label="Area Zones"
+                    checked={areaEnabled}
+                    onChange={setAreaEnabled}
+                  />
+                  <ToggleRow
+                    label="Grid View"
+                    description="Show data as grid cells"
+                    checked={enableGrid}
+                    onChange={setEnableGrid}
                   />
                 </div>
-              )}
 
-              <div>
-                <ToggleButton
-                  value={dataToggle}
-                  onChange={handleDataToggleChange}
-                  disabled={!enableDataToggle}
-                  options={dataToggleOptions}
+                {enableGrid && (
+                  <div className="pt-1 bg-slate-800/50 rounded-lg p-2">
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-slate-400">Cell Size</span>
+                      <span className="text-blue-400 font-semibold">
+                        {gridSizeMeters || 50}m
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="5"
+                      max="200"
+                      step="10"
+                      value={gridSizeMeters || 50}
+                      onChange={(e) =>
+                        setGridSizeMeters?.(parseInt(e.target.value))
+                      }
+                      className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                )}
+
+                <ToggleRow
+                  label="Show Num cell "
+                  description="Display cell count on logs"
+                  checked={showNumCells}
+                  onChange={setShowNumCells}
                 />
-              </div>
-            </div>
-          </PanelSection>
+              </>
+            )}
+          </CollapsibleSection>
 
-          <PanelSection title="Sites Layer">
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={enableSiteToggle}
-                  onChange={(e) => setEnableSiteToggle?.(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm">Enable Sites Layer</span>
-              </label>
+          {/* Sites Layer */}
+          <CollapsibleSection title="Sites Layer" icon={Radio}>
+            <ToggleRow
+              label="Enable Sites"
+              checked={enableSiteToggle}
+              onChange={setEnableSiteToggle}
+              useSwitch={true}
+            />
 
-              <div>
-                <Label className="text-xs text-slate-300 mb-2 block">
-                  Site Data Source
-                </Label>
-                <ToggleButton
+            {enableSiteToggle && (
+              <>
+                <SegmentedControl
                   value={siteToggle}
-                  onChange={handleSiteToggleChange}
-                  disabled={!enableSiteToggle}
-                  options={siteToggleOptions}
+                  onChange={setSiteToggle}
+                  options={[
+                    { value: "Cell", label: "Cell" },
+                    { value: "NoML", label: "NoML" },
+                    { value: "ML", label: "ML" },
+                  ]}
                 />
-              </div>
 
-              {enableSiteToggle && (
-                <div className="space-y-2 pt-2 border-t border-slate-700">
-                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={showSiteMarkers}
-                      onChange={(e) => setShowSiteMarkers?.(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Show Site Markers</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={showSiteSectors}
-                      onChange={(e) => setShowSiteSectors?.(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Show Sectors</span>
-                  </label>
+                <div className="space-y-2 pt-1">
+                  <ToggleRow
+                    label="Show Markers"
+                    checked={showSiteMarkers}
+                    onChange={setShowSiteMarkers}
+                  />
+                  <ToggleRow
+                    label="Show Sectors"
+                    checked={showSiteSectors}
+                    onChange={setShowSiteSectors}
+                  />
                 </div>
-              )}
-            </div>
-          </PanelSection>
+              </>
+            )}
+          </CollapsibleSection>
 
-          <PanelSection title="Polygon Layer">
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={showPolygons}
-                  onChange={(e) => {
-                    const isEnabled = e.target.checked;
-                    console.log(`🔘 Polygon checkbox toggled: ${isEnabled}`);
-                    setShowPolygons?.(isEnabled);
-                  }}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm">Show Polygons</span>
-              </label>
+          {/* Polygon Layer */}
+          <CollapsibleSection
+            title="Polygons"
+            icon={Hexagon}
+            badge={showPolygons && polygonCount > 0 ? polygonCount : null}
+          >
+            <ToggleRow
+              label="Show Polygons"
+              checked={showPolygons}
+              onChange={setShowPolygons}
+              useSwitch={true}
+            />
 
-              <div>
-                <Label className="text-xs text-slate-300 mb-2 block">
-                  Polygon Source
-                </Label>
-                <ToggleButton
+            {showPolygons && (
+              <>
+                <SegmentedControl
                   value={polygonSource}
-                  onChange={handlePolygonSourceChange}
-                  disabled={!showPolygons}
-                  options={polygonToggleOptions}
+                  onChange={setPolygonSource}
+                  options={[
+                    { value: "map", label: "Map Regions" },
+                    { value: "save", label: "Buildings" },
+                  ]}
                 />
-              </div>
 
-              {showPolygons && polygonCount > 0 && (
-                <div className="p-2 bg-slate-800 rounded text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Loaded:</span>
-                    <span className="font-semibold text-blue-400">
-                      {polygonCount} polygon(s)
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-slate-400">Source:</span>
-                    <span className="font-semibold text-green-400">
-                      {polygonSource === "map" ? "Map Regions" : "Buildings"}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <Label className="text-xs text-slate-300 mb-2 block">
-                Point Filtering
-              </Label>
-
-              <div className="mb-2 p-2 bg-slate-800 rounded text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Mode:</span>
-                  <span
-                    className={`font-semibold ${
-                      onlyInsidePolygons ? "text-green-400" : "text-blue-400"
-                    }`}
-                  >
-                    {onlyInsidePolygons ? "Filtered" : "All Points"}
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-sm text-slate-300">
+                    Filter Inside Only
                   </span>
+                  <ToggleSwitch
+                    checked={onlyInsidePolygons}
+                    onChange={setOnlyInsidePolygons}
+                  />
                 </div>
-              </div>
 
-              <button
-                onClick={() => setOnlyInsidePolygons?.(!onlyInsidePolygons)}
-                className={`w-full px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${
-                  onlyInsidePolygons
-                    ? "bg-green-600 hover:bg-green-700 text-white"
-                    : "bg-slate-700 hover:bg-slate-600 text-slate-300"
-                }`}
-              >
-                {onlyInsidePolygons ? "Show All Points" : "Filter Inside Only"}
-              </button>
-            </div>
-          </PanelSection>
+                {polygonCount > 0 && (
+                  <div className="bg-slate-800/50 rounded p-2 text-xs">
+                    <InfoBadge
+                      label="Loaded"
+                      value={`${polygonCount} polygon(s)`}
+                      color="green"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </CollapsibleSection>
 
-          <PanelSection title="Heatmap Layer" icon={Layers}>
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={showNeighbors}
-                  onChange={(e) => setShowNeighbors?.(e.target.checked)}
-                  className="w-4 h-4"
+          {/* Heatmap Layer */}
+          <CollapsibleSection title="Heatmap" icon={Thermometer}>
+            <ToggleRow
+              label="Neighbor Heatmap"
+              description="Display neighbor cell data"
+              checked={showNeighbors}
+              onChange={setShowNeighbors}
+              useSwitch={true}
+            />
+
+            {showNeighbors && neighborStats?.total > 0 && (
+              <div className="bg-slate-800/50 rounded p-2 space-y-1">
+                <InfoBadge
+                  label="Total Neighbors"
+                  value={neighborStats.total}
                 />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">
-                    Show Neighbor Heatmap
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    Display neighbor cell data as heatmap
-                  </div>
-                </div>
-              </label>
+                <InfoBadge
+                  label="Unique PCIs"
+                  value={neighborStats.uniquePCIs}
+                  color="green"
+                />
+              </div>
+            )}
+          </CollapsibleSection>
 
-              {showNeighbors && neighborStats && neighborStats.total > 0 && (
+          {/* Metric & Filters */}
+          {shouldShowMetricSelector && (
+            <CollapsibleSection
+              title="Metric & Filters"
+              icon={Filter}
+              defaultOpen={true}
+              badge={activeDataFiltersCount > 0 ? activeDataFiltersCount : null}
+            >
+              <SelectRow
+                label="Metric"
+                value={metric}
+                onChange={setMetric}
+                options={metricOptions}
+                placeholder="Select metric"
+              />
+
+              <SelectRow
+                label="Color By"
+                value={colorBy || "metric"}
+                onChange={(v) => setColorBy?.(v === "metric" ? null : v)}
+                options={colorOptions}
+                placeholder="Select color scheme"
+                disabled={!enableDataToggle}
+              />
+
+              <div className="border-t border-slate-700/50 pt-3 mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-slate-400">Data Filters</span>
+                  {activeDataFiltersCount > 0 && (
+                    <button
+                      onClick={clearAllDataFilters}
+                      className="text-[10px] text-blue-400 hover:underline"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
                 <div className="space-y-2">
-                  <div className="p-2 bg-slate-800 rounded text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Total Neighbors:</span>
-                      <span className="font-semibold text-blue-400">
-                        {neighborStats.total}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Unique PCIs:</span>
-                      <span className="font-semibold text-green-400">
-                        {neighborStats.uniquePCIs}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </PanelSection>
-
-          {/* ✅ UPDATED: Metric Display with Simple Dropdowns */}
-          {shouldShowMetricSelector && (
-            <PanelSection title="Metric & Filters">
-              <div className="space-y-3">
-                {/* Metric Selector */}
-                <div>
-                  <Label className="text-xs text-slate-300 mb-2 block">
-                    Select Metric
-                  </Label>
-                  <Select value={metric} onValueChange={handleMetricChange}>
-                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white h-9">
-                      <SelectValue placeholder="Select metric..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rsrp">RSRP</SelectItem>
-                      <SelectItem value="rsrq">RSRQ</SelectItem>
-                      <SelectItem value="sinr">SINR</SelectItem>
-                      <SelectItem value="dl_tpt">DL Throughput</SelectItem>
-                      <SelectItem value="ul_tpt">UL Throughput</SelectItem>
-                      <SelectItem value="mos">MOS</SelectItem>
-                      <SelectItem value="pci">PCI</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Divider */}
-                <div className="border-t border-slate-700 pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-xs text-slate-300">
-                      Data Filters
-                    </Label>
-                    {activeDataFiltersCount > 0 && (
-                      <button
-                        onClick={clearAllDataFilters}
-                        className="text-[10px] text-blue-400 hover:text-blue-300 underline"
-                      >
-                        Clear ({activeDataFiltersCount})
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Provider Dropdown */}
-                {/* Provider Dropdown */}
-                <div>
-                  <Label className="text-xs text-slate-300 mb-1.5 block">
-                    Provider
-                  </Label>
-                  <Select
+                  <SelectRow
+                    label="Provider"
                     value={dataFilters?.providers?.[0] || "all"}
-                    onValueChange={(value) =>
-                      updateDataFilter("providers", value)
-                    }
+                    onChange={(v) => updateDataFilter("providers", v)}
+                    options={[
+                      { value: "all", label: "All Providers" },
+                      ...(availableFilterOptions?.providers?.map((p) => ({
+                        value: p,
+                        label: p,
+                      })) || []),
+                    ]}
                     disabled={!enableDataToggle}
-                  >
-                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white h-9 text-xs">
-                      <SelectValue placeholder="All Providers" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Providers</SelectItem>
-                      {availableFilterOptions?.providers?.map((provider) => (
-                        <SelectItem key={provider} value={provider}>
-                          {provider}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  />
 
-                {/* Band Dropdown */}
-                <div>
-                  <Label className="text-xs text-slate-300 mb-1.5 block">
-                    Band
-                  </Label>
-                  <Select
+                  <SelectRow
+                    label="Band"
                     value={dataFilters?.bands?.[0] || "all"}
-                    onValueChange={(value) => updateDataFilter("bands", value)}
+                    onChange={(v) => updateDataFilter("bands", v)}
+                    options={[
+                      { value: "all", label: "All Bands" },
+                      ...(availableFilterOptions?.bands?.map((b) => ({
+                        value: b,
+                        label: b,
+                      })) || []),
+                    ]}
                     disabled={!enableDataToggle}
-                  >
-                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white h-9 text-xs">
-                      <SelectValue placeholder="All Bands" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Bands</SelectItem>
-                      {availableFilterOptions?.bands?.map((band) => (
-                        <SelectItem key={band} value={band}>
-                          {band}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  />
 
-                {/* Technology Dropdown */}
-                <div>
-                  <Label className="text-xs text-slate-300 mb-1.5 block">
-                    Technology
-                  </Label>
-                  <Select
+                  <SelectRow
+                    label="Technology"
                     value={dataFilters?.technologies?.[0] || "all"}
-                    onValueChange={(value) =>
-                      updateDataFilter("technologies", value)
-                    }
+                    onChange={(v) => updateDataFilter("technologies", v)}
+                    options={[
+                      { value: "all", label: "All Technologies" },
+                      ...(availableFilterOptions?.technologies
+                        ?.filter((t) => t && t.toLowerCase() !== "unknown")
+                        ?.map((t) => ({ value: t, label: t })) || []),
+                    ]}
                     disabled={!enableDataToggle}
-                  >
-                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white h-9 text-xs">
-                      <SelectValue placeholder="All Technologies" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Technologies</SelectItem>
-                      {availableFilterOptions?.technologies
-                        ?.filter(
-                          (tech) => tech && tech.toLowerCase() !== "unknown"
-                        )
-                        ?.map((tech) => (
-                          <SelectItem key={tech} value={tech}>
-                            {tech}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
-
-                {/* Active Filters Indicator */}
-                {activeDataFiltersCount > 0 && (
-                  <div className="p-2 bg-blue-900/20 border border-blue-700 rounded text-xs">
-                    <div className="text-blue-300 font-medium">
-                      🔍 {activeDataFiltersCount} filter
-                      {activeDataFiltersCount > 1 ? "s" : ""} active
+                
+                <div className="space-y-1.5 pt-1">
+                    <Label className="text-xs text-slate-400">Environment</Label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
+                        <Checkbox 
+                          checked={dataFilters?.indoorOutdoor?.includes("Indoor")}
+                          onChange={() => toggleEnvironment("Indoor")}
+                          disabled={!enableDataToggle}
+                        />
+                        <span className="text-sm text-slate-300">Indoor</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
+                        <Checkbox 
+                          checked={dataFilters?.indoorOutdoor?.includes("Outdoor")}
+                          onChange={() => toggleEnvironment("Outdoor")}
+                          disabled={!enableDataToggle}
+                        />
+                        <span className="text-sm text-slate-300">Outdoor</span>
+                      </label>
                     </div>
                   </div>
-                )}
-              </div>
-            </PanelSection>
-          )}
 
-          {shouldShowMetricSelector && (
-            <PanelSection title="Layer Color" icon={Palette}>
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-300 mb-2 block">
-                  Color Points
-                </Label>
-                <Select
-                  value={colorBy || "metric"}
-                  onValueChange={handleColorByChange}
-                  disabled={!enableDataToggle}
-                >
-                  <SelectTrigger className="bg-slate-800 border-slate-700 text-white h-9 text-xs">
-                    <SelectValue placeholder="Select color scheme..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="metric"> Metric Value</SelectItem>
-                    <SelectItem value="provider"> Provider</SelectItem>
-                    <SelectItem value="band"> band</SelectItem>
-                    <SelectItem value="technology"> technology</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {!colorBy && (
-                  <div className="p-2 bg-slate-800 rounded text-xs text-slate-400">
-                    Points colored by selected metric value
+                {activeDataFiltersCount > 0 && (
+                  <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/50 rounded text-xs text-blue-300">
+                    🔍 {activeDataFiltersCount} filter
+                    {activeDataFiltersCount > 1 ? "s" : ""} active
                   </div>
                 )}
               </div>
-            </PanelSection>
+            </CollapsibleSection>
           )}
-          {/* Coverage Handover Panel */}
-          <PanelSection title="Tech Handover" icon={RefreshCw}>
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={techHandOver || false}
-                  onChange={(e) => setTechHandOver?.(e.target.checked)} 
-                  className="w-4 h-4"
+
+          {/* Tech Handover */}
+          <CollapsibleSection
+            title="Tech Handover"
+            icon={ArrowLeftRight}
+            badge={
+              techHandOver && technologyTransitions?.length > 0
+                ? technologyTransitions.length
+                : null
+            }
+          >
+            <ToggleRow
+              label="Show Handovers"
+              description="Display technology change points"
+              checked={techHandOver}
+              onChange={setTechHandOver}
+              useSwitch={true}
+            />
+
+            {techHandOver && technologyTransitions?.length > 0 && (
+              <div className="bg-slate-800/50 rounded p-2 text-xs">
+                <InfoBadge
+                  label="Total Handovers"
+                  value={technologyTransitions.length}
+                  color="orange"
                 />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">
-                    Show Technology Handovers
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    Display markers where technology changes
-                  </div>
-                </div>
-              </label>
+              </div>
+            )}
+          </CollapsibleSection>
 
-              {techHandOver && technologyTransitions?.length > 0 && (
-                <div className="p-2 bg-slate-800 rounded text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Total Handovers:</span>
-                    <span className="font-semibold text-orange-400">
-                      {technologyTransitions.length}
-                    </span>
+          {/* Coverage Hole Filters */}
+          {shouldShowMetricSelector && coverageHoleFilters && (
+            <CollapsibleSection
+              title="Coverage Holes"
+              icon={AlertTriangle}
+              badge={
+                activeCoverageFiltersCount > 0
+                  ? activeCoverageFiltersCount
+                  : null
+              }
+            >
+              {/* RSRP */}
+              <div className="flex items-center gap-3 py-1">
+                <Checkbox
+                  checked={coverageHoleFilters.rsrp?.enabled}
+                  onChange={(v) => updateCoverageFilter("rsrp", "enabled", v)}
+                />
+                <span className="text-sm w-12 text-slate-200">RSRP</span>
+                <ThresholdInput
+                  value={coverageHoleFilters.rsrp?.threshold ?? -110}
+                  onChange={(v) => updateCoverageFilter("rsrp", "threshold", v)}
+                  min={-150}
+                  max={-50}
+                  step={1}
+                  unit="dBm"
+                  disabled={!coverageHoleFilters.rsrp?.enabled}
+                />
+              </div>
+
+              {/* RSRQ */}
+              <div className="flex items-center gap-3 py-1">
+                <Checkbox
+                  checked={coverageHoleFilters.rsrq?.enabled}
+                  onChange={(v) => updateCoverageFilter("rsrq", "enabled", v)}
+                />
+                <span className="text-sm w-12 text-slate-200">RSRQ</span>
+                <ThresholdInput
+                  value={coverageHoleFilters.rsrq?.threshold ?? -15}
+                  onChange={(v) => updateCoverageFilter("rsrq", "threshold", v)}
+                  min={-30}
+                  max={0}
+                  step={0.5}
+                  unit="dB"
+                  disabled={!coverageHoleFilters.rsrq?.enabled}
+                />
+              </div>
+
+              {/* SINR */}
+              <div className="flex items-center gap-3 py-1">
+                <Checkbox
+                  checked={coverageHoleFilters.sinr?.enabled}
+                  onChange={(v) => updateCoverageFilter("sinr", "enabled", v)}
+                />
+                <span className="text-sm w-12 text-slate-200">SINR</span>
+                <ThresholdInput
+                  value={coverageHoleFilters.sinr?.threshold ?? 0}
+                  onChange={(v) => updateCoverageFilter("sinr", "threshold", v)}
+                  min={-20}
+                  max={30}
+                  step={1}
+                  unit="dB"
+                  disabled={!coverageHoleFilters.sinr?.enabled}
+                />
+              </div>
+
+              {activeCoverageFiltersCount > 0 && (
+                <div className="p-2 bg-yellow-900/20 border border-yellow-700/50 rounded text-xs text-yellow-300 mt-2">
+                  <div className="font-medium mb-1">
+                    ⚠️ {activeCoverageFiltersCount} filter
+                    {activeCoverageFiltersCount > 1 ? "s" : ""} active
+                  </div>
+                  <div className="text-yellow-400/80 text-[10px]">
+                    All conditions must be met (AND logic)
                   </div>
                 </div>
               )}
-            </div>
-          </PanelSection>
-          {shouldShowMetricSelector && coverageHoleFilters && (
-            <PanelSection title="Coverage Hole Filters" icon={Filter}>
-              <div className="space-y-3">
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => toggleAllCoverageFilters(true)}
-                    className="flex-1 px-2 py-1 text-[10px] bg-slate-700 hover:bg-slate-600 rounded transition-colors"
-                  >
-                    Enable All
-                  </button>
-                  <button
-                    onClick={() => toggleAllCoverageFilters(false)}
-                    className="flex-1 px-2 py-1 text-[10px] bg-slate-700 hover:bg-slate-600 rounded transition-colors"
-                  >
-                    Disable All
-                  </button>
+
+              {activeCoverageFiltersCount === 0 && (
+                <div className="p-2 bg-slate-800/50 rounded text-xs text-slate-500 text-center">
+                  Enable filters to identify coverage holes
                 </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  <div className="flex items-center gap-2 p-2 bg-slate-800/50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={coverageHoleFilters.rsrp?.enabled || false}
-                      onChange={(e) =>
-                        updateCoverageFilter(
-                          "rsrp",
-                          "enabled",
-                          e.target.checked
-                        )
-                      }
-                      className="w-3.5 h-3.5 flex-shrink-0"
-                    />
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-xs font-medium text-slate-300 w-12 flex-shrink-0">
-                        RSRP
-                      </span>
-                      <CompactThresholdInput
-                        value={coverageHoleFilters.rsrp?.threshold ?? -110}
-                        onChange={(val) =>
-                          updateCoverageFilter("rsrp", "threshold", val)
-                        }
-                        min={-150}
-                        max={-50}
-                        step={1}
-                        disabled={!coverageHoleFilters.rsrp?.enabled}
-                      />
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">
-                        dBm
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 p-2 bg-slate-800/50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={coverageHoleFilters.rsrq?.enabled || false}
-                      onChange={(e) =>
-                        updateCoverageFilter(
-                          "rsrq",
-                          "enabled",
-                          e.target.checked
-                        )
-                      }
-                      className="w-3.5 h-3.5 flex-shrink-0"
-                    />
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-xs font-medium text-slate-300 w-12 flex-shrink-0">
-                        RSRQ
-                      </span>
-                      <CompactThresholdInput
-                        value={coverageHoleFilters.rsrq?.threshold ?? -15}
-                        onChange={(val) =>
-                          updateCoverageFilter("rsrq", "threshold", val)
-                        }
-                        min={-30}
-                        max={0}
-                        step={0.5}
-                        disabled={!coverageHoleFilters.rsrq?.enabled}
-                      />
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">
-                        dB
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 p-2 bg-slate-800/50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={coverageHoleFilters.sinr?.enabled || false}
-                      onChange={(e) =>
-                        updateCoverageFilter(
-                          "sinr",
-                          "enabled",
-                          e.target.checked
-                        )
-                      }
-                      className="w-3.5 h-3.5 flex-shrink-0"
-                    />
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-xs font-medium text-slate-300 w-12 flex-shrink-0">
-                        SINR
-                      </span>
-                      <CompactThresholdInput
-                        value={coverageHoleFilters.sinr?.threshold ?? 0}
-                        onChange={(val) =>
-                          updateCoverageFilter("sinr", "threshold", val)
-                        }
-                        min={-20}
-                        max={30}
-                        step={1}
-                        disabled={!coverageHoleFilters.sinr?.enabled}
-                      />
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">
-                        dB
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {activeCoverageFiltersCount > 0 && (
-                  <div className="p-2 bg-yellow-900/20 border border-yellow-700 rounded">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <AlertTriangle className="h-3 w-3 text-yellow-400 flex-shrink-0" />
-                      <div className="font-semibold text-yellow-400 text-xs">
-                        {activeCoverageFiltersCount} Active Filter
-                        {activeCoverageFiltersCount > 1 ? "s" : ""}
-                      </div>
-                    </div>
-                    <div className="text-[10px] text-yellow-300 space-y-0.5">
-                      {coverageHoleFilters.rsrp?.enabled && (
-                        <div>
-                          • RSRP {"<"} {coverageHoleFilters.rsrp.threshold} dBm
-                        </div>
-                      )}
-                      {coverageHoleFilters.rsrq?.enabled && (
-                        <div>
-                          • RSRQ {"<"} {coverageHoleFilters.rsrq.threshold} dB
-                        </div>
-                      )}
-                      {coverageHoleFilters.sinr?.enabled && (
-                        <div>
-                          • SINR {"<"} {coverageHoleFilters.sinr.threshold} dB
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-1.5 pt-1.5 border-t border-yellow-700/50 text-[10px] text-yellow-200">
-                      All criteria must be met (AND logic)
-                    </div>
-                  </div>
-                )}
-
-                {activeCoverageFiltersCount === 0 && (
-                  <div className="p-2 bg-slate-800 rounded text-[10px] text-slate-400 text-center">
-                    Enable filters to identify coverage holes
-                  </div>
-                )}
-              </div>
-            </PanelSection>
+              )}
+            </CollapsibleSection>
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-700 bg-slate-900">
+        {/* Footer */}
+        <div className="p-3 border-t border-slate-700 bg-slate-900 shrink-0">
           <Button
-            className="w-full bg-blue-600 hover:bg-blue-700"
-            onClick={handleApply}
+            className="w-full bg-blue-600 hover:bg-blue-700 h-9"
+            onClick={reloadData}
             disabled={loading}
           >
             <RefreshCw

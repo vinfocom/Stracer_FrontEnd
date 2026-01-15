@@ -1,4 +1,4 @@
-// pages/SessionMapDebug.jsx
+// src/pages/SessionMapDebug.jsx
 import React, {
   useEffect,
   useState,
@@ -28,11 +28,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
-import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
 import useColorForLog from "@/hooks/useColorForLog.js";
+import { useNetworkSamples } from "@/hooks/useNetworkSamples";
 
 // ============================================
-// CONSTANTS
+// CONSTANTS & HELPERS
 // ============================================
 const containerStyle = {
   width: "100%",
@@ -52,9 +52,6 @@ const MAP_OPTIONS = {
   gestureHandling: "greedy",
 };
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
 const getMetricUnit = (metric) => {
   switch (metric?.toUpperCase()) {
     case "RSRP":
@@ -80,73 +77,52 @@ const getMetricValue = (log, metric) => {
   return log[metricKey] ?? log.rsrp ?? -120;
 };
 
-const parseLogEntry = (log, sessionId) => {
-  if (!log || typeof log !== "object") {
-    return null;
+// Enhanced WKT conversion that supports polygon, rectangle, and circle
+const geometryToWktPolygon = (geometry) => {
+  if (!geometry) return null;
+
+  if (geometry.type === "polygon" && geometry.polygon?.length >= 3) {
+    const pointsString = geometry.polygon
+      .map((p) => `${p.lng} ${p.lat}`)
+      .join(", ");
+    const first = `${geometry.polygon[0].lng} ${geometry.polygon[0].lat}`;
+    return `POLYGON((${pointsString}, ${first}))`;
   }
 
-  const lat = parseFloat(log.lat || log.Lat || log.latitude || log.Latitude);
-  const lng = parseFloat(
-    log.lon || log.lng || log.Lng || log.longitude || log.Longitude
-  );
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return null;
+  if (geometry.type === "rectangle" && geometry.rectangle) {
+    const { ne, sw } = geometry.rectangle;
+    const coords = [
+      { lng: sw.lng, lat: ne.lat },
+      { lng: ne.lng, lat: ne.lat },
+      { lng: ne.lng, lat: sw.lat },
+      { lng: sw.lng, lat: sw.lat },
+      { lng: sw.lng, lat: ne.lat },
+    ];
+    const pointsString = coords.map((p) => `${p.lng} ${p.lat}`).join(", ");
+    return `POLYGON((${pointsString}))`;
   }
 
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    return null;
+  if (geometry.type === "circle" && geometry.circle) {
+    const { center, radius } = geometry.circle;
+    const points = [];
+    const numPoints = 64;
+    for (let i = 0; i < numPoints; i++) {
+      const angle = (i / numPoints) * Math.PI * 2;
+      const latOffset = (radius / 111111) * Math.cos(angle);
+      const lngOffset =
+        (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) *
+        Math.sin(angle);
+      points.push({
+        lat: center.lat + latOffset,
+        lng: center.lng + lngOffset,
+      });
+    }
+    points.push(points[0]);
+    const pointsString = points.map((p) => `${p.lng} ${p.lat}`).join(", ");
+    return `POLYGON((${pointsString}))`;
   }
 
-  const parseNum = (val) => {
-    if (val === null || val === undefined || val === "") return null;
-    const num = parseFloat(val);
-    return Number.isFinite(num) ? num : null;
-  };
-
-  const providerValue = normalizeProviderName(log.m_alpha_long || log.Provider);
-  const bandValue = log.band || log.Band;
-  const techValue = normalizeTechName(log.network);
-
-  return {
-    lat,
-    lng,
-    rsrp: parseNum(log.rsrp || log.RSRP) ?? -120,
-    rsrq: parseNum(log.rsrq || log.RSRQ) ?? 0,
-    sinr: parseNum(log.sinr || log.SINR) ?? 0,
-    rssi: parseNum(log.rssi || log.RSSI) ?? -100,
-    dl_tpt: parseNum(log.dl_tpt),
-    ul_tpt: parseNum(log.ul_tpt),
-    mos: parseNum(log.mos),
-    provider: providerValue,
-    technology: techValue,
-    band: bandValue ? String(bandValue) : "",
-    timestamp:
-      log.timestamp || log.Timestamp || log.time || log.Time || log.dateTime || "",
-    source: log.source || log.Source || log.dataSource || "",
-    pci: log.pci || log.PCI || "",
-    cellId: log.cellId || log.CellId || log.cell_id || "",
-    session_id: sessionId ?? log.session_id,
-    id: log.id || `${sessionId}-${log.timestamp}`,
-  };
-};
-
-const extractLogsFromResponse = (data) => {
-  if (Array.isArray(data)) return data;
-  if (data?.data && Array.isArray(data.data)) return data.data;
-  if (data?.Data && Array.isArray(data.Data)) return data.Data;
-  if (data?.logs && Array.isArray(data.logs)) return data.logs;
-  if (data?.networkLogs && Array.isArray(data.networkLogs))
-    return data.networkLogs;
-  if (data?.result && Array.isArray(data.result)) return data.result;
-  return [];
-};
-
-const coordinatesToWktPolygon = (coords) => {
-  if (!Array.isArray(coords) || coords.length < 3) return null;
-  const pointsString = coords.map((p) => `${p.lng} ${p.lat}`).join(", ");
-  const firstPointString = `${coords[0].lng} ${coords[0].lat}`;
-  return `POLYGON((${pointsString}, ${firstPointString}))`;
+  return null;
 };
 
 // ============================================
@@ -169,9 +145,7 @@ function CanvasCirclesOverlay({ map, logs, metric = "RSRP", getMetricColor }) {
         this.canvas.style.position = "absolute";
         this.canvas.style.pointerEvents = "none";
         const panes = this.getPanes();
-        if (panes) {
-          panes.overlayLayer.appendChild(this.canvas);
-        }
+        if (panes) panes.overlayLayer.appendChild(this.canvas);
       }
 
       draw() {
@@ -238,15 +212,11 @@ function CanvasCirclesOverlay({ map, logs, metric = "RSRP", getMetricColor }) {
     overlayRef.current = overlay;
 
     const idleListener = map.addListener("idle", () => {
-      if (overlayRef.current) {
-        overlayRef.current.draw();
-      }
+      if (overlayRef.current) overlayRef.current.draw();
     });
 
     return () => {
-      if (idleListener) {
-        window.google.maps.event.removeListener(idleListener);
-      }
+      if (idleListener) window.google.maps.event.removeListener(idleListener);
       if (overlayRef.current) {
         overlayRef.current.setMap(null);
         overlayRef.current = null;
@@ -363,13 +333,12 @@ function MapLegend({ metric = "RSRP", thresholds = null }) {
 
   const legendItems = useMemo(() => {
     if (!thresholds || !Array.isArray(thresholds) || thresholds.length === 0) {
-      // Default legends if no thresholds available
       const defaultLegends = {
         RSRP: [
           { color: "#00FF00", label: ">= -80 dBm (Excellent)" },
-          { color: "#FFFF00", label: "-80 to -90 dBm (Good)" },
-          { color: "#FFA500", label: "-90 to -100 dBm (Fair)" },
-          { color: "#FF6600", label: "-100 to -110 dBm (Poor)" },
+          { color: "#7FFF00", label: "-80 to -90 dBm (Good)" },
+          { color: "#FFFF00", label: "-90 to -100 dBm (Fair)" },
+          { color: "#FFA500", label: "-100 to -110 dBm (Poor)" },
           { color: "#FF0000", label: "< -110 dBm (No Signal)" },
         ],
         RSRQ: [
@@ -386,16 +355,43 @@ function MapLegend({ metric = "RSRP", thresholds = null }) {
           { color: "#FFA500", label: "-5 to 0 dB (Poor)" },
           { color: "#FF0000", label: "< -5 dB (Bad)" },
         ],
+        DL_THPT: [
+          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
+          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
+          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
+          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
+          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
+        ],
+        UL_THPT: [
+          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
+          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
+          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
+          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
+          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
+        ],
+        DL_TPT: [
+          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
+          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
+          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
+          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
+          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
+        ],
+        UL_TPT: [
+          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
+          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
+          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
+          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
+          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
+        ],
       };
       return defaultLegends[metric?.toUpperCase()] || defaultLegends.RSRP;
     }
 
     const isNegativeMetric = ["RSRP", "RSRQ"].includes(metric?.toUpperCase());
     const sorted = [...thresholds].sort((a, b) => {
-      if (isNegativeMetric) {
-        return parseFloat(b.min) - parseFloat(a.min);
-      }
-      return parseFloat(b.min) - parseFloat(a.min);
+      return isNegativeMetric
+        ? parseFloat(b.min) - parseFloat(a.min)
+        : parseFloat(b.min) - parseFloat(a.min);
     });
 
     return sorted.map((t) => ({
@@ -425,51 +421,35 @@ function MapLegend({ metric = "RSRP", thresholds = null }) {
 }
 
 // ============================================
-// MAIN COMPONENT: SessionMapDebug
+// MAIN COMPONENT
 // ============================================
 function SessionMapDebug() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // State
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Map State
   const [map, setMap] = useState(null);
-  const [fetchProgress, setFetchProgress] = useState({
-    current: 0,
-    total: 0,
-    page: 0,
-    totalPages: 0,
-  });
   const [analysis, setAnalysis] = useState(null);
-  const [appSummary, setAppSummary] = useState(null);
-
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [polygonName, setPolygonName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-
   const [showLegend, setShowLegend] = useState(true);
   const [sessionMarkers, setSessionMarkers] = useState([]);
 
   // Use the color hook
   const {
     getMetricColor,
-    getThresholdInfo,
     getThresholdsForMetric,
     thresholds: allThresholds,
     loading: thresholdsLoading,
-    isReady: thresholdsReady,
   } = useColorForLog();
 
   // Map context
   const {
     ui,
-    updateUI,
     setDownloadHandlers,
     setPolygonStats,
     setHasLogs,
-    hasLogs,
     filters,
     resetFilter,
     clearFilters,
@@ -477,16 +457,15 @@ function SessionMapDebug() {
     updateAvailableFilters,
   } = useMapContext();
 
-  // Parse session IDs from URL
+  // Parse session IDs
   const sessionIdParam =
     searchParams.get("sessionId") || searchParams.get("sessionIds");
-
   const sessionIds = useMemo(() => {
     if (!sessionIdParam) return [];
     return sessionIdParam
       .split(",")
       .map((id) => id.trim())
-      .filter((id) => id && id !== "undefined" && id !== "null");
+      .filter(Boolean);
   }, [sessionIdParam]);
 
   // Google Maps loader
@@ -506,106 +485,110 @@ function SessionMapDebug() {
     [ui]
   );
 
-  // Get current metric thresholds using the hook
+  // Use the Network Samples Hook
+  const {
+    locations: logs,
+    loading,
+    error,
+    progress: fetchProgress,
+    appSummary,
+  } = useNetworkSamples(sessionIds, true);
+
+  // Update Available Filters and Markers when logs change
+  useEffect(() => {
+    if (!logs || logs.length === 0) return;
+
+    const allProviders = new Set();
+    const allBands = new Set();
+    const allNetworkTypes = new Set();
+    const markersMap = new Map();
+
+    logs.forEach((log) => {
+      if (log.provider) allProviders.add(log.provider);
+      if (log.band) allBands.add(String(log.band));
+      if (log.technology) allNetworkTypes.add(log.technology);
+
+      if (!markersMap.has(log.session_id)) {
+        markersMap.set(log.session_id, {
+          id: log.session_id,
+          session_id: log.session_id,
+          lat: log.lat,
+          lng: log.lng,
+          position: { lat: log.lat, lng: log.lng },
+          logsCount: 1,
+        });
+      } else {
+        markersMap.get(log.session_id).logsCount++;
+      }
+    });
+
+    updateAvailableFilters({
+      providers: Array.from(allProviders).filter(Boolean),
+      bands: Array.from(allBands).filter(Boolean),
+      technologies: Array.from(allNetworkTypes).filter(Boolean),
+    });
+
+    setSessionMarkers(Array.from(markersMap.values()));
+  }, [logs, updateAvailableFilters]);
+
+  // Current thresholds
   const currentThresholds = useMemo(() => {
     return getThresholdsForMetric(filters.metric || "RSRP");
   }, [getThresholdsForMetric, filters.metric]);
 
-  // Format thresholds for DrawingToolsLayer
-  const formattedThresholds = useMemo(() => {
-    if (!allThresholds) return {};
-    return {
-      rsrp: allThresholds.rsrp,
-      rsrq: allThresholds.rsrq,
-      sinr: allThresholds.sinr,
-      dl_thpt: allThresholds.dlThpt,
-      ul_thpt: allThresholds.ulThpt,
-      dl_tpt: allThresholds.dlThpt,
-      ul_tpt: allThresholds.ulThpt,
-      mos: allThresholds.mos,
-      lte_bler: allThresholds.lteBler,
-    };
-  }, [allThresholds]);
-
-  // Filter logs based on active filters
+  // Filter logs logic
   const filteredLogs = useMemo(() => {
     if (!logs.length) return [];
 
     return logs.filter((log) => {
       const metricValue = getMetricValue(log, filters.metric);
 
-      // Min signal filter
       if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
-        if (metricValue < parseFloat(filters.minSignal)) {
-          return false;
-        }
+        if (metricValue < parseFloat(filters.minSignal)) return false;
       }
-
-      // Max signal filter
       if (filters.maxSignal !== "" && !isNaN(parseFloat(filters.maxSignal))) {
-        if (metricValue > parseFloat(filters.maxSignal)) {
-          return false;
-        }
+        if (metricValue > parseFloat(filters.maxSignal)) return false;
       }
-
-      // Technology filter
       if (filters.technology && filters.technology !== "ALL") {
-        if (log.technology) {
-          if (
-            log.technology.toUpperCase() !== filters.technology.toUpperCase()
-          ) {
-            return false;
-          }
-        }
+        if (
+          log.technology?.toUpperCase() !== filters.technology.toUpperCase()
+        )
+          return false;
       }
-
-      // Band filter
       if (filters.band && filters.band !== "" && filters.band !== "all") {
-        if (log.band) {
-          if (log.band.toString() !== filters.band) {
-            return false;
-          }
-        }
+        if (log.band?.toString() !== filters.band) return false;
       }
-
-      // Provider filter
       if (filters.provider && filters.provider !== "all") {
-        if (log.provider) {
-          if (log.provider.toLowerCase() !== filters.provider.toLowerCase()) {
-            return false;
-          }
-        }
+        if (log.provider?.toLowerCase() !== filters.provider.toLowerCase())
+          return false;
       }
-
-      // Date range filter
+      if (filters.dataSource && filters.dataSource !== "all") {
+        if (log.source?.toLowerCase() !== filters.dataSource.toLowerCase())
+          return false;
+      }
       if (filters.startDate || filters.endDate) {
         if (log.timestamp) {
           const logDate = new Date(log.timestamp);
-          if (filters.startDate && logDate < filters.startDate) {
-            return false;
-          }
+          if (filters.startDate && logDate < filters.startDate) return false;
           if (filters.endDate) {
             const endOfDay = new Date(filters.endDate);
             endOfDay.setHours(23, 59, 59, 999);
-            if (logDate > endOfDay) {
-              return false;
-            }
+            if (logDate > endOfDay) return false;
           }
         }
       }
-
-      // Data source filter
-      if (filters.dataSource && filters.dataSource !== "all") {
-        if (log.source) {
-          if (log.source.toLowerCase() !== filters.dataSource.toLowerCase()) {
-            return false;
-          }
-        }
-      }
-
       return true;
     });
   }, [logs, filters]);
+
+  // Fit map bounds when filtered logs change
+  useEffect(() => {
+    if (map && filteredLogs.length > 0 && window.google) {
+      const bounds = new window.google.maps.LatLngBounds();
+      filteredLogs.forEach((pt) => bounds.extend({ lat: pt.lat, lng: pt.lng }));
+      map.fitBounds(bounds, { padding: 80 });
+    }
+  }, [map, filteredLogs]);
 
   // Show toast when filtered count changes
   const prevFilteredCountRef = useRef(0);
@@ -627,18 +610,15 @@ function SessionMapDebug() {
     }
   }, [filteredLogs.length, logs.length]);
 
-  // Handle clear single filter
   const handleClearFilter = useCallback(
-    (key) => {
-      resetFilter(key);
-    },
+    (key) => resetFilter(key),
     [resetFilter]
   );
 
-  // Handle save polygon
+  // Enhanced Save Polygon with full support for polygon/rectangle/circle
   const handleSavePolygon = async () => {
     if (!analysis || !analysis.geometry) {
-      toast.warn("No analysis data or geometry found to save.");
+      toast.warn("No analysis geometry found to save.");
       return;
     }
     if (!polygonName.trim()) {
@@ -646,69 +626,38 @@ function SessionMapDebug() {
       return;
     }
 
-    let wktString = null;
-    const geometry = analysis.geometry;
-
-    if (geometry.type === "polygon" && geometry.polygon) {
-      wktString = coordinatesToWktPolygon(geometry.polygon);
-    } else if (geometry.type === "rectangle" && geometry.rectangle) {
-      const { ne, sw } = geometry.rectangle;
-      const rectCoords = [
-        { lng: sw.lng, lat: ne.lat },
-        { lng: ne.lng, lat: ne.lat },
-        { lng: ne.lng, lat: sw.lat },
-        { lng: sw.lng, lat: sw.lat },
-      ];
-      wktString = coordinatesToWktPolygon(rectCoords);
-    } else if (geometry.type === "circle" && geometry.circle) {
-      const { center, radius } = geometry.circle;
-      const circleCoords = [];
-      const numPoints = 32;
-      for (let i = 0; i < numPoints; i++) {
-        const angle = (i / numPoints) * 360;
-        const latOffset = (radius / 111111) * Math.cos((angle * Math.PI) / 180);
-        const lngOffset =
-          (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) *
-          Math.sin((angle * Math.PI) / 180);
-        circleCoords.push({
-          lat: center.lat + latOffset,
-          lng: center.lng + lngOffset,
-        });
-      }
-      wktString = coordinatesToWktPolygon(circleCoords);
-    }
-
+    const wktString = geometryToWktPolygon(analysis.geometry);
     if (!wktString) {
-      toast.error("Could not convert the drawn shape to WKT format.");
+      toast.error("Failed to convert geometry to WKT format.");
       return;
     }
 
     const payload = {
       Name: polygonName,
       WKT: wktString,
-      SessionIds: sessionIds || [],
+      SessionIds: sessionIds,
     };
 
     setIsSaving(true);
     try {
       const response = await mapViewApi.savePolygon(payload);
-      if (response && response.Status === 1) {
+      if (response?.Status === 1) {
         toast.success(`Polygon "${polygonName}" saved successfully!`);
         setIsSaveDialogOpen(false);
         setPolygonName("");
+        setAnalysis(null);
+        setPolygonStats(null);
       } else {
         toast.error(response?.Message || "Failed to save polygon.");
       }
-    } catch (error) {
-      toast.error(
-        `Error saving polygon: ${error.message || "An unknown error occurred."}`
-      );
+    } catch (err) {
+      toast.error(`Error saving polygon: ${err.message || "Unknown error"}`);
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Handle stats download
+  // Stats CSV download
   const handleStatsDownload = useCallback(() => {
     if (filteredLogs.length === 0) {
       toast.error("No data to download");
@@ -717,12 +666,12 @@ function SessionMapDebug() {
 
     const values = filteredLogs
       .map((log) => getMetricValue(log, filters.metric))
-      .filter((v) => !isNaN(v));
+      .filter((v) => v !== null && !isNaN(v));
     const sortedValues = [...values].sort((a, b) => a - b);
 
     const activeFiltersStr =
       Object.entries(filters)
-        .filter(([k, v]) => v && v !== "ALL" && v !== "all" && v !== "")
+        .filter(([_, v]) => v && v !== "ALL" && v !== "all" && v !== "")
         .map(([k, v]) => {
           if (v instanceof Date) return `${k}: ${format(v, "yyyy-MM-dd")}`;
           return `${k}: ${v}`;
@@ -737,10 +686,18 @@ function SessionMapDebug() {
       ["Active Filters", activeFiltersStr],
       [
         `${filters.metric || "RSRP"} Mean`,
-        (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2),
+        values.length > 0
+          ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)
+          : "N/A",
       ],
-      [`${filters.metric || "RSRP"} Min`, Math.min(...values).toFixed(2)],
-      [`${filters.metric || "RSRP"} Max`, Math.max(...values).toFixed(2)],
+      [
+        `${filters.metric || "RSRP"} Min`,
+        values.length > 0 ? Math.min(...values).toFixed(2) : "N/A",
+      ],
+      [
+        `${filters.metric || "RSRP"} Max`,
+        values.length > 0 ? Math.max(...values).toFixed(2) : "N/A",
+      ],
       [
         `${filters.metric || "RSRP"} Median`,
         sortedValues[Math.floor(sortedValues.length / 2)]?.toFixed(2) || "N/A",
@@ -751,17 +708,18 @@ function SessionMapDebug() {
     const blob = new Blob([csvRows.map((r) => r.join(",")).join("\n")], {
       type: "text/csv",
     });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `stats_${filters.metric || "RSRP"}_${new Date()
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `stats_${filters.metric || "RSRP"}_${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast.success("Stats downloaded!");
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Stats CSV downloaded!");
   }, [filteredLogs, logs.length, sessionIds, filters]);
 
-  // Handle raw data download
+  // Raw logs CSV download
   const handleRawDownload = useCallback(() => {
     if (filteredLogs.length === 0) {
       toast.error("No logs to download");
@@ -787,9 +745,9 @@ function SessionMapDebug() {
           l.session_id || "",
           l.lat || "",
           l.lng || "",
-          l.rsrp || "",
-          l.rsrq || "",
-          l.sinr || "",
+          l.rsrp ?? "",
+          l.rsrq ?? "",
+          l.sinr ?? "",
           l.technology || "",
           l.band || "",
           l.timestamp || "",
@@ -799,41 +757,42 @@ function SessionMapDebug() {
     ];
 
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `logs_filtered_${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast.success(`Downloaded ${filteredLogs.length} points!`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `raw_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${filteredLogs.length.toLocaleString()} points!`);
   }, [filteredLogs]);
 
-  // Set download handlers
-  const handlersRef = useRef({
+  // Set download handlers in context (prevents stale closures)
+  const downloadHandlersRef = useRef({
     stats: handleStatsDownload,
     raw: handleRawDownload,
   });
-  handlersRef.current = { stats: handleStatsDownload, raw: handleRawDownload };
+  downloadHandlersRef.current = {
+    stats: handleStatsDownload,
+    raw: handleRawDownload,
+  };
 
   useEffect(() => {
     setDownloadHandlers({
-      onDownloadStatsCsv: () => handlersRef.current.stats(),
-      onDownloadRawCsv: () => handlersRef.current.raw(),
-      onFetchLogs: () => toast.info("Logs already loaded"),
+      onDownloadStatsCsv: () => downloadHandlersRef.current.stats(),
+      onDownloadRawCsv: () => downloadHandlersRef.current.raw(),
     });
   }, [setDownloadHandlers]);
 
-  // Update polygon stats when filtered logs change
-  const prevLogsLengthRef = useRef(0);
+  // Update polygon stats whenever filtered logs change
+  const prevFilteredLengthRef = useRef(0);
   useEffect(() => {
-    if (filteredLogs.length !== prevLogsLengthRef.current) {
-      prevLogsLengthRef.current = filteredLogs.length;
+    if (filteredLogs.length !== prevFilteredLengthRef.current) {
+      prevFilteredLengthRef.current = filteredLogs.length;
 
       if (filteredLogs.length > 0) {
         const values = filteredLogs
           .map((l) => getMetricValue(l, filters.metric))
-          .filter((v) => !isNaN(v));
+          .filter((v) => v !== null && !isNaN(v));
         const sorted = [...values].sort((a, b) => a - b);
 
         setPolygonStats({
@@ -841,15 +800,13 @@ function SessionMapDebug() {
           type: "session",
           logs: filteredLogs,
           stats: {
-            count: values.length,
             mean:
               values.length > 0
                 ? values.reduce((a, b) => a + b, 0) / values.length
                 : 0,
             min: values.length > 0 ? Math.min(...values) : 0,
             max: values.length > 0 ? Math.max(...values) : 0,
-            median:
-              values.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0,
+            median: values.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0,
           },
           intersectingSessions: sessionIds.map((id) => ({ id })),
           activeFilters: filters,
@@ -861,198 +818,12 @@ function SessionMapDebug() {
         setHasLogs(false);
       }
     }
-  }, [filteredLogs.length, sessionIds, setPolygonStats, setHasLogs, filters]);
-
-  // Fetch data
-  useEffect(() => {
-    const fetchData = async () => {
-      if (sessionIds.length === 0) {
-        setError("No session ID(s) provided");
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-      const allPoints = [];
-      let mergedAppSummary = {};
-
-      const allProviders = new Set();
-      const allBands = new Set();
-      const allNetworkTypes = new Set();
-      const markers = [];
-
-      const PAGE_SIZE = 10000;
-      const startTime = performance.now();
-
-      try {
-        let currentPage = 1;
-        let totalCount = 0;
-        let totalPages = 1;
-        let hasMoreData = true;
-
-        while (hasMoreData) {
-          setFetchProgress({
-            current: allPoints.length,
-            total: totalCount || 0,
-            page: currentPage,
-            totalPages: totalPages,
-          });
-
-          const response = await mapViewApi.getNetworkLog({
-            session_ids: sessionIds,
-            page: currentPage,
-            limit: PAGE_SIZE,
-          });
-
-          const rawResponse = response?.data || response;
-          const pageData = extractLogsFromResponse(rawResponse);
-
-          if (currentPage === 1) {
-            if (typeof rawResponse === "object" && !Array.isArray(rawResponse)) {
-              totalCount =
-                rawResponse.total_count ||
-                rawResponse.totalCount ||
-                rawResponse.TotalCount ||
-                0;
-              if (rawResponse.app_summary) {
-                mergedAppSummary = {
-                  ...mergedAppSummary,
-                  ...rawResponse.app_summary,
-                };
-              }
-            } else {
-              totalCount = pageData.length;
-            }
-
-            totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-          }
-
-          if (!Array.isArray(pageData)) {
-            break;
-          }
-
-          const sessionPointsMap = new Map();
-
-          pageData.forEach((log) => {
-            const parsed = parseLogEntry(log, log.session_id);
-            if (parsed) {
-              allPoints.push(parsed);
-
-              const providerValue = parsed.provider;
-              const bandValue = parsed.band;
-              const techValue = parsed.technology;
-
-              if (providerValue) allProviders.add(providerValue);
-              if (bandValue) allBands.add(String(bandValue));
-              if (techValue) allNetworkTypes.add(techValue);
-
-              if (!sessionPointsMap.has(parsed.session_id)) {
-                sessionPointsMap.set(parsed.session_id, {
-                  lat: parsed.lat,
-                  lng: parsed.lng,
-                  count: 1,
-                });
-              } else {
-                sessionPointsMap.get(parsed.session_id).count++;
-              }
-            }
-          });
-
-          sessionPointsMap.forEach((data, sessionId) => {
-            const existingMarker = markers.find(
-              (m) => m.session_id === sessionId
-            );
-            if (!existingMarker) {
-              markers.push({
-                id: sessionId,
-                session_id: sessionId,
-                lat: data.lat,
-                lng: data.lng,
-                position: { lat: data.lat, lng: data.lng },
-                logsCount: data.count,
-              });
-            } else {
-              existingMarker.logsCount += data.count;
-            }
-          });
-
-          if (currentPage >= totalPages) {
-            hasMoreData = false;
-          } else if (pageData.length < PAGE_SIZE) {
-            hasMoreData = false;
-          } else {
-            currentPage++;
-          }
-
-          if (currentPage > 100) {
-            hasMoreData = false;
-          }
-
-          if (hasMoreData) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-        }
-
-        const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
-
-        const providerArray = Array.from(allProviders).filter(
-          (p) => p && p !== "undefined" && p !== "null"
-        );
-        const bandArray = Array.from(allBands).filter(
-          (b) => b && b !== "undefined" && b !== "null"
-        );
-        const techArray = Array.from(allNetworkTypes).filter(
-          (t) => t && t !== "undefined" && t !== "null"
-        );
-
-        updateAvailableFilters({
-          providers: providerArray,
-          bands: bandArray,
-          technologies: techArray,
-        });
-
-        if (allPoints.length === 0) {
-          setError("No valid data found in the sessions");
-          toast.warn("No valid data found");
-        } else {
-          toast.success(
-            `Loaded ${allPoints.length.toLocaleString()} points from ${
-              sessionIds.length
-            } session(s) in ${fetchTime}s`
-          );
-        }
-
-        setLogs(allPoints);
-        setSessionMarkers(markers);
-        setAppSummary(
-          Object.keys(mergedAppSummary).length > 0 ? mergedAppSummary : null
-        );
-      } catch (err) {
-        toast.error(`Failed to fetch data: ${err.message}`);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [sessionIds.join(","), updateAvailableFilters]);
-
-  // Fit bounds when logs change
-  useEffect(() => {
-    if (map && filteredLogs.length > 0 && window.google) {
-      const bounds = new window.google.maps.LatLngBounds();
-      filteredLogs.forEach((pt) => bounds.extend({ lat: pt.lat, lng: pt.lng }));
-      map.fitBounds(bounds, { padding: 50 });
-    }
-  }, [map, filteredLogs.length]);
+  }, [filteredLogs, sessionIds, filters, setPolygonStats, setHasLogs]);
 
   // Map callbacks
   const onMapLoad = useCallback((m) => setMap(m), []);
   const onMapUnmount = useCallback(() => setMap(null), []);
 
-  // Drawing callbacks
   const handleDrawingSummary = useCallback(
     (stats) => {
       setAnalysis(stats);
@@ -1061,30 +832,20 @@ function SessionMapDebug() {
     [setPolygonStats]
   );
 
-  const handleDrawingsChange = useCallback(() => {}, []);
-
-  // Navigation
-  const goBack = useCallback(() => navigate(-1), [navigate]);
-
-  // Close analysis panel
   const handleCloseAnalysis = useCallback(() => {
     setAnalysis(null);
     setPolygonStats(null);
   }, [setPolygonStats]);
 
-  // Map center
+  const goBack = useCallback(() => navigate(-1), [navigate]);
+
   const mapCenter = useMemo(() => {
-    if (filteredLogs.length > 0) {
+    if (filteredLogs.length > 0)
       return { lat: filteredLogs[0].lat, lng: filteredLogs[0].lng };
-    }
     return DEFAULT_CENTER;
   }, [filteredLogs]);
 
-  // ============================================
-  // RENDER
-  // ============================================
-
-  // Loading state
+  // Loading State
   if (!isLoaded || loading || thresholdsLoading) {
     return (
       <div className="flex items-center justify-center h-screen w-screen bg-gray-900">
@@ -1093,13 +854,11 @@ function SessionMapDebug() {
           <p className="mt-4 text-white">
             {thresholdsLoading
               ? "Loading thresholds..."
-              : loading && fetchProgress.total > 0
-              ? `Loading... ${fetchProgress.current.toLocaleString()} / ${fetchProgress.total.toLocaleString()} points (Page ${
-                  fetchProgress.page
-                }/${fetchProgress.totalPages})`
+              : loading && fetchProgress?.total > 0
+              ? `Loading... ${fetchProgress.current.toLocaleString()} / ${fetchProgress.total.toLocaleString()} points`
               : "Loading map..."}
           </p>
-          {loading && fetchProgress.total > 0 && (
+          {loading && fetchProgress?.total > 0 && (
             <div className="mt-2 w-64 mx-auto bg-gray-700 rounded-full h-2">
               <div
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
@@ -1117,7 +876,6 @@ function SessionMapDebug() {
     );
   }
 
-  // Error state
   if (loadError || error) {
     return (
       <div className="flex items-center justify-center h-screen w-screen bg-gray-900 text-white">
@@ -1132,7 +890,19 @@ function SessionMapDebug() {
     );
   }
 
-  // Main render
+  // Formatted thresholds for Drawing Layer
+  const formattedThresholds = allThresholds
+    ? {
+        rsrp: allThresholds.rsrp || [],
+        rsrq: allThresholds.rsrq || [],
+        sinr: allThresholds.sinr || [],
+        dl_thpt: allThresholds.dlThpt || allThresholds.dl_tpt || [],
+        ul_thpt: allThresholds.ulThpt || allThresholds.ul_tpt || [],
+        mos: allThresholds.mos || [],
+        lte_bler: allThresholds.lteBler || [],
+      }
+    : {};
+
   return (
     <div
       style={{
@@ -1142,7 +912,6 @@ function SessionMapDebug() {
         overflow: "hidden",
       }}
     >
-      {/* Google Map */}
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={mapCenter}
@@ -1151,7 +920,6 @@ function SessionMapDebug() {
         onUnmount={onMapUnmount}
         options={MAP_OPTIONS}
       >
-        {/* Canvas Circles Overlay with hook's getMetricColor */}
         {map && filteredLogs.length > 0 && (
           <CanvasCirclesOverlay
             map={map}
@@ -1161,7 +929,6 @@ function SessionMapDebug() {
           />
         )}
 
-        {/* Drawing Tools Layer */}
         {map && (
           <DrawingToolsLayer
             map={map}
@@ -1175,13 +942,12 @@ function SessionMapDebug() {
             cellSizeMeters={safeUi.drawCellSizeMeters}
             colorizeCells={safeUi.colorizeCells}
             onSummary={handleDrawingSummary}
-            onDrawingsChange={handleDrawingsChange}
+            onDrawingsChange={() => {}}
             clearSignal={safeUi.drawClearSignal}
           />
         )}
       </GoogleMap>
 
-      {/* All Logs Panel Toggle */}
       <AllLogsPanelToggle
         logs={filteredLogs}
         thresholds={formattedThresholds}
@@ -1191,7 +957,6 @@ function SessionMapDebug() {
         getMetricColor={getMetricColor}
       />
 
-      {/* Active Filters Bar */}
       {hasActiveFilters && (
         <ActiveFiltersBar
           filters={filters}
@@ -1201,7 +966,6 @@ function SessionMapDebug() {
         />
       )}
 
-      {/* Map Legend */}
       {showLegend && (
         <div className="absolute top-20 right-4 z-20">
           <MapLegend
@@ -1211,7 +975,7 @@ function SessionMapDebug() {
         </div>
       )}
 
-      {/* No Results Message */}
+      {/* No results overlay when filters eliminate everything */}
       {filteredLogs.length === 0 && logs.length > 0 && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-6 py-4 text-center">
           <Filter className="h-8 w-8 text-gray-400 mx-auto mb-2" />
@@ -1219,7 +983,8 @@ function SessionMapDebug() {
             No points match current filters
           </p>
           <p className="text-gray-500 text-sm mt-1">
-            {logs.length} points available. Try adjusting your filters.
+            {logs.length.toLocaleString()} points available. Try adjusting your
+            filters.
           </p>
           <Button size="sm" className="mt-3" onClick={clearFilters}>
             Clear All Filters
@@ -1229,14 +994,14 @@ function SessionMapDebug() {
 
       {/* Analysis Panel */}
       {analysis && (
-        <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[300px] border border-gray-200">
+        <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[320px] border border-gray-200">
           <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
             <h3 className="font-semibold text-white text-sm">
               Selection Analysis
             </h3>
             <button
               onClick={handleCloseAnalysis}
-              className="text-white/80 hover:text-white transition-colors"
+              className="text-white/80 hover:text-white"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1249,7 +1014,7 @@ function SessionMapDebug() {
                   Shape
                 </div>
                 <div className="font-medium text-gray-800 capitalize">
-                  {analysis.type}
+                  {analysis.type || "Unknown"}
                 </div>
               </div>
               <div className="bg-gray-50 rounded px-2 py-1.5">
@@ -1262,15 +1027,15 @@ function SessionMapDebug() {
               </div>
             </div>
 
-            {analysis.stats?.mean !== undefined && (
+            {analysis.stats && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-blue-50 rounded px-2 py-1.5 border border-blue-100">
                   <div className="text-[10px] text-blue-600 uppercase tracking-wide">
                     Mean
                   </div>
                   <div className="font-bold text-blue-700">
-                    {analysis.stats.mean.toFixed(2)}{" "}
-                    <span className="text-[10px] font-normal">dBm</span>
+                    {analysis.stats.mean?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
                   </div>
                 </div>
                 <div className="bg-green-50 rounded px-2 py-1.5 border border-green-100">
@@ -1278,8 +1043,8 @@ function SessionMapDebug() {
                     Median
                   </div>
                   <div className="font-bold text-green-700">
-                    {analysis.stats.median?.toFixed(2) || "-"}{" "}
-                    <span className="text-[10px] font-normal">dBm</span>
+                    {analysis.stats.median?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
                   </div>
                 </div>
                 <div className="bg-orange-50 rounded px-2 py-1.5 border border-orange-100">
@@ -1287,8 +1052,8 @@ function SessionMapDebug() {
                     Min
                   </div>
                   <div className="font-bold text-orange-700">
-                    {analysis.stats.min?.toFixed(2) || "-"}{" "}
-                    <span className="text-[10px] font-normal">dBm</span>
+                    {analysis.stats.min?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
                   </div>
                 </div>
                 <div className="bg-red-50 rounded px-2 py-1.5 border border-red-100">
@@ -1296,8 +1061,8 @@ function SessionMapDebug() {
                     Max
                   </div>
                   <div className="font-bold text-red-700">
-                    {analysis.stats.max?.toFixed(2) || "-"}{" "}
-                    <span className="text-[10px] font-normal">dBm</span>
+                    {analysis.stats.max?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
                   </div>
                 </div>
               </div>
@@ -1309,18 +1074,16 @@ function SessionMapDebug() {
                   Area
                 </div>
                 <div className="font-medium text-gray-800">
-                  {analysis.area > 1000000
-                    ? `${(analysis.area / 1000000).toFixed(2)} km²`
+                  {analysis.area > 1_000_000
+                    ? `${(analysis.area / 1_000_000).toFixed(2)} km²`
                     : `${analysis.area.toFixed(0)} m²`}
                 </div>
               </div>
             )}
 
             {hasActiveFilters && (
-              <div className="bg-yellow-50 rounded px-2 py-1.5 border border-yellow-100">
-                <div className="text-[10px] text-yellow-700">
-                  Analysis based on filtered data
-                </div>
+              <div className="bg-yellow-50 rounded px-2 py-1.5 border border-yellow-100 text-xs text-yellow-800">
+                Analysis based on filtered data
               </div>
             )}
           </div>
@@ -1328,7 +1091,7 @@ function SessionMapDebug() {
           <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 rounded-b-lg flex gap-2">
             <Button
               size="sm"
-              className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+              className="flex-1 h-8 text-xs"
               onClick={() => setIsSaveDialogOpen(true)}
               disabled={!analysis.geometry}
             >
@@ -1340,7 +1103,6 @@ function SessionMapDebug() {
               variant="outline"
               className="h-8 px-2"
               onClick={handleStatsDownload}
-              title="Download Stats CSV"
             >
               <Download className="h-3 w-3" />
             </Button>
@@ -1350,62 +1112,58 @@ function SessionMapDebug() {
 
       {/* Save Polygon Dialog */}
       <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-white text-gray-900">
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="text-gray-800">
-              Save Polygon Analysis
-            </DialogTitle>
+            <DialogTitle>Save Polygon Analysis</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label
-                htmlFor="polygon-name"
-                className="text-right text-gray-700"
-              >
+              <Label htmlFor="polygon-name" className="text-right">
                 Name
               </Label>
               <Input
                 id="polygon-name"
                 value={polygonName}
                 onChange={(e) => setPolygonName(e.target.value)}
-                className="col-span-3 bg-white border-gray-300 text-gray-800"
-                placeholder="e.g., Low Coverage Zone A"
+                className="col-span-3"
+                placeholder="e.g., Poor Coverage Zone - Downtown"
                 autoFocus
               />
             </div>
+
             {analysis && (
-              <div className="text-xs text-gray-500 ml-[calc(25%+1rem)] space-y-1">
+              <div className="text-xs text-gray-600 space-y-1 ml-[calc(25%+1rem)]">
                 <div>
                   Shape:{" "}
-                  <span className="capitalize font-medium">
-                    {analysis.type}
-                  </span>{" "}
+                  <span className="font-medium capitalize">{analysis.type}</span>{" "}
                   - Points:{" "}
-                  <span className="font-medium">{analysis.count || 0}</span>
+                  <span className="font-medium">
+                    {(analysis.count || 0).toLocaleString()}
+                  </span>
                 </div>
-                {analysis.stats?.mean && (
+                {analysis.stats?.mean !== undefined && (
                   <div>
                     Avg {filters.metric || "RSRP"}:{" "}
                     <span className="font-medium">
-                      {analysis.stats.mean.toFixed(1)} dBm
+                      {analysis.stats.mean.toFixed(1)}{" "}
+                      {getMetricUnit(filters.metric)}
                     </span>
                   </div>
                 )}
               </div>
             )}
           </div>
+
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setIsSaveDialogOpen(false)}
-              className="border-gray-300 text-gray-700"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSavePolygon}
               disabled={!polygonName.trim() || isSaving}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {isSaving ? (
                 <>
