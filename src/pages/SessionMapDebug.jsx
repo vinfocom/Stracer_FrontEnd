@@ -7,7 +7,7 @@ import React, {
   useRef,
 } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
+import { useJsApiLoader } from "@react-google-maps/api";
 import { mapViewApi } from "../api/apiEndpoints";
 import Spinner from "../components/common/Spinner";
 import { ArrowLeft, Download, Save, X, Filter } from "lucide-react";
@@ -30,6 +30,8 @@ import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 import useColorForLog from "@/hooks/useColorForLog.js";
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
+import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
+import MapWithMultipleCircles from "@/components/MapwithMultipleCircle";
 
 // ============================================
 // CONSTANTS & HELPERS
@@ -52,8 +54,17 @@ const MAP_OPTIONS = {
   gestureHandling: "greedy",
 };
 
+const normalizeMetric = (metric) => {
+  if (!metric) return "rsrp";
+  const lower = metric.toLowerCase();
+  if (lower === "dl_tpt" || lower === "dl_throughput") return "dl_thpt";
+  if (lower === "ul_tpt" || lower === "ul_throughput") return "ul_thpt";
+  return lower;
+};
+
 const getMetricUnit = (metric) => {
-  switch (metric?.toUpperCase()) {
+  const normalized = normalizeMetric(metric).toUpperCase();
+  switch (normalized) {
     case "RSRP":
       return "dBm";
     case "RSRQ":
@@ -64,8 +75,6 @@ const getMetricUnit = (metric) => {
       return "";
     case "DL_THPT":
     case "UL_THPT":
-    case "DL_TPT":
-    case "UL_TPT":
       return "Mbps";
     default:
       return "dBm";
@@ -73,8 +82,10 @@ const getMetricUnit = (metric) => {
 };
 
 const getMetricValue = (log, metric) => {
-  const metricKey = metric?.toLowerCase() || "rsrp";
-  return log[metricKey] ?? log.rsrp ?? -120;
+  const key = normalizeMetric(metric);
+  if (key === "dl_thpt") return log.dl_thpt ?? log.dl_tpt ?? log.DL_TPT ?? -120;
+  if (key === "ul_thpt") return log.ul_thpt ?? log.ul_tpt ?? log.UL_TPT ?? -120;
+  return log[key] ?? log.rsrp ?? -120;
 };
 
 // Enhanced WKT conversion that supports polygon, rectangle, and circle
@@ -124,108 +135,6 @@ const geometryToWktPolygon = (geometry) => {
 
   return null;
 };
-
-// ============================================
-// CANVAS CIRCLES OVERLAY COMPONENT
-// ============================================
-function CanvasCirclesOverlay({ map, logs, metric = "RSRP", getMetricColor }) {
-  const overlayRef = useRef(null);
-
-  useEffect(() => {
-    if (!map || !logs.length || !window.google) return;
-
-    class CirclesOverlay extends window.google.maps.OverlayView {
-      constructor() {
-        super();
-        this.canvas = null;
-      }
-
-      onAdd() {
-        this.canvas = document.createElement("canvas");
-        this.canvas.style.position = "absolute";
-        this.canvas.style.pointerEvents = "none";
-        const panes = this.getPanes();
-        if (panes) panes.overlayLayer.appendChild(this.canvas);
-      }
-
-      draw() {
-        if (!this.canvas) return;
-        const projection = this.getProjection();
-        if (!projection) return;
-
-        const bounds = map.getBounds();
-        if (!bounds) return;
-
-        const ne = projection.fromLatLngToDivPixel(bounds.getNorthEast());
-        const sw = projection.fromLatLngToDivPixel(bounds.getSouthWest());
-
-        if (!ne || !sw) return;
-
-        const width = Math.abs(ne.x - sw.x);
-        const height = Math.abs(ne.y - sw.y);
-
-        this.canvas.width = width;
-        this.canvas.height = height;
-        this.canvas.style.left = sw.x + "px";
-        this.canvas.style.top = ne.y + "px";
-
-        const ctx = this.canvas.getContext("2d");
-        ctx.clearRect(0, 0, width, height);
-
-        const zoom = map.getZoom() || 12;
-        const radius = Math.max(3, Math.min(8, zoom - 10));
-
-        logs.forEach((pt) => {
-          try {
-            const latLng = new window.google.maps.LatLng(pt.lat, pt.lng);
-            const pixel = projection.fromLatLngToDivPixel(latLng);
-            if (pixel) {
-              const x = pixel.x - sw.x;
-              const y = pixel.y - ne.y;
-
-              const metricValue = getMetricValue(pt, metric);
-              const color = getMetricColor(metricValue, metric);
-
-              ctx.beginPath();
-              ctx.arc(x, y, radius, 0, Math.PI * 2);
-              ctx.fillStyle = color;
-              ctx.globalAlpha = 0.6;
-              ctx.fill();
-              ctx.globalAlpha = 1;
-            }
-          } catch (e) {
-            // Silent error
-          }
-        });
-      }
-
-      onRemove() {
-        if (this.canvas && this.canvas.parentNode) {
-          this.canvas.parentNode.removeChild(this.canvas);
-        }
-        this.canvas = null;
-      }
-    }
-
-    const overlay = new CirclesOverlay();
-    overlay.setMap(map);
-    overlayRef.current = overlay;
-
-    const idleListener = map.addListener("idle", () => {
-      if (overlayRef.current) overlayRef.current.draw();
-    });
-
-    return () => {
-      if (idleListener) window.google.maps.event.removeListener(idleListener);
-      if (overlayRef.current) {
-        overlayRef.current.setMap(null);
-        overlayRef.current = null;
-      }
-    };
-  }, [map, logs, metric, getMetricColor]);
-
-  return null;
-}
 
 // ============================================
 // ACTIVE FILTERS BAR COMPONENT
@@ -369,20 +278,6 @@ function MapLegend({ metric = "RSRP", thresholds = null }) {
           { color: "#FFA500", label: "5-10 Mbps (Poor)" },
           { color: "#FF0000", label: "< 5 Mbps (Bad)" },
         ],
-        DL_TPT: [
-          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
-          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
-          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
-          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
-          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
-        ],
-        UL_TPT: [
-          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
-          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
-          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
-          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
-          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
-        ],
       };
       return defaultLegends[metric?.toUpperCase()] || defaultLegends.RSRP;
     }
@@ -494,6 +389,12 @@ function SessionMapDebug() {
     appSummary,
   } = useNetworkSamples(sessionIds, true);
 
+  // Use the Session Neighbors Hook
+  const { neighborData, loading: neighborsLoading } = useSessionNeighbors(
+    sessionIds,
+    true
+  );
+
   // Update Available Filters and Markers when logs change
   useEffect(() => {
     if (!logs || logs.length === 0) return;
@@ -541,6 +442,7 @@ function SessionMapDebug() {
     if (!logs.length) return [];
 
     return logs.filter((log) => {
+      // ✅ FIX: Use normalized value helper for filtering
       const metricValue = getMetricValue(log, filters.metric);
 
       if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
@@ -578,17 +480,14 @@ function SessionMapDebug() {
         }
       }
       return true;
-    });
+    }).map(log => ({
+      // ✅ FIX: Map data to ensure normalized keys exist for the map component
+      ...log,
+      dl_thpt: log.dl_thpt ?? log.dl_tpt ?? log.DL_TPT ?? null,
+      ul_thpt: log.ul_thpt ?? log.ul_tpt ?? log.UL_TPT ?? null,
+      lte_bler: log.lte_bler ?? log.lteBler ?? null
+    }));
   }, [logs, filters]);
-
-  // Fit map bounds when filtered logs change
-  useEffect(() => {
-    if (map && filteredLogs.length > 0 && window.google) {
-      const bounds = new window.google.maps.LatLngBounds();
-      filteredLogs.forEach((pt) => bounds.extend({ lat: pt.lat, lng: pt.lng }));
-      map.fitBounds(bounds, { padding: 80 });
-    }
-  }, [map, filteredLogs]);
 
   // Show toast when filtered count changes
   const prevFilteredCountRef = useRef(0);
@@ -839,13 +738,28 @@ function SessionMapDebug() {
 
   const goBack = useCallback(() => navigate(-1), [navigate]);
 
+  // ✅ FIX: Move formattedThresholds useMemo BEFORE loading check to fix Hooks error
+  const formattedThresholds = useMemo(() => {
+    return allThresholds
+      ? {
+          rsrp: allThresholds.rsrp || [],
+          rsrq: allThresholds.rsrq || [],
+          sinr: allThresholds.sinr || [],
+          dl_thpt: allThresholds.dlThpt || allThresholds.dl_tpt || allThresholds.dl_thpt || [],
+          ul_thpt: allThresholds.ulThpt || allThresholds.ul_tpt || allThresholds.ul_thpt || [],
+          mos: allThresholds.mos || [],
+          lte_bler: allThresholds.lteBler || [],
+        }
+      : {};
+  }, [allThresholds]);
+
   const mapCenter = useMemo(() => {
     if (filteredLogs.length > 0)
       return { lat: filteredLogs[0].lat, lng: filteredLogs[0].lng };
     return DEFAULT_CENTER;
   }, [filteredLogs]);
 
-  // Loading State
+  // Loading State - This is the conditional return that was causing issues
   if (!isLoaded || loading || thresholdsLoading) {
     return (
       <div className="flex items-center justify-center h-screen w-screen bg-gray-900">
@@ -890,18 +804,8 @@ function SessionMapDebug() {
     );
   }
 
-  // Formatted thresholds for Drawing Layer
-  const formattedThresholds = allThresholds
-    ? {
-        rsrp: allThresholds.rsrp || [],
-        rsrq: allThresholds.rsrq || [],
-        sinr: allThresholds.sinr || [],
-        dl_thpt: allThresholds.dlThpt || allThresholds.dl_tpt || [],
-        ul_thpt: allThresholds.ulThpt || allThresholds.ul_tpt || [],
-        mos: allThresholds.mos || [],
-        lte_bler: allThresholds.lteBler || [],
-      }
-    : {};
+  // ✅ Force metric to lowercase for correct data mapping
+  const selectedMetric = normalizeMetric(filters.metric);
 
   return (
     <div
@@ -912,23 +816,27 @@ function SessionMapDebug() {
         overflow: "hidden",
       }}
     >
-      <GoogleMap
-        mapContainerStyle={containerStyle}
-        center={mapCenter}
-        zoom={12}
+      <MapWithMultipleCircles
+        isLoaded={isLoaded}
+        loadError={loadError}
+        locations={filteredLogs}
+        neighborData={neighborData}
+        showNeighbors={true}
+        // ✅ Passed lowercased metric to fix color issue
+        selectedMetric={selectedMetric}
+        thresholds={formattedThresholds}
         onLoad={onMapLoad}
-        onUnmount={onMapUnmount}
         options={MAP_OPTIONS}
+        center={mapCenter}
+        showPoints={true}
+        pointRadius={12}
+        showStats={false}
+        activeMarkerIndex={null}
+        onMarkerClick={() => {}}
+        debugNeighbors={true}
+        neighborSquareSize={15}
+        neighborOpacity={0.5}
       >
-        {map && filteredLogs.length > 0 && (
-          <CanvasCirclesOverlay
-            map={map}
-            logs={filteredLogs}
-            metric={filters.metric || "RSRP"}
-            getMetricColor={getMetricColor}
-          />
-        )}
-
         {map && (
           <DrawingToolsLayer
             map={map}
@@ -936,7 +844,7 @@ function SessionMapDebug() {
             logs={filteredLogs}
             sessions={sessionMarkers}
             thresholds={formattedThresholds}
-            selectedMetric={filters.metric?.toLowerCase() || "rsrp"}
+            selectedMetric={selectedMetric}
             shapeMode={safeUi.shapeMode}
             pixelateRect={safeUi.drawPixelateRect}
             cellSizeMeters={safeUi.drawCellSizeMeters}
@@ -946,12 +854,12 @@ function SessionMapDebug() {
             clearSignal={safeUi.drawClearSignal}
           />
         )}
-      </GoogleMap>
+      </MapWithMultipleCircles>
 
       <AllLogsPanelToggle
         logs={filteredLogs}
         thresholds={formattedThresholds}
-        selectedMetric={filters.metric?.toLowerCase() || "rsrp"}
+        selectedMetric={selectedMetric}
         isLoading={loading}
         appSummary={appSummary}
         getMetricColor={getMetricColor}

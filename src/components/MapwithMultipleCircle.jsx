@@ -7,7 +7,6 @@ import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
 import TechHandoverMarkers from "./unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
 import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
-// ✅ Import helpers for normalization and coloring
 import { normalizeProviderName, normalizeTechName, getLogColor } from "@/utils/colorUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
@@ -328,12 +327,16 @@ const generateGridCellsOptimized = (
 };
 
 // ============== Neighbor InfoWindow Component ==============
-const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
+const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor, selectedMetric }) => {
   if (!neighbor) return null;
 
-  const rsrpColor = resolveColor(neighbor.rsrp, 'rsrp');
-  const rsrqColor = resolveColor(neighbor.rsrq, 'rsrq');
-  const sinrColor = resolveColor(neighbor.sinr, 'sinr');
+  // Determine which metric is currently selected to highlight in the header
+  const isRsrp = selectedMetric === 'rsrp';
+  const isRsrq = selectedMetric === 'rsrq';
+  const isSinr = selectedMetric === 'sinr';
+
+  // Base colors for the header icon
+  const displayColor = neighbor.displayColor || resolveColor(neighbor.rsrp, 'rsrp');
 
   return (
     <InfoWindow
@@ -351,8 +354,8 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
           <div className="flex items-center gap-2">
             <Square 
               className="w-4 h-4"
-              style={{ color: neighbor.displayColor || rsrpColor }}
-              fill={neighbor.displayColor || rsrpColor}
+              style={{ color: displayColor }}
+              fill={displayColor}
             />
             <span className="font-bold text-sm">
               PCI: {neighbor.pci ?? 'N/A'}
@@ -361,9 +364,9 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
           <span 
             className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
             style={{ 
-              backgroundColor: `${rsrpColor}20`,
-              color: rsrpColor,
-              border: `1px solid ${rsrpColor}40`
+              backgroundColor: `${displayColor}20`,
+              color: displayColor,
+              border: `1px solid ${displayColor}40`
             }}
           >
             {neighbor.quality || 'Unknown'}
@@ -393,10 +396,10 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
 
           {neighbor.rsrp !== null && (
             <div className="flex justify-between text-xs items-center">
-              <span className="text-gray-500">RSRP</span>
+              <span className={`text-gray-500 ${isRsrp ? 'font-bold text-gray-700' : ''}`}>RSRP</span>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: rsrpColor }} />
-                <span className="font-semibold" style={{ color: rsrpColor }}>
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.rsrp, 'rsrp') }} />
+                <span className="font-semibold" style={{ color: resolveColor(neighbor.rsrp, 'rsrp') }}>
                   {neighbor.rsrp?.toFixed?.(1)} dBm
                 </span>
               </div>
@@ -405,9 +408,9 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
           
           {neighbor.rsrq !== null && (
             <div className="flex justify-between text-xs items-center">
-              <span className="text-gray-500">RSRQ</span>
+              <span className={`text-gray-500 ${isRsrq ? 'font-bold text-gray-700' : ''}`}>RSRQ</span>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: rsrqColor }} />
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.rsrq, 'rsrq') }} />
                 <span className="font-medium">{neighbor.rsrq?.toFixed?.(1)} dB</span>
               </div>
             </div>
@@ -415,9 +418,9 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
           
           {neighbor.sinr !== null && (
             <div className="flex justify-between text-xs items-center">
-              <span className="text-gray-500">SINR</span>
+              <span className={`text-gray-500 ${isSinr ? 'font-bold text-gray-700' : ''}`}>SINR</span>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: sinrColor }} />
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.sinr, 'sinr') }} />
                 <span className="font-medium">{neighbor.sinr?.toFixed?.(1)} dB</span>
               </div>
             </div>
@@ -446,11 +449,32 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor }) => {
               )}
             </div>
             
+            {/* Neighbor RSRP */}
             {neighbor.neighbourRsrp !== null && (
               <div className="flex justify-between text-xs items-center">
-                <span className="text-gray-500">RSRP</span>
+                <span className={`text-gray-500 ${isRsrp ? 'font-bold text-gray-700' : ''}`}>RSRP</span>
                 <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrp, 'rsrp') }}>
                   {neighbor.neighbourRsrp?.toFixed?.(1)} dBm
+                </span>
+              </div>
+            )}
+
+            {/* ✅ ADDED: Neighbor RSRQ */}
+            {neighbor.neighbourRsrq !== null && (
+              <div className="flex justify-between text-xs items-center">
+                <span className={`text-gray-500 ${isRsrq ? 'font-bold text-gray-700' : ''}`}>RSRQ</span>
+                <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrq, 'rsrq') }}>
+                  {neighbor.neighbourRsrq?.toFixed?.(1)} dB
+                </span>
+              </div>
+            )}
+
+            {/* ✅ ADDED: Neighbor SINR */}
+            {neighbor.neighbourSinr !== null && (
+              <div className="flex justify-between text-xs items-center">
+                <span className={`text-gray-500 ${isSinr ? 'font-bold text-gray-700' : ''}`}>SINR</span>
+                <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourSinr, 'sinr') }}>
+                  {neighbor.neighbourSinr?.toFixed?.(1)} dB
                 </span>
               </div>
             )}
@@ -665,8 +689,6 @@ const MapWithMultipleCircles = ({
   }, [onFilteredNeighborsChange]);
 
   // ✅ Unified Color Resolver
-  // Uses passed thresholds for metrics, or fallback to hook.
-  // Uses getLogColor for categorical types (Provider, Band, etc.)
   const resolveColor = useCallback((value, metricOrType) => {
     if (!metricOrType) return "#808080";
 
@@ -813,14 +835,29 @@ const MapWithMultipleCircles = ({
         const neighbourRsrq = n.neighbourRsrq ?? n.neighbour_rsrq;
         const neighbourPci = n.neighbourPci ?? n.neighbour_pci;
         const neighbourBand = n.neighbourBand ?? n.neighbour_band;
+        const neighbourSinr = n.neighbourSinr ?? n.neighbour_sinr;
 
-        // Get metric value for coloring
-        let metricValue = rsrp;
-        if (selectedMetric === 'rsrq') metricValue = rsrq;
-        if (selectedMetric === 'sinr') metricValue = sinr;
+        // ✅ FIX: Dynamic Metric Selection for Neighbors
+        let metricValue = null;
+        let metricType = 'rsrp'; // Default type is RSRP
 
-        // Get quality label from threshold info
-        const thresholdInfo = getThresholdInfo?.(rsrp, 'rsrp');
+        const targetMetric = selectedMetric?.toLowerCase();
+
+        if (targetMetric === 'rsrq') {
+            metricValue = neighbourRsrq !== null ? parseFloat(neighbourRsrq) : null;
+            metricType = 'rsrq';
+        } else if (targetMetric === 'sinr') {
+            metricValue = neighbourSinr !== null ? parseFloat(neighbourSinr) : null;
+            metricType = 'sinr';
+        } else {
+            // Default to RSRP for 'rsrp' or any other metric (like throughput)
+            // Neighbors typically don't have throughput, so we show Signal Strength (RSRP) context
+            metricValue = neighbourRsrp !== null ? parseFloat(neighbourRsrp) : null;
+            metricType = 'rsrp';
+        }
+
+        // Get quality label from threshold info based on primary metric if available, else neighbor
+        const thresholdInfo = getThresholdInfo?.(rsrp, 'rsrp'); 
         const quality = thresholdInfo?.label || 'Unknown';
         
         return {
@@ -835,9 +872,11 @@ const MapWithMultipleCircles = ({
           band,
           neighbourRsrp: neighbourRsrp !== null ? parseFloat(neighbourRsrp) : null,
           neighbourRsrq: neighbourRsrq !== null ? parseFloat(neighbourRsrq) : null,
+          neighbourSinr: neighbourSinr !== null ? parseFloat(neighbourSinr) : null,
           neighbourPci,
           neighbourBand,
-          metricValue,
+          metricValue, // The actual value to be colored
+          metricType,  // The type of metric (e.g. 'rsrp', 'sinr') to look up thresholds
           quality,
         };
       });
@@ -853,13 +892,14 @@ const MapWithMultipleCircles = ({
       parsed = parsed.filter(n => {
         // Metric Filter
         if (legendFilter.type === 'metric') {
-          const val = n[legendFilter.metric];
+          // Use neighbor metric for filtering if available
+          const val = n.metricValue;
           return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
         }
 
         // PCI Filter
         if (legendFilter.type === 'pci') {
-          const val = n.pci;
+          const val = n.neighbourPci || n.pci; // Filter by neighbor PCI if present
           return Math.floor(val) === legendFilter.value;
         }
 
@@ -963,9 +1003,12 @@ const MapWithMultipleCircles = ({
         return resolveColor(value, colorBy);
     }
     
-    // Fallback to metric value
-    const value = neighbor?.metricValue ?? neighbor?.[selectedMetric];
-    return resolveColor(value, selectedMetric);
+    // Fallback to metric value (already calculated in processedNeighbors)
+    const value = neighbor?.metricValue;
+    // ✅ CRITICAL FIX: Use the neighbor's specific metric TYPE (e.g. 'rsrp') to resolve the color.
+    const type = neighbor?.metricType || selectedMetric; 
+    
+    return resolveColor(value, type);
   }, [selectedMetric, colorBy, resolveColor]);
 
   // Compute center
@@ -1014,19 +1057,17 @@ const MapWithMultipleCircles = ({
   }, [locationsToRender, processedNeighbors, locations, fitToLocations, computedCenter, defaultZoom, onLoadProp]);
 
   // ✅ Click handlers: STABILIZED with Refs
-  // This ensures handlePrimaryClick never changes identity, preventing DeckGL re-renders
   const handlePrimaryClick = useCallback((index, loc) => {
     setSelectedLog(loc);
     setSelectedNeighbor(null);
     onMarkerClickRef.current?.(index, loc);
-  }, []); // Empty dependency array ensures stability!
+  }, []); 
 
-  // Same for neighbor clicks
   const handleNeighborClick = useCallback((neighbor) => {
     setSelectedNeighbor(neighbor);
     setSelectedLog(null);
     onNeighborClickRef.current?.(neighbor);
-  }, []); // Empty dependency array ensures stability!
+  }, []);
 
   if (loadError) {
     return (
@@ -1119,6 +1160,7 @@ const MapWithMultipleCircles = ({
             neighbor={selectedNeighbor}
             onClose={() => setSelectedNeighbor(null)}
             resolveColor={resolveColor}
+            selectedMetric={selectedMetric}
           />
         )}
 

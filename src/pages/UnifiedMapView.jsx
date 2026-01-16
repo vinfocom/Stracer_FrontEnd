@@ -740,12 +740,12 @@ const UnifiedMapView = () => {
   }, [locations, coverageHoleFilters, dataFilters]);
 
   const finalDisplayLocations = useMemo(() => {
-    // if (drawnPoints !== null) {
-    //   return drawnPoints;
-    // }
+    if (drawnPoints !== null) {
+      return drawnPoints;
+    }
     if (highlightedLogs) return highlightedLogs;
     return filteredLocations;
-  }, [drawnPoints, filteredLocations]);
+  }, [drawnPoints, highlightedLogs, filteredLocations]);
 
   const polygonsWithColors = useMemo(() => {
     if (!showPolygons || !polygons?.length) return [];

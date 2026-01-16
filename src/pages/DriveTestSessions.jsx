@@ -6,7 +6,7 @@ import Spinner from '../components/common/Spinner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox'; 
 import { Input } from "@/components/ui/input"; 
-import { Search } from 'lucide-react' // Import the Search icon
+import { Search, Calendar, X } from 'lucide-react'
 import {
     Table,
     TableBody,
@@ -24,6 +24,10 @@ const DriveTestSessionsPage = () => {
     const [selectedSessions, setSelectedSessions] = useState([]); 
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState(""); 
+    
+    // Date filter states
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
 
     const [currentPage, setCurrentPage] = useState(1);
     const [sessionsPerPage] = useState(10); 
@@ -44,10 +48,10 @@ const DriveTestSessionsPage = () => {
         fetchSessions();
     }, [fetchSessions]);
 
-    // Reset current page to 1 whenever the search term changes
+    // Reset current page to 1 whenever the search term or date filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm]);
+    }, [searchTerm, startDate, endDate]);
 
     // Toggle single session selection
     const toggleSessionSelection = (sessionId) => {
@@ -58,14 +62,52 @@ const DriveTestSessionsPage = () => {
         );
     };
 
-    // Filter sessions based on search term
+    // Clear date filters
+    const clearDateFilters = () => {
+        setStartDate("");
+        setEndDate("");
+    };
+
+    // Filter sessions based on search term and date range
     const filteredSessions = sessions.filter(session => {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
-        return (
-            session.id.toString().toLowerCase().includes(lowerCaseSearchTerm) || // Search by session ID
-            (session.CreatedBy && session.CreatedBy.toLowerCase().includes(lowerCaseSearchTerm)) || // Search by CreatedBy (user name)
-            (session.mobile && session.mobile.toLowerCase().includes(lowerCaseSearchTerm)) // Search by mobile number
-        );
+        
+        // Text search filter
+        const matchesSearch = 
+            session.id.toString().toLowerCase().includes(lowerCaseSearchTerm) ||
+            (session.CreatedBy && session.CreatedBy.toLowerCase().includes(lowerCaseSearchTerm)) ||
+            (session.mobile && session.mobile.toLowerCase().includes(lowerCaseSearchTerm));
+        
+        // Date filter
+        let matchesDateRange = true;
+        if (startDate || endDate) {
+            const sessionDate = session.start_time ? new Date(session.start_time) : null;
+            
+            if (sessionDate) {
+                // Set time to start of day for comparison
+                sessionDate.setHours(0, 0, 0, 0);
+                
+                if (startDate) {
+                    const start = new Date(startDate);
+                    start.setHours(0, 0, 0, 0);
+                    if (sessionDate < start) {
+                        matchesDateRange = false;
+                    }
+                }
+                
+                if (endDate) {
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59, 999);
+                    if (sessionDate > end) {
+                        matchesDateRange = false;
+                    }
+                }
+            } else {
+                matchesDateRange = false;
+            }
+        }
+        
+        return matchesSearch && matchesDateRange;
     });
 
     // Toggle select all on current page
@@ -147,45 +189,78 @@ const DriveTestSessionsPage = () => {
 
     return (
         <div className="p-6 h-full flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-                <h1 className="text-2xl font-bold">Manage Drive Test Sessions</h1>
+            <div className="flex items-center justify-between mb-4 gap-4">
+                <h1 className="text-2xl font-bold whitespace-nowrap">Manage Drive Test Sessions</h1>
                 
-                {/* Search Input */}
-                <div className="relative flex-grow max-w-sm ml-4 mr-4"> {/* Adjusted width and margin */}
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                    <Input
-                        type="text"
-                        placeholder="Search by Session ID, User Name, or Mobile"
-                        className="pl-9 pr-3 py-2 rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500 block w-full"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-
-                {/* Multi-select actions */}
-                {selectedSessions.length > 0 && (
-                    <div className="flex items-center gap-3">
-                        <span className="text-sm text-muted-foreground">
-                            {selectedSessions.length} session(s) selected
-                        </span>
-                        <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={clearSelection}
-                        >
-                            Clear Selection
-                        </Button>
-                        <Button 
-                            variant="default" 
-                            size="sm"
-                            onClick={handleViewSelectedOnMap}
-                            className="bg-blue-600 hover:bg-blue-700"
-                        >
-                            <MapPin className="h-4 w-4 mr-2" />
-                            View {selectedSessions.length} on Map
-                        </Button>
+                <div className="flex items-center gap-3 flex-grow justify-end flex-wrap">
+                    {/* Date Filters */}
+                    <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-gray-500" />
+                        <Input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-36 h-9"
+                            placeholder="Start Date"
+                        />
+                        <span className="text-sm text-muted-foreground">to</span>
+                        <Input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-36 h-9"
+                            placeholder="End Date"
+                        />
+                        {(startDate || endDate) && (
+                            <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={clearDateFilters}
+                                className="h-9 px-2"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        )}
                     </div>
-                )}
+
+                    {/* Search Input */}
+                    <div className="relative w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                        <Input
+                            type="text"
+                            placeholder="Search by ID, User, Mobile"
+                            className="pl-9 pr-3 h-9"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+
+                    {/* Multi-select actions */}
+                    {selectedSessions.length > 0 && (
+                        <>
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                                {selectedSessions.length} selected
+                            </span>
+                            <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={clearSelection}
+                                className="h-9"
+                            >
+                                Clear
+                            </Button>
+                            <Button 
+                                variant="default" 
+                                size="sm"
+                                onClick={handleViewSelectedOnMap}
+                                className="bg-blue-600 hover:bg-blue-700 h-9"
+                            >
+                                <MapPin className="h-4 w-4 mr-2" />
+                                View on Map
+                            </Button>
+                        </>
+                    )}
+                </div>
             </div>
 
             <div className="rounded-lg border shadow-sm flex-grow overflow-y-auto">
@@ -216,7 +291,7 @@ const DriveTestSessionsPage = () => {
                         {currentSessions.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
-                                    No sessions found matching your search.
+                                    No sessions found matching your search criteria.
                                 </TableCell>
                             </TableRow>
                         ) : (
@@ -233,7 +308,7 @@ const DriveTestSessionsPage = () => {
                                             aria-label={`Select session ${session.id}`}
                                         />
                                     </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[150px]"> {/* Adjusted max-width */}
+                                    <TableCell className="whitespace-normal break-words max-w-[150px]">
                                         <div className="font-medium">{session.id || 'N/A'} </div>
                                     </TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">
@@ -244,9 +319,10 @@ const DriveTestSessionsPage = () => {
                                     </TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">
                                         <div>{formatDate(session.start_time)}</div>
-                                       
                                     </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[200px]"> <div>{formatDate(session.end_time)}</div></TableCell>
+                                    <TableCell className="whitespace-normal break-words max-w-[200px]">
+                                        <div>{formatDate(session.end_time)}</div>
+                                    </TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">{session.start_address}</TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[200px]">{session.end_address}</TableCell>
                                     <TableCell className="whitespace-normal break-words max-w-[100px]">{session.distance_km ? `${session.distance_km.toFixed(2)} km` : 'N/A'}</TableCell>
@@ -256,12 +332,8 @@ const DriveTestSessionsPage = () => {
                                     <TableCell className="font-medium whitespace-normal break-words max-w-[200px]">{session.notes || 'No Remarks'}</TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="outline" size="sm" onClick={() => handleViewOnMap(session.id)}>
-                                            <Map className="h-4 w-4" /> {/* Removed "mr-2" as text is removed */}
+                                            <Map className="h-4 w-4" />
                                         </Button>
-                                        {/* Uncomment if you want delete button per row */}
-                                        {/* <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 ml-2" onClick={() => handleDelete(session.id)}>
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button> */}
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -295,7 +367,7 @@ const DriveTestSessionsPage = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => paginate(currentPage + 1)}
-                        disabled={currentPage === totalPages || totalPages === 0} // Disable if no pages or last page
+                        disabled={currentPage === totalPages || totalPages === 0}
                     >
                         Next
                         <ChevronRight className="h-4 w-4 ml-1" />
