@@ -6,6 +6,8 @@ import { useLocation, Link, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
 import ProjectsDropdown from "../project/ProjectsDropdown";
 import DrawingControlsPanel from "../map/layout/DrawingControlsPanel";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import SettingsPage from "@/pages/Setting";
 
 export default function UnifiedHeader({
   onToggleControls,
@@ -18,9 +20,12 @@ export default function UnifiedHeader({
   isOpacityCollapsed,
   setIsOpacityCollapsed,
   opacity,
+  project,
+  setProject,
   setOpacity,
   onUIChange,
   ui,
+  onSettingsSaved,
 }) {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -38,7 +43,7 @@ export default function UnifiedHeader({
           .map((id) => id.trim())
           .filter((id) => id)
       : []);
-  const [project, setProject] = useState(null);
+  // const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,7 +64,7 @@ export default function UnifiedHeader({
           setProject(matchedProject);
         }
       } catch (error) {
-        // Handle error silently
+       console.error("Failed to fetch project info", error);
       } finally {
         setLoading(false);
       }
@@ -154,15 +159,25 @@ export default function UnifiedHeader({
       </div>
 
       <div className="flex items-center space-x-4">
-        <Button>
+        <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600">
           <Link to="/dashboard">Dashboard</Link>
         </Button>
-        <Button>
+        <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600">
           <Link to="/mapview">Map View</Link>
         </Button>
+
+        <Dialog>
+    <DialogTrigger asChild>
+      <Button  size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600">
+        Settings
+      </Button>
+    </DialogTrigger>
+    <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden p-0">
+      <SettingsPage onSaveSuccess={onSettingsSaved} />
+    </DialogContent>
+  </Dialog>
         <ProjectsDropdown currentProjectId={effectiveProjectId} />
         
-        {/* Fixed: Changed <p> to <div> to allow nested <div> elements */}
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-lg">
           <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">
             {user?.name?.charAt(0)?.toUpperCase() || "U"}

@@ -6,7 +6,7 @@ import Spinner from '../components/common/Spinner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox'; 
 import { Input } from "@/components/ui/input"; 
-import { Search, Calendar, X } from 'lucide-react'
+import { Search, Calendar, X, Settings2 } from 'lucide-react'
 import {
     Table,
     TableBody,
@@ -15,6 +15,14 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuCheckboxItem,
+    DropdownMenuTrigger,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { Trash2, Map, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,6 +39,44 @@ const DriveTestSessionsPage = () => {
 
     const [currentPage, setCurrentPage] = useState(1);
     const [sessionsPerPage] = useState(10); 
+
+    // Column visibility state - default columns are always visible
+    const [visibleColumns, setVisibleColumns] = useState({
+        // Default columns (always visible, not in the dropdown)
+        sessionId: true,
+        userDetails: true,
+        startTime: true,
+        endTime: true,
+        startLocation: true,
+        endLocation: true,
+        actions: true,
+        // Optional columns (can be toggled)
+        distance: false,
+        captureFrequency: false,
+        sessionRemarks: false,
+    });
+
+    // Define all available columns with their properties
+    const allColumns = {
+        sessionId: { label: 'Session ID', defaultVisible: true },
+        userDetails: { label: 'User Details', defaultVisible: true },
+        startTime: { label: 'Start Time', defaultVisible: true },
+        endTime: { label: 'End Time', defaultVisible: true },
+        startLocation: { label: 'Start Location', defaultVisible: true },
+        endLocation: { label: 'End Location', defaultVisible: true },
+        distance: { label: 'Distance (km)', defaultVisible: false },
+        captureFrequency: { label: 'Capture Frequency', defaultVisible: false },
+        sessionRemarks: { label: 'Session Remarks', defaultVisible: false },
+        actions: { label: 'Actions', defaultVisible: true },
+    };
+
+    // Toggle column visibility
+    const toggleColumn = (columnKey) => {
+        setVisibleColumns(prev => ({
+            ...prev,
+            [columnKey]: !prev[columnKey]
+        }));
+    };
 
     const fetchSessions = useCallback(async () => {
         try {
@@ -68,15 +114,22 @@ const DriveTestSessionsPage = () => {
         setEndDate("");
     };
 
+    // Clear search filter
+    const clearSearch = () => {
+        setSearchTerm("");
+    };
+
     // Filter sessions based on search term and date range
     const filteredSessions = sessions.filter(session => {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         
-        // Text search filter
+        // Text search filter (includes location fields)
         const matchesSearch = 
             session.id.toString().toLowerCase().includes(lowerCaseSearchTerm) ||
             (session.CreatedBy && session.CreatedBy.toLowerCase().includes(lowerCaseSearchTerm)) ||
-            (session.mobile && session.mobile.toLowerCase().includes(lowerCaseSearchTerm));
+            (session.mobile && session.mobile.toLowerCase().includes(lowerCaseSearchTerm)) ||
+            (session.start_address && session.start_address.toLowerCase().includes(lowerCaseSearchTerm)) ||
+            (session.end_address && session.end_address.toLowerCase().includes(lowerCaseSearchTerm));
         
         // Date filter
         let matchesDateRange = true;
@@ -193,6 +246,35 @@ const DriveTestSessionsPage = () => {
                 <h1 className="text-2xl font-bold whitespace-nowrap">Manage Drive Test Sessions</h1>
                 
                 <div className="flex items-center gap-3 flex-grow justify-end flex-wrap">
+                    {/* Column Selector */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-9">
+                                <Settings2 className="h-4 w-4 mr-2" />
+                                Columns
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {Object.entries(allColumns).map(([key, column]) => {
+                                // Skip default visible columns (they can't be toggled off)
+                                if (column.defaultVisible && key !== 'distance' && key !== 'captureFrequency' && key !== 'sessionRemarks') {
+                                    return null;
+                                }
+                                return (
+                                    <DropdownMenuCheckboxItem
+                                        key={key}
+                                        checked={visibleColumns[key]}
+                                        onCheckedChange={() => toggleColumn(key)}
+                                    >
+                                        {column.label}
+                                    </DropdownMenuCheckboxItem>
+                                );
+                            })}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
                     {/* Date Filters */}
                     <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4 text-gray-500" />
@@ -224,15 +306,25 @@ const DriveTestSessionsPage = () => {
                     </div>
 
                     {/* Search Input */}
-                    <div className="relative w-64">
+                    <div className="relative w-80">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                         <Input
                             type="text"
-                            placeholder="Search by ID, User, Mobile"
-                            className="pl-9 pr-3 h-9"
+                            placeholder="Search by ID, User, Mobile, Location"
+                            className="pl-9 pr-9 h-9"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
+                        {searchTerm && (
+                            <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={clearSearch}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        )}
                     </div>
 
                     {/* Multi-select actions */}
@@ -263,6 +355,23 @@ const DriveTestSessionsPage = () => {
                 </div>
             </div>
 
+            {/* Active Filters Display */}
+            {(searchTerm || startDate || endDate) && (
+                <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+                    <span>Active filters:</span>
+                    {searchTerm && (
+                        <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                            Search: "{searchTerm}"
+                        </span>
+                    )}
+                    {(startDate || endDate) && (
+                        <span className="bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-1 rounded">
+                            Date: {startDate || '...'} to {endDate || '...'}
+                        </span>
+                    )}
+                </div>
+            )}
+
             <div className="rounded-lg border shadow-sm flex-grow overflow-y-auto">
                 <Table>
                     <TableHeader>
@@ -275,22 +384,24 @@ const DriveTestSessionsPage = () => {
                                     aria-label="Select all on this page"
                                 />
                             </TableHead>
-                            <TableHead>SessionId</TableHead>
-                            <TableHead>User Details</TableHead>
-                            <TableHead>Start Time </TableHead>
-                            <TableHead>End Time</TableHead>
-                            <TableHead>Start Location</TableHead>
-                            <TableHead>End Location</TableHead>
-                            <TableHead>Distance(in Km)</TableHead>
-                            <TableHead>Capture Frequency</TableHead>
-                            <TableHead>Session Remarks</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
+                            
+                            {/* Dynamic Column Headers */}
+                            {visibleColumns.sessionId && <TableHead>Session ID</TableHead>}
+                            {visibleColumns.userDetails && <TableHead>User Details</TableHead>}
+                            {visibleColumns.startTime && <TableHead>Start Time</TableHead>}
+                            {visibleColumns.endTime && <TableHead>End Time</TableHead>}
+                            {visibleColumns.startLocation && <TableHead>Start Location</TableHead>}
+                            {visibleColumns.endLocation && <TableHead>End Location</TableHead>}
+                            {visibleColumns.distance && <TableHead>Distance (km)</TableHead>}
+                            {visibleColumns.captureFrequency && <TableHead>Capture Frequency</TableHead>}
+                            {visibleColumns.sessionRemarks && <TableHead>Session Remarks</TableHead>}
+                            {visibleColumns.actions && <TableHead className="text-right">Actions</TableHead>}
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {currentSessions.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+                                <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length + 1} className="h-24 text-center text-muted-foreground">
                                     No sessions found matching your search criteria.
                                 </TableCell>
                             </TableRow>
@@ -308,39 +419,79 @@ const DriveTestSessionsPage = () => {
                                             aria-label={`Select session ${session.id}`}
                                         />
                                     </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[150px]">
-                                        <div className="font-medium">{session.id || 'N/A'} </div>
-                                    </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[200px]">
-                                        <div className="font-medium">{session.CreatedBy || 'Unknown User'} ({session.mobile || 'N/A'})</div>
-                                        <div className="text-sm text-muted-foreground">
-                                            {session.make}, {session.model}, {session.os}, {session.operator_name}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[200px]">
-                                        <div>{formatDate(session.start_time)}</div>
-                                    </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[200px]">
-                                        <div>{formatDate(session.end_time)}</div>
-                                    </TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[200px]">{session.start_address}</TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[200px]">{session.end_address}</TableCell>
-                                    <TableCell className="whitespace-normal break-words max-w-[100px]">{session.distance_km ? `${session.distance_km.toFixed(2)} km` : 'N/A'}</TableCell>
-                                    <TableCell className="font-medium whitespace-normal break-words max-w-[150px]">
-                                        <div>{session.capture_frequency || 'N/A'}</div>
-                                    </TableCell>
-                                    <TableCell className="font-medium whitespace-normal break-words max-w-[200px]">{session.notes || 'No Remarks'}</TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="outline" size="sm" onClick={() => handleViewOnMap(session.id)}>
-                                            <Map className="h-4 w-4" />
-                                        </Button>
-                                    </TableCell>
+                                    
+                                    {/* Dynamic Column Cells */}
+                                    {visibleColumns.sessionId && (
+                                        <TableCell className="whitespace-normal break-words max-w-[150px]">
+                                            <div className="font-medium">{session.id || 'N/A'}</div>
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.userDetails && (
+                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
+                                            <div className="font-medium">{session.CreatedBy || 'Unknown User'} ({session.mobile || 'N/A'})</div>
+                                            <div className="text-sm text-muted-foreground">
+                                                {session.make}, {session.model}, {session.os}, {session.operator_name}
+                                            </div>
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.startTime && (
+                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
+                                            <div>{formatDate(session.start_time)}</div>
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.endTime && (
+                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
+                                            <div>{formatDate(session.end_time)}</div>
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.startLocation && (
+                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
+                                            {session.start_address}
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.endLocation && (
+                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
+                                            {session.end_address}
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.distance && (
+                                        <TableCell className="whitespace-normal break-words max-w-[100px]">
+                                            {session.distance_km ? `${session.distance_km.toFixed(2)} km` : 'N/A'}
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.captureFrequency && (
+                                        <TableCell className="font-medium whitespace-normal break-words max-w-[150px]">
+                                            <div>{session.capture_frequency || 'N/A'}</div>
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.sessionRemarks && (
+                                        <TableCell className="font-medium whitespace-normal break-words max-w-[200px]">
+                                            {session.notes || 'No Remarks'}
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.actions && (
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={() => handleViewOnMap(session.id)}>
+                                                <Map className="h-4 w-4" />
+                                            </Button>
+                                        </TableCell>
+                                    )}
                                 </TableRow>
                             ))
                         )}
                     </TableBody>
                 </Table>
             </div>
+            
             <div className="flex items-center justify-between p-4 border-t">
                 <div className="text-sm text-muted-foreground">
                     Showing {indexOfFirstSession + 1} to {Math.min(indexOfLastSession, filteredSessions.length)} of {filteredSessions.length} entries.

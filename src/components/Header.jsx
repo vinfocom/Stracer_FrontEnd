@@ -17,7 +17,7 @@ export default function Header() {
     <header className="h-16 bg-slate-950 text-white shadow-lg flex items-center justify-between px-6 flex-shrink-0 relative z-50">
       
       <div className="flex items-center space-x-3 min-w-[200px]">
-        {/* ✅ No props needed - HeaderFilters gets data from context */}
+       
         {isMapPage && <AdvancedFilters />}
       </div>
 

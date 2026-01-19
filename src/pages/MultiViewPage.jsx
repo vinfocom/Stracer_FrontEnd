@@ -1,8 +1,6 @@
-// src/pages/MultiViewPage.jsx
 import React, { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { useJsApiLoader } from "@react-google-maps/api";
-import { Plus, LayoutGrid, Maximize } from 'lucide-react';
 
 // Hooks
 import { useNetworkSamples } from '@/hooks/useNetworkSamples';
@@ -13,20 +11,40 @@ import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 // Components
 import MapChild from '../components/multiMap/MapChild';
 import Spinner from '../components/common/Spinner';
+import Header from '@/components/multiMap/Header';
 
 const MultiViewPage = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+
   const sessionIds = useMemo(() => {
      return searchParams.get("session")?.split(",") || [];
   }, [searchParams]);
 
-  // --- 1. Fetch Shared Data ONCE ---
-  const { locations, loading: samplesLoading } = useNetworkSamples(sessionIds, true);
-  const { neighborData, loading: neighborsLoading } = useSessionNeighbors(sessionIds, true);
-  const { thresholds } = useColorForLog(); // Fetch thresholds once
+  // Check if data was passed via navigation state
+  const passedState = location.state;
+  const passedLocations = passedState?.locations;
+  const passedNeighbors = passedState?.neighborData;
+  const passedThresholds = passedState?.thresholds;
+  const project = passedState?.project;
+
+  
+  const shouldFetch = !passedLocations;
+
+  // --- 1. Fetch Shared Data (if not passed) ---
+  const { locations: fetchedLocations, loading: samplesLoading } = useNetworkSamples(sessionIds, shouldFetch);
+  const { neighborData: fetchedNeighbors, loading: neighborsLoading } = useSessionNeighbors(sessionIds, shouldFetch);
+  
+  // Always call hooks to obey React rules, but ignore result if passed data exists
+  const { thresholds: hookThresholds } = useColorForLog();
   const { isLoaded } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
 
-  // --- 2. State for Map Instances ---
+  // Combine passed data with fetched fallback
+  const locations = passedLocations || fetchedLocations;
+  const neighborData = passedNeighbors || fetchedNeighbors;
+  const thresholds = passedThresholds || hookThresholds;
+
+  //  yeh jo map ko sara hold kar raha ki kitne map banana hai
   const [maps, setMaps] = useState([
     { id: 1, title: "Map 1" },
     { id: 2, title: "Map 2" }
@@ -41,25 +59,14 @@ const MultiViewPage = () => {
     setMaps(maps.filter(m => m.id !== id));
   };
 
-  const isLoading = samplesLoading || neighborsLoading || !isLoaded;
+  const isLoading = (shouldFetch && (samplesLoading || neighborsLoading)) || !isLoaded;
 
   if (isLoading) return <div className="h-screen flex items-center justify-center"><Spinner /></div>;
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
-      {/* Header */}
-      <div className="h-14 bg-white border-b flex items-center justify-between px-4 shadow-sm z-10">
-        <h1 className="font-bold text-lg text-gray-800">Multi-Map Analysis</h1>
-        <div className="flex items-center gap-4 text-sm text-gray-600">
-            <span>Total Points: <strong>{locations.length.toLocaleString()}</strong></span>
-            <button 
-              onClick={addMap} 
-              className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition"
-            >
-              <Plus size={16} /> Add View
-            </button>
-        </div>
-      </div>
+      
+      <Header project={project} addMap={addMap} />
 
       {/* Grid Container */}
       <div className={`flex-grow p-2 grid gap-2 overflow-hidden ${
@@ -69,14 +76,16 @@ const MultiViewPage = () => {
          'grid-cols-3 grid-rows-2'
       }`}>
         {maps.map((mapInstance) => (
+          // yaha pe data pass karke ja raha har ek map ko`
           <MapChild
             key={mapInstance.id}
             id={mapInstance.id}
             title={mapInstance.title}
            
-            allLocations={locations} 
-            allNeighbors={neighborData}
-            thresholds={thresholds}
+            allLocations={locations} // use Netwoprk Samples hook se aaya sara data
+            allNeighbors={neighborData} // use Session Neighbors hook se aaya sara data
+            thresholds={thresholds}  // useColorForLog se aaya thresholds
+            project={project}
             onRemove={removeMap}
           />
         ))}

@@ -1,4 +1,3 @@
-// src/pages/UnifiedMapView.jsx
 import React, {
   useState,
   useEffect,
@@ -6,10 +5,10 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useJsApiLoader, Polygon } from "@react-google-maps/api";
 import { toast } from "react-toastify";
-
+import { LayoutGrid } from "lucide-react";
 
 import { mapViewApi } from "../api/apiEndpoints";
 
@@ -31,7 +30,10 @@ import LoadingProgress from "@/components/LoadingProgress";
 import { useSiteData } from "@/hooks/useSiteData";
 import { useNeighborCollisions } from "@/hooks/useNeighborCollisions";
 import useColorForLog from "@/hooks/useColorForLog";
-import { useBestNetworkCalculation, DEFAULT_WEIGHTS } from "@/hooks/useBestNetworkCalculation";
+import {
+  useBestNetworkCalculation,
+  DEFAULT_WEIGHTS,
+} from "@/hooks/useBestNetworkCalculation";
 
 // ✅ NEW HOOK IMPORTS
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
@@ -65,13 +67,37 @@ const DEFAULT_DATA_FILTERS = {
 };
 
 const METRIC_CONFIG = {
-  rsrp: { higherIsBetter: true, unit: "dBm", label: "RSRP", min: -140, max: -44 },
+  rsrp: {
+    higherIsBetter: true,
+    unit: "dBm",
+    label: "RSRP",
+    min: -140,
+    max: -44,
+  },
   rsrq: { higherIsBetter: true, unit: "dB", label: "RSRQ", min: -20, max: -3 },
   sinr: { higherIsBetter: true, unit: "dB", label: "SINR", min: -10, max: 30 },
-  dl_tpt: { higherIsBetter: true, unit: "Mbps", label: "DL Throughput", min: 0, max: 300 },
-  ul_tpt: { higherIsBetter: true, unit: "Mbps", label: "UL Throughput", min: 0, max: 100 },
+  dl_tpt: {
+    higherIsBetter: true,
+    unit: "Mbps",
+    label: "DL Throughput",
+    min: 0,
+    max: 300,
+  },
+  ul_tpt: {
+    higherIsBetter: true,
+    unit: "Mbps",
+    label: "UL Throughput",
+    min: 0,
+    max: 100,
+  },
   mos: { higherIsBetter: true, unit: "", label: "MOS", min: 1, max: 5 },
-  lte_bler: { higherIsBetter: false, unit: "%", label: "BLER", min: 0, max: 100 },
+  lte_bler: {
+    higherIsBetter: false,
+    unit: "%",
+    label: "BLER",
+    min: 0,
+    max: 100,
+  },
 };
 
 const COLOR_GRADIENT = [
@@ -139,7 +165,8 @@ const getColorFromValueOrMetric = (value, thresholds, metric) => {
     if (matchedThreshold?.color) return matchedThreshold.color;
     if (sorted.length > 0) {
       if (value < sorted[0].min) return sorted[0].color;
-      if (value > sorted[sorted.length - 1].max) return sorted[sorted.length - 1].color;
+      if (value > sorted[sorted.length - 1].max)
+        return sorted[sorted.length - 1].color;
     }
     return "#999999";
   }
@@ -171,7 +198,10 @@ const isPointInPolygon = (point, polygon) => {
   for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
     const { lng: xi, lat: yi } = path[i];
     const { lng: xj, lat: yj } = path[j];
-    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+    if (
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
+    ) {
       inside = !inside;
     }
   }
@@ -202,17 +232,20 @@ const calculateCategoryStats = (points, category, metric) => {
     .map(([name, { count, values }]) => {
       const sortedValues = [...values].sort((a, b) => a - b);
       const mid = Math.floor(sortedValues.length / 2);
-      const medianValue = sortedValues.length > 0
-        ? sortedValues.length % 2
-          ? sortedValues[mid]
-          : (sortedValues[mid - 1] + sortedValues[mid]) / 2
-        : null;
+      const medianValue =
+        sortedValues.length > 0
+          ? sortedValues.length % 2
+            ? sortedValues[mid]
+            : (sortedValues[mid - 1] + sortedValues[mid]) / 2
+          : null;
 
       return {
         name,
         count,
         percentage: ((count / points.length) * 100).toFixed(1),
-        avgValue: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
+        avgValue: values.length
+          ? values.reduce((a, b) => a + b, 0) / values.length
+          : null,
         medianValue,
         minValue: values.length ? Math.min(...values) : null,
         maxValue: values.length ? Math.max(...values) : null,
@@ -225,167 +258,197 @@ const calculateCategoryStats = (points, category, metric) => {
 
 // --- Sub Components ---
 
-const ZoneTooltip = React.memo(({ polygon, position, selectedMetric, selectedCategory }) => {
-  if (!selectedCategory) return null;
-  if (!polygon || !position) return null;
+const ZoneTooltip = React.memo(
+  ({ polygon, position, selectedMetric, selectedCategory }) => {
+    if (!selectedCategory) return null;
+    if (!polygon || !position) return null;
 
-  const {
-    name,
-    pointCount,
-    fillColor,
-    medianValue,
-    bestProvider,
-    bestProviderValue,
-    bestBand,
-    bestBandValue,
-    bestTechnology,
-    bestTechnologyValue,
-    categoryStats,
-  } = polygon;
+    const {
+      name,
+      pointCount,
+      fillColor,
+      medianValue,
+      bestProvider,
+      bestProviderValue,
+      bestBand,
+      bestBandValue,
+      bestTechnology,
+      bestTechnologyValue,
+      categoryStats,
+    } = polygon;
 
-  const config = METRIC_CONFIG[selectedMetric] || { unit: "", higherIsBetter: true };
-  const unit = config.unit || "";
+    const config = METRIC_CONFIG[selectedMetric] || {
+      unit: "",
+      higherIsBetter: true,
+    };
+    const unit = config.unit || "";
 
-  if (!pointCount || pointCount === 0) {
+    if (!pointCount || pointCount === 0) {
+      return (
+        <div
+          className="fixed z-[1000] bg-white rounded-lg shadow-xl border border-gray-300 p-4"
+          style={{
+            left: Math.min(position.x + 15, window.innerWidth - 220),
+            top: Math.min(position.y - 10, window.innerHeight - 100),
+            pointerEvents: "none",
+          }}
+        >
+          <div className="font-semibold text-gray-800 mb-1">
+            {name || "Zone"}
+          </div>
+          <div className="text-sm text-gray-500">No data available</div>
+        </div>
+      );
+    }
+
     return (
       <div
-        className="fixed z-[1000] bg-white rounded-lg shadow-xl border border-gray-300 p-4"
+        className="fixed z-[1000] bg-white rounded-xl shadow-2xl border-2 overflow-hidden"
         style={{
-          left: Math.min(position.x + 15, window.innerWidth - 220),
-          top: Math.min(position.y - 10, window.innerHeight - 100),
+          left: Math.min(position.x + 15, window.innerWidth - 400),
+          top: Math.min(position.y - 10, window.innerHeight - 400),
           pointerEvents: "none",
+          borderColor: fillColor || "#3B82F6",
+          minWidth: "360px",
+          maxWidth: "420px",
         }}
       >
-        <div className="font-semibold text-gray-800 mb-1">{name || "Zone"}</div>
-        <div className="text-sm text-gray-500">No data available</div>
+        <div
+          className="px-4 py-3"
+          style={{ backgroundColor: fillColor || "#3B82F6" }}
+        >
+          <span className="text-white font-semibold text-sm">
+            {name} - {pointCount} samples
+          </span>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {selectedCategory === "provider" && bestProvider && (
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-gray-500 uppercase">
+                Best Provider
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded"
+                    style={{ backgroundColor: getProviderColor(bestProvider) }}
+                  />
+                  <span className="text-sm font-medium">{bestProvider}</span>
+                </div>
+                {bestProviderValue !== null && (
+                  <span className="text-sm text-gray-600">
+                    {bestProviderValue.toFixed(2)} {unit}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {medianValue !== null && medianValue !== undefined && (
+            <div className="flex items-center justify-between pb-2 border-b">
+              <span className="text-sm font-medium text-gray-600">
+                Median {config.label}:
+              </span>
+              <span className="text-base font-bold text-gray-900">
+                {medianValue.toFixed(2)} {unit}
+              </span>
+            </div>
+          )}
+
+          {selectedCategory === "band" && bestBand && (
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-gray-500 uppercase">
+                Best Band
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded"
+                    style={{ backgroundColor: getBandColor(bestBand) }}
+                  />
+                  <span className="text-sm font-medium">Band {bestBand}</span>
+                </div>
+                {bestBandValue !== null && (
+                  <span className="text-sm text-gray-600">
+                    {bestBandValue.toFixed(2)} {unit}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedCategory === "technology" && bestTechnology && (
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-gray-500 uppercase">
+                Best Technology
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded"
+                    style={{
+                      backgroundColor: getTechnologyColor(bestTechnology),
+                    }}
+                  />
+                  <span className="text-sm font-medium">{bestTechnology}</span>
+                </div>
+                {bestTechnologyValue !== null && (
+                  <span className="text-sm text-gray-600">
+                    {bestTechnologyValue.toFixed(2)} {unit}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {categoryStats &&
+            selectedCategory &&
+            categoryStats[selectedCategory]?.stats && (
+              <div className="pt-2 border-t">
+                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                  All {selectedCategory}s
+                </div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {categoryStats[selectedCategory].stats
+                    .slice(0, 5)
+                    .map((stat) => (
+                      <div
+                        key={stat.name}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <span className="text-gray-600">{stat.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500">
+                            {stat.count} pts
+                          </span>
+                          {stat.medianValue !== null && (
+                            <span className="font-medium">
+                              {stat.medianValue.toFixed(1)} {unit}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+        </div>
       </div>
     );
-  }
-
-  return (
-    <div
-      className="fixed z-[1000] bg-white rounded-xl shadow-2xl border-2 overflow-hidden"
-      style={{
-        left: Math.min(position.x + 15, window.innerWidth - 400),
-        top: Math.min(position.y - 10, window.innerHeight - 400),
-        pointerEvents: "none",
-        borderColor: fillColor || "#3B82F6",
-        minWidth: "360px",
-        maxWidth: "420px",
-      }}
-    >
-      <div className="px-4 py-3" style={{ backgroundColor: fillColor || "#3B82F6" }}>
-        <span className="text-white font-semibold text-sm">
-          {name} - {pointCount} samples
-        </span>
-      </div>
-
-      <div className="p-4 space-y-3">
-        {selectedCategory === "provider" && bestProvider && (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-gray-500 uppercase">Best Provider</div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded"
-                  style={{ backgroundColor: getProviderColor(bestProvider) }}
-                />
-                <span className="text-sm font-medium">{bestProvider}</span>
-              </div>
-              {bestProviderValue !== null && (
-                <span className="text-sm text-gray-600">
-                  {bestProviderValue.toFixed(2)} {unit}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {medianValue !== null && medianValue !== undefined && (
-          <div className="flex items-center justify-between pb-2 border-b">
-            <span className="text-sm font-medium text-gray-600">
-              Median {config.label}:
-            </span>
-            <span className="text-base font-bold text-gray-900">
-              {medianValue.toFixed(2)} {unit}
-            </span>
-          </div>
-        )}
-
-        {selectedCategory === "band" && bestBand && (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-gray-500 uppercase">Best Band</div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded"
-                  style={{ backgroundColor: getBandColor(bestBand) }}
-                />
-                <span className="text-sm font-medium">Band {bestBand}</span>
-              </div>
-              {bestBandValue !== null && (
-                <span className="text-sm text-gray-600">
-                  {bestBandValue.toFixed(2)} {unit}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {selectedCategory === "technology" && bestTechnology && (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-gray-500 uppercase">Best Technology</div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded"
-                  style={{ backgroundColor: getTechnologyColor(bestTechnology) }}
-                />
-                <span className="text-sm font-medium">{bestTechnology}</span>
-              </div>
-              {bestTechnologyValue !== null && (
-                <span className="text-sm text-gray-600">
-                  {bestTechnologyValue.toFixed(2)} {unit}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {categoryStats && selectedCategory && categoryStats[selectedCategory]?.stats && (
-          <div className="pt-2 border-t">
-            <div className="text-xs font-semibold text-gray-500 uppercase mb-2">
-              All {selectedCategory}s
-            </div>
-            <div className="space-y-1 max-h-32 overflow-y-auto">
-              {categoryStats[selectedCategory].stats.slice(0, 5).map((stat) => (
-                <div key={stat.name} className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">{stat.name}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500">{stat.count} pts</span>
-                    {stat.medianValue !== null && (
-                      <span className="font-medium">
-                        {stat.medianValue.toFixed(1)} {unit}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
+  },
+);
 ZoneTooltip.displayName = "ZoneTooltip";
 
 const BestNetworkLegend = React.memo(({ stats, providerColors, enabled }) => {
   if (!enabled || !stats || Object.keys(stats).length === 0) return null;
   const sortedProviders = Object.entries(stats).sort(
-    (a, b) => b[1].locationsWon - a[1].locationsWon
+    (a, b) => b[1].locationsWon - a[1].locationsWon,
   );
-  const totalZones = sortedProviders.reduce((sum, [, d]) => sum + d.locationsWon, 0);
+  const totalZones = sortedProviders.reduce(
+    (sum, [, d]) => sum + d.locationsWon,
+    0,
+  );
 
   return (
     <div className="absolute bottom-4 left-4 z-[500] bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 min-w-[220px] max-w-[280px]">
@@ -398,12 +461,21 @@ const BestNetworkLegend = React.memo(({ stats, providerColors, enabled }) => {
             <div className="flex items-center gap-2">
               <div
                 className="w-3 h-3 rounded"
-                style={{ backgroundColor: data.color || providerColors?.[provider] || getProviderColor(provider) }}
+                style={{
+                  backgroundColor:
+                    data.color ||
+                    providerColors?.[provider] ||
+                    getProviderColor(provider),
+                }}
               />
-              <span className="text-sm font-medium text-gray-700">{provider}</span>
+              <span className="text-sm font-medium text-gray-700">
+                {provider}
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">{data.locationsWon}/{totalZones}</span>
+              <span className="text-xs text-gray-500">
+                {data.locationsWon}/{totalZones}
+              </span>
               <span className="text-xs font-bold text-gray-800 min-w-[40px] text-right">
                 {data.percentage?.toFixed(0) || 0}%
               </span>
@@ -423,6 +495,7 @@ BestNetworkLegend.displayName = "BestNetworkLegend";
 
 const UnifiedMapView = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [isSideOpen, setIsSideOpen] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -477,7 +550,9 @@ const UnifiedMapView = () => {
     outlierMultiplier: 1.5,
   });
 
-  const [coverageHoleFilters, setCoverageHoleFilters] = useState(DEFAULT_COVERAGE_FILTERS);
+  const [coverageHoleFilters, setCoverageHoleFilters] = useState(
+    DEFAULT_COVERAGE_FILTERS,
+  );
   const [dataFilters, setDataFilters] = useState(DEFAULT_DATA_FILTERS);
   const [enableGrid, setEnableGrid] = useState(false);
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
@@ -488,6 +563,7 @@ const UnifiedMapView = () => {
   const [outdoor, setOutdoor] = useState([]);
   const [distance, setDistance] = useState(null);
   const [logArea, setLogArea] = useState(null);
+  const [project, setProject] = useState(null);
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
@@ -500,11 +576,15 @@ const UnifiedMapView = () => {
   const sessionIds = useMemo(() => {
     const param = searchParams.get("sessionId") ?? searchParams.get("session");
     if (!param) return [];
-    return param.split(",").map((s) => s.trim()).filter(Boolean);
+    return param
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   }, [searchParams]);
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
-  const { thresholds: baseThresholds } = useColorForLog();
+  const { thresholds: baseThresholds, refetch: refetchColors } =
+    useColorForLog();
 
   // ✅ 1. Use Network Samples Hook (replaces local useSampleData)
   const {
@@ -519,7 +599,7 @@ const UnifiedMapView = () => {
     technologyTransitions: technologyTransitions,
   } = useNetworkSamples(
     sessionIds,
-    enableDataToggle && dataToggle === "sample"
+    enableDataToggle && dataToggle === "sample",
   );
 
   // ✅ 2. Use Prediction Data Hook
@@ -533,7 +613,7 @@ const UnifiedMapView = () => {
     projectId,
     selectedMetric,
     (enableDataToggle && dataToggle === "prediction") ||
-    (enableSiteToggle && siteToggle === "sites-prediction")
+      (enableSiteToggle && siteToggle === "sites-prediction"),
   );
 
   // ✅ 3. Use Session Neighbors Hook
@@ -592,24 +672,27 @@ const UnifiedMapView = () => {
     const timeData = async () => {
       if (!sessionIds?.length) return;
       try {
-        const res = await mapViewApi.getDuration({ sessionIds: sessionIds.join(",") });
-        
+        const res = await mapViewApi.getDuration({
+          sessionIds: sessionIds.join(","),
+        });
+
         const dataArray = res?.Data || res?.data?.data || res?.data || [];
-        
+
         if (Array.isArray(dataArray)) {
           setDurationTime(
             dataArray.map((item) => ({
-              
-              provider: normalizeProviderName(item.Provider || item.provider || ""),
-              
-              
-              networkType: normalizeTechName(item.Network || item.network || ""),
-              
-              
-              totaltime: item.TotalDurationHours 
-                ? `${item.TotalDurationHours.toFixed(2)} hrs` 
-                : (item.timeReadable || "0s"),
-            }))
+              provider: normalizeProviderName(
+                item.Provider || item.provider || "",
+              ),
+
+              networkType: normalizeTechName(
+                item.Network || item.network || "",
+              ),
+
+              totaltime: item.TotalDurationHours
+                ? `${item.TotalDurationHours.toFixed(2)} hrs`
+                : item.timeReadable || "0s",
+            })),
           );
         }
       } catch (err) {
@@ -623,7 +706,9 @@ const UnifiedMapView = () => {
     const neighbordata = async () => {
       if (!sessionIds?.length) return;
       try {
-        const res = await mapViewApi.getDistanceSession({ sessionIds: sessionIds.join(",") });
+        const res = await mapViewApi.getDistanceSession({
+          sessionIds: sessionIds.join(","),
+        });
         setDistance(res?.TotalDistanceKm || null);
       } catch (error) {}
     };
@@ -633,7 +718,9 @@ const UnifiedMapView = () => {
   useEffect(() => {
     const ioAnalysis = async () => {
       try {
-        const res = await mapViewApi.getIOAnalysis({ sessionIds: sessionIds.join(",") });
+        const res = await mapViewApi.getIOAnalysis({
+          sessionIds: sessionIds.join(","),
+        });
         setIndoor(res?.Indoor);
         setOutdoor(res?.Outdoor);
       } catch (error) {}
@@ -646,15 +733,31 @@ const UnifiedMapView = () => {
     if (!enableDataToggle && !enableSiteToggle) return [];
     let mainLogs = [];
     if (enableDataToggle) {
-      mainLogs = dataToggle === "sample" ? (sampleLocations || []) : (predictionLocations || []);
+      mainLogs =
+        dataToggle === "sample"
+          ? sampleLocations || []
+          : predictionLocations || [];
     } else if (enableSiteToggle && siteToggle === "sites-prediction") {
       mainLogs = predictionLocations || [];
     }
     return mainLogs;
-  }, [enableDataToggle, enableSiteToggle, dataToggle, siteToggle, sampleLocations, predictionLocations]);
+  }, [
+    enableDataToggle,
+    enableSiteToggle,
+    dataToggle,
+    siteToggle,
+    sampleLocations,
+    predictionLocations,
+  ]);
 
-  const isLoading = sampleLoading || predictionLoading || siteLoading ||
-    neighborLoading || polygonLoading || areaLoading || sessionNeighborLoading;
+  const isLoading =
+    sampleLoading ||
+    predictionLoading ||
+    siteLoading ||
+    neighborLoading ||
+    polygonLoading ||
+    areaLoading ||
+    sessionNeighborLoading;
 
   const error = sampleError || predictionError || sessionNeighborError;
 
@@ -681,7 +784,7 @@ const UnifiedMapView = () => {
     bestNetworkWeights,
     bestNetworkEnabled,
     bestNetworkOptions,
-    areaData
+    areaData,
   );
 
   const availableFilterOptions = useMemo(() => {
@@ -699,7 +802,8 @@ const UnifiedMapView = () => {
       if (n.provider) providers.add(n.provider);
       if (n.primaryBand) bands.add(String(n.primaryBand));
       if (n.neighbourBand) bands.add(String(n.neighbourBand));
-      if (n.networkType) technologies.add(normalizeTechName(n.networkType, n.neighbourBand));
+      if (n.networkType)
+        technologies.add(normalizeTechName(n.networkType, n.neighbourBand));
     });
 
     return {
@@ -713,7 +817,7 @@ const UnifiedMapView = () => {
     let result = [...(locations || [])];
 
     const activeCoverageFilters = Object.entries(coverageHoleFilters).filter(
-      ([, config]) => config.enabled
+      ([, config]) => config.enabled,
     );
 
     if (activeCoverageFilters.length > 0) {
@@ -721,18 +825,25 @@ const UnifiedMapView = () => {
         activeCoverageFilters.every(([metric, { threshold }]) => {
           const val = parseFloat(loc[metric]);
           return !isNaN(val) && val < threshold;
-        })
+        }),
       );
     }
 
     const { providers, bands, technologies, indoorOutdoor } = dataFilters;
-    if (providers?.length) result = result.filter((l) => providers.includes(l.provider));
-    if (bands?.length) result = result.filter((l) => bands.includes(String(l.band)));
-    if (technologies?.length) result = result.filter((l) => technologies.includes(normalizeTechName(l.technology)));
+    if (providers?.length)
+      result = result.filter((l) => providers.includes(l.provider));
+    if (bands?.length)
+      result = result.filter((l) => bands.includes(String(l.band)));
+    if (technologies?.length)
+      result = result.filter((l) =>
+        technologies.includes(normalizeTechName(l.technology)),
+      );
     if (indoorOutdoor?.length > 0) {
-      const lowerFilters = indoorOutdoor.map(v => v.toLowerCase());
-      result = result.filter((l) => 
-        l.indoor_outdoor && lowerFilters.includes(l.indoor_outdoor.toLowerCase())
+      const lowerFilters = indoorOutdoor.map((v) => v.toLowerCase());
+      result = result.filter(
+        (l) =>
+          l.indoor_outdoor &&
+          lowerFilters.includes(l.indoor_outdoor.toLowerCase()),
       );
     }
 
@@ -768,14 +879,36 @@ const UnifiedMapView = () => {
         .filter((v) => !isNaN(v));
 
       if (!values.length) {
-        return { ...poly, fillColor: "#ccc", fillOpacity: 0.3, pointCount: pointsInside.length };
+        return {
+          ...poly,
+          fillColor: "#ccc",
+          fillOpacity: 0.3,
+          pointCount: pointsInside.length,
+        };
       }
       const median = calculateMedian(values);
-      const fillColor = getColorFromValueOrMetric(median, currentThresholds, selectedMetric);
+      const fillColor = getColorFromValueOrMetric(
+        median,
+        currentThresholds,
+        selectedMetric,
+      );
 
-      return { ...poly, fillColor, fillOpacity: 0.7, pointCount: pointsInside.length, medianValue: median };
+      return {
+        ...poly,
+        fillColor,
+        fillOpacity: 0.7,
+        pointCount: pointsInside.length,
+        medianValue: median,
+      };
     });
-  }, [showPolygons, polygons, onlyInsidePolygons, locations, selectedMetric, effectiveThresholds]);
+  }, [
+    showPolygons,
+    polygons,
+    onlyInsidePolygons,
+    locations,
+    selectedMetric,
+    effectiveThresholds,
+  ]);
 
   const areaPolygonsWithColors = useMemo(() => {
     if (!areaEnabled || !areaData?.length) return [];
@@ -795,11 +928,16 @@ const UnifiedMapView = () => {
 
     const thresholdKey = getThresholdKey(selectedMetric);
     const currentThresholds = baseThresholds[thresholdKey] || [];
-    const useCategorical = colorBy && ["provider", "band", "technology"].includes(colorBy);
-    const metricConfig = METRIC_CONFIG[selectedMetric] || { higherIsBetter: true };
+    const useCategorical =
+      colorBy && ["provider", "band", "technology"].includes(colorBy);
+    const metricConfig = METRIC_CONFIG[selectedMetric] || {
+      higherIsBetter: true,
+    };
 
     return areaData.map((poly) => {
-      const pointsInside = filteredLocations.filter((pt) => isPointInPolygon(pt, poly));
+      const pointsInside = filteredLocations.filter((pt) =>
+        isPointInPolygon(pt, poly),
+      );
       if (!pointsInside.length) {
         return {
           ...poly,
@@ -814,9 +952,21 @@ const UnifiedMapView = () => {
         };
       }
 
-      const providerStats = calculateCategoryStats(pointsInside, "provider", selectedMetric);
-      const bandStats = calculateCategoryStats(pointsInside, "band", selectedMetric);
-      const technologyStats = calculateCategoryStats(pointsInside, "technology", selectedMetric);
+      const providerStats = calculateCategoryStats(
+        pointsInside,
+        "provider",
+        selectedMetric,
+      );
+      const bandStats = calculateCategoryStats(
+        pointsInside,
+        "band",
+        selectedMetric,
+      );
+      const technologyStats = calculateCategoryStats(
+        pointsInside,
+        "technology",
+        selectedMetric,
+      );
 
       const values = pointsInside
         .map((p) => parseFloat(p[selectedMetric]))
@@ -831,19 +981,30 @@ const UnifiedMapView = () => {
         stats.stats.forEach((stat) => {
           const median = stat.medianValue ?? stat.avgValue;
           if (median != null) {
-            const isBetter = metricConfig.higherIsBetter ? median > bestValue : median < bestValue;
+            const isBetter = metricConfig.higherIsBetter
+              ? median > bestValue
+              : median < bestValue;
             if (isBetter) {
               bestValue = median;
               best = stat.name;
             }
           }
         });
-        return { best, value: bestValue === -Infinity || bestValue === Infinity ? null : bestValue };
+        return {
+          best,
+          value:
+            bestValue === -Infinity || bestValue === Infinity
+              ? null
+              : bestValue,
+        };
       };
 
-      const { best: bestProvider, value: bestProviderValue } = findBestByMetric(providerStats);
-      const { best: bestBand, value: bestBandValue } = findBestByMetric(bandStats);
-      const { best: bestTechnology, value: bestTechnologyValue } = findBestByMetric(technologyStats);
+      const { best: bestProvider, value: bestProviderValue } =
+        findBestByMetric(providerStats);
+      const { best: bestBand, value: bestBandValue } =
+        findBestByMetric(bandStats);
+      const { best: bestTechnology, value: bestTechnologyValue } =
+        findBestByMetric(technologyStats);
 
       let fillColor;
       if (useCategorical) {
@@ -851,25 +1012,36 @@ const UnifiedMapView = () => {
           case "provider":
             fillColor = bestProvider
               ? getProviderColor(bestProvider)
-              : (providerStats?.dominant ? getProviderColor(providerStats.dominant.name) : "#ccc");
+              : providerStats?.dominant
+                ? getProviderColor(providerStats.dominant.name)
+                : "#ccc";
             break;
           case "band":
             fillColor = bestBand
               ? getBandColor(bestBand)
-              : (bandStats?.dominant ? getBandColor(bandStats.dominant.name) : "#ccc");
+              : bandStats?.dominant
+                ? getBandColor(bandStats.dominant.name)
+                : "#ccc";
             break;
           case "technology":
             fillColor = bestTechnology
               ? getTechnologyColor(bestTechnology)
-              : (technologyStats?.dominant ? getTechnologyColor(technologyStats.dominant.name) : "#ccc");
+              : technologyStats?.dominant
+                ? getTechnologyColor(technologyStats.dominant.name)
+                : "#ccc";
             break;
           default:
             fillColor = "#ccc";
         }
       } else {
-        fillColor = medianValue !== null
-          ? getColorFromValueOrMetric(medianValue, currentThresholds, selectedMetric)
-          : "#ccc";
+        fillColor =
+          medianValue !== null
+            ? getColorFromValueOrMetric(
+                medianValue,
+                currentThresholds,
+                selectedMetric,
+              )
+            : "#ccc";
       }
 
       return {
@@ -885,10 +1057,21 @@ const UnifiedMapView = () => {
         bestBandValue,
         bestTechnology,
         bestTechnologyValue,
-        categoryStats: { provider: providerStats, band: bandStats, technology: technologyStats },
+        categoryStats: {
+          provider: providerStats,
+          band: bandStats,
+          technology: technologyStats,
+        },
       };
     });
-  }, [areaEnabled, areaData, filteredLocations, selectedMetric, baseThresholds, colorBy]);
+  }, [
+    areaEnabled,
+    areaData,
+    filteredLocations,
+    selectedMetric,
+    baseThresholds,
+    colorBy,
+  ]);
 
   const visiblePolygons = useMemo(() => {
     if (!showPolygons || !polygonsWithColors?.length) return [];
@@ -909,13 +1092,15 @@ const UnifiedMapView = () => {
     if (!locations?.length) return DEFAULT_CENTER;
     const sum = locations.reduce(
       (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
-      { lat: 0, lng: 0 }
+      { lat: 0, lng: 0 },
     );
     return { lat: sum.lat / locations.length, lng: sum.lng / locations.length };
   }, [locations]);
 
-  const showDataCircles = enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
-  const shouldShowLegend = enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
+  const showDataCircles =
+    enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
+  const shouldShowLegend =
+    enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
 
   const locationsToDisplay = useMemo(() => {
     if (onlyInsidePolygons) return [];
@@ -929,7 +1114,7 @@ const UnifiedMapView = () => {
       disableDefaultUI: false,
       zoomControl: true,
     }),
-    [ui.basemapStyle]
+    [ui.basemapStyle],
   );
 
   const updateViewportRef = useCallback((newViewport) => {
@@ -939,11 +1124,29 @@ const UnifiedMapView = () => {
 
   const debouncedSetViewport = useMemo(
     () => debounce(updateViewportRef, 300),
-    [updateViewportRef]
+    [updateViewportRef],
   );
 
-  const handleMapLoad = useCallback((map) => {
+  // src/pages/UnifiedMapView.jsx
+
+// src/pages/UnifiedMapView.jsx
+
+const handleMapLoad = useCallback(
+  (map) => {
     mapRef.current = map;
+
+    // Listen for manual map type changes (Satellite/Hybrid/Roadmap)
+    map.addListener("maptypeid_changed", () => {
+      const currentType = map.getMapTypeId();
+      console.log("[Map] Type changed to:", currentType); // Helpful for debugging
+      setUi((prev) => {
+        // Sync the React state to the native Map state immediately
+        if (prev.basemapStyle === currentType) return prev;
+        return { ...prev, basemapStyle: currentType };
+      });
+    });
+
+    // Existing Viewport logic...
     const updateViewport = () => {
       const bounds = map.getBounds();
       if (!bounds) return;
@@ -955,19 +1158,22 @@ const UnifiedMapView = () => {
       };
       debouncedSetViewport(newViewport);
     };
+
     map.addListener("idle", updateViewport);
     updateViewport();
-  }, [debouncedSetViewport]);
+  },
+  [debouncedSetViewport]
+);
 
   const handleUIChange = useCallback((newUI) => {
     setUi((prev) => {
       const updated = { ...prev, ...newUI };
-      if (newUI.basemapStyle && newUI.basemapStyle !== prev.basemapStyle) {
-        if (mapRef.current) mapRef.current.setMapTypeId(newUI.basemapStyle);
-      }
-      if (typeof newUI.drawClearSignal === "number" && newUI.drawClearSignal !== prev.drawClearSignal) {
-        setDrawnPoints(null);
-      }
+      // if (newUI.basemapStyle && newUI.basemapStyle !== prev.basemapStyle) {
+      //   if (mapRef.current) mapRef.current.setMapTypeId(newUI.basemapStyle);
+      // }
+      // if (typeof newUI.drawClearSignal === "number" && newUI.drawClearSignal !== prev.drawClearSignal) {
+      //   setDrawnPoints(null);
+      // }
       return updated;
     });
   }, []);
@@ -1001,6 +1207,7 @@ const UnifiedMapView = () => {
   }, []);
 
   const reloadData = useCallback(() => {
+    refetchColors();
     if (enableSiteToggle) refetchSites();
     if (enableDataToggle && dataToggle === "sample") refetchSample();
     if (
@@ -1014,16 +1221,30 @@ const UnifiedMapView = () => {
     if (showNeighbors) refetchNeighbors();
     if (showSessionNeighbors) refetchSessionNeighbors();
   }, [
-    enableDataToggle, enableSiteToggle, dataToggle, siteToggle, showPolygons, areaEnabled,
-    showNeighbors, showSessionNeighbors, refetchSample, refetchPrediction,
-    refetchPolygons, refetchAreaPolygons, refetchSites, refetchNeighbors, refetchSessionNeighbors,
+    enableDataToggle,
+    enableSiteToggle,
+    dataToggle,
+    siteToggle,
+    showPolygons,
+    areaEnabled,
+    showNeighbors,
+    showSessionNeighbors,
+    refetchSample,
+    refetchPrediction,
+    refetchPolygons,
+    refetchAreaPolygons,
+    refetchSites,
+    refetchNeighbors,
+    refetchSessionNeighbors,
   ]);
 
   const filteredNeighbors = useMemo(() => {
     let data = sessionNeighborData || [];
     if (!data.length) return [];
     if (onlyInsidePolygons && showPolygons && polygons?.length) {
-      data = data.filter((point) => polygons.some((poly) => isPointInPolygon(point, poly)));
+      data = data.filter((point) =>
+        polygons.some((poly) => isPointInPolygon(point, poly)),
+      );
     }
     const { providers, bands, technologies } = dataFilters;
     const hasProviderFilter = providers?.length > 0;
@@ -1032,8 +1253,13 @@ const UnifiedMapView = () => {
 
     if (hasProviderFilter || hasBandFilter || hasTechFilter) {
       data = data.filter((item) => {
-        if (hasProviderFilter && !providers.includes(item.provider)) return false;
-        if (hasTechFilter && !technologies.includes(normalizeTechName(item.networkType))) return false;
+        if (hasProviderFilter && !providers.includes(item.provider))
+          return false;
+        if (
+          hasTechFilter &&
+          !technologies.includes(normalizeTechName(item.networkType))
+        )
+          return false;
         if (hasBandFilter) {
           const nb = String(item.neighbourBand);
           const pb = String(item.primaryBand);
@@ -1043,7 +1269,13 @@ const UnifiedMapView = () => {
       });
     }
     return data;
-  }, [sessionNeighborData, onlyInsidePolygons, showPolygons, polygons, dataFilters]);
+  }, [
+    sessionNeighborData,
+    onlyInsidePolygons,
+    showPolygons,
+    polygons,
+    dataFilters,
+  ]);
 
   const handlePolygonMouseOver = useCallback((poly, e) => {
     setHoveredPolygon(poly);
@@ -1059,18 +1291,44 @@ const UnifiedMapView = () => {
     setHoverPosition(null);
   }, []);
 
-  if (!isLoaded) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
-  if (loadError) return <div className="flex items-center justify-center h-screen text-red-500">Map loading error: {loadError.message}</div>;
+  // --- Handle Multi View Navigation ---
+  const handleNavigateToMultiView = () => {
+    const url = `/multi-map?session=${sessionIds.join(",")}&project_id=${projectId || ""}`;
+    navigate(url, {
+      state: {
+        locations: locations, // Pass raw locations so MultiView can do its own filtering
+        neighborData: sessionNeighborData,
+        thresholds: effectiveThresholds,
+        project: project,
+      },
+    });
+  };
+
+  if (!isLoaded)
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Spinner />
+      </div>
+    );
+  if (loadError)
+    return (
+      <div className="flex items-center justify-center h-screen text-red-500">
+        Map loading error: {loadError.message}
+      </div>
+    );
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-800">
       <UnifiedHeader
+        onSettingsSaved={refetchColors}
         onToggleControls={() => setIsSideOpen(!isSideOpen)}
         onLeftToggle={() => setShowAnalytics(!showAnalytics)}
         isControlsOpen={isSideOpen}
         showAnalytics={showAnalytics}
         projectId={projectId}
         sessionIds={sessionIds}
+        project={project}
+        setProject={setProject}
         isOpacityCollapsed={isOpacityCollapsed}
         setIsOpacityCollapsed={setIsOpacityCollapsed}
         opacity={opacity}
@@ -1189,6 +1447,17 @@ const UnifiedMapView = () => {
       />
 
       <div className="flex-grow relative overflow-hidden">
+        {/* Multi View Button */}
+        <div className="absolute top-18 right-3 z-10">
+          <button
+            onClick={handleNavigateToMultiView}
+            className="bg-white p-2 rounded-md shadow-md hover:bg-gray-100 text-gray-700 flex items-center justify-center border border-gray-200"
+            title="Open Multi View"
+          >
+            <LayoutGrid size={20} />
+          </button>
+        </div>
+
         <LoadingProgress
           progress={sampleProgress}
           loading={sampleLoading && enableDataToggle && dataToggle === "sample"}
@@ -1219,7 +1488,9 @@ const UnifiedMapView = () => {
         />
 
         <div className="relative h-full w-full">
-          {isLoading && (locations?.length || 0) === 0 && (siteData?.length || 0) === 0 ? (
+          {isLoading &&
+          (locations?.length || 0) === 0 &&
+          (siteData?.length || 0) === 0 ? (
             <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-700">
               <Spinner />
             </div>
@@ -1227,7 +1498,11 @@ const UnifiedMapView = () => {
             <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-700">
               <div className="text-center space-y-2">
                 {error && <p className="text-red-500">Data Error: {error}</p>}
-                {siteError && <p className="text-red-500">Site Error: {siteError.message}</p>}
+                {siteError && (
+                  <p className="text-red-500">
+                    Site Error: {siteError.message}
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -1289,7 +1564,9 @@ const UnifiedMapView = () => {
                     options={{
                       fillColor: poly.fillColor || "#4285F4",
                       fillOpacity: poly.fillOpacity || 0.35,
-                      strokeColor: onlyInsidePolygons ? poly.fillColor : "#2563eb",
+                      strokeColor: onlyInsidePolygons
+                        ? poly.fillColor
+                        : "#2563eb",
                       strokeWeight: 2,
                       strokeOpacity: 0.9,
                       clickable: true,

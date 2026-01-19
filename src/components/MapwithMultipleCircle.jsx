@@ -1093,7 +1093,7 @@ const MapWithMultipleCircles = ({
           disableDefaultUI: false,
           // maxZoom: 20,
         }}
-        center={computedCenter}
+        defaultCenter={computedCenter}
         zoom={defaultZoom}
       >
         {/* Polygon boundaries */}

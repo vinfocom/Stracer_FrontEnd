@@ -9,41 +9,40 @@ function useColorForLog() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    useEffect(() => {
-        const fetchThreshold = async () => {
-            try {
-                setLoading(true);
-                const res = await settingApi.getThresholdSettings();
-                
-                if (res.Status === 1) {
-                    const data = res.Data;
-                    // Ensure these keys match src/utils/metrics.js expectations (snake_case)
-                    const parsed = {
-                        id: data.id,
-                        userId: data.user_id,
-                        isDefault: data.is_default,
-                        coverageHole: JSON.parse(data.coveragehole_json),
-                        rsrp: JSON.parse(data.rsrp_json),
-                        rsrq: JSON.parse(data.rsrq_json),
-                        sinr: JSON.parse(data.sinr_json),
-                        dl_thpt: JSON.parse(data.dl_thpt_json),
-                        ul_thpt: JSON.parse(data.ul_thpt_json),
-                        volteCall: JSON.parse(data.volte_call),
-                        lte_bler: JSON.parse(data.lte_bler_json),
-                        mos: JSON.parse(data.mos_json)
-                    };
-                    setParsedData(parsed);
-                }
-            } catch (err) {
-                console.error("Error fetching thresholds:", err);
-                setError(err);
-            } finally {
-                setLoading(false);
+    const fetchThreshold = useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await settingApi.getThresholdSettings();
+            
+            if (res.Status === 1) {
+                const data = res.Data;
+                const parsed = {
+                    id: data.id,
+                    userId: data.user_id,
+                    isDefault: data.is_default,
+                    coverageHole: JSON.parse(data.coveragehole_json),
+                    rsrp: JSON.parse(data.rsrp_json),
+                    rsrq: JSON.parse(data.rsrq_json),
+                    sinr: JSON.parse(data.sinr_json),
+                    dl_thpt: JSON.parse(data.dl_thpt_json),
+                    ul_thpt: JSON.parse(data.ul_thpt_json),
+                    volteCall: JSON.parse(data.volte_call),
+                    lte_bler: JSON.parse(data.lte_bler_json),
+                    mos: JSON.parse(data.mos_json)
+                };
+                setParsedData(parsed);
             }
-        };
-
-        fetchThreshold();
+        } catch (err) {
+            console.error("Error fetching thresholds:", err);
+            setError(err);
+        } finally {
+            setLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        fetchThreshold();
+    }, [fetchThreshold]);
 
     const getMetricColor = useCallback((value, metric) => {
         const lowerMetric = metric?.toLowerCase();
@@ -176,7 +175,8 @@ function useColorForLog() {
         thresholds: parsedData,
         loading,
         error,
-        isReady: !loading && parsedData !== null
+        isReady: !loading && parsedData !== null,
+        refetch: fetchThreshold
     };
 }
 

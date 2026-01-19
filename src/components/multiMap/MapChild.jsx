@@ -7,7 +7,7 @@ import MapwithMultipleCircle from '../MapwithMultipleCircle';
 const MapChild = ({
     id,
     title,
-    allNeighbors, 
+    allNeighbors = [], 
     allLocations = [],
     onRemove,
     thresholds, 
@@ -23,7 +23,7 @@ const MapChild = ({
         if(!allLocations) return [];
 
         return allLocations.filter(loc => {
-            // Tech Filter
+           
             if(tech !== "All"){
                 const t = normalizeTechName(loc.technology);
                 if(t !== tech) return false;
@@ -46,17 +46,19 @@ const MapChild = ({
     const options = useMemo(() => {
         const techSet = new Set(["All"]);
         const providerSet = new Set(["All"]);
-        // const bandSet = new Set(["All"]); // Uncomment if you want band options
+        const bandSet = new Set(["All"]); 
 
         allLocations.forEach(loc => {
             if (loc.technology) techSet.add(normalizeTechName(loc.technology));
             if (loc.provider) providerSet.add(normalizeProviderName(loc.provider));
+            if (loc.band) bandSet.add(String(loc.band));
         });
 
         // ✅ CRITICAL FIX: Return the object
         return {
             tech: Array.from(techSet).sort(),
-            provs: Array.from(providerSet).sort()
+            provs: Array.from(providerSet).sort(),
+            bands: Array.from(bandSet).sort() 
         };
     }, [allLocations]);
 
@@ -76,6 +78,7 @@ const MapChild = ({
                         <option value="rsrp">RSRP</option>
                         <option value="rsrq">RSRQ</option>
                         <option value="sinr">SINR</option>
+                        <option value="ul_tpt">Ul Tpt</option>
                         <option value="dl_tpt">DL Tpt</option>
                     </select>
                 </div>
@@ -97,6 +100,14 @@ const MapChild = ({
                         className="text-xs border rounded px-1 py-1 bg-white max-w-[80px]"
                     >
                         {options.provs.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+
+                    <select 
+                        value={band} 
+                        onChange={(e) => setBand(e.target.value)}
+                        className="text-xs border rounded px-1 py-1 bg-white max-w-[80px]"
+                    >
+                        {options.bands.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
 
                     <button onClick={() => onRemove(id)} className="text-gray-400 hover:text-red-500">

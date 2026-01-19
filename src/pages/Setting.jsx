@@ -599,7 +599,7 @@ const buildSavePayload = (thresholds, userId) => {
     return payload;
 };
 
-const SettingsPage = () => {
+const SettingsPage = ({ onSaveSuccess }) => {
     const { user } = useAuth();
     const [thresholds, setThresholds] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -655,6 +655,7 @@ const SettingsPage = () => {
             
             if (data?.Status === 1) {
                 toast.success("Settings saved successfully!");
+                if (onSaveSuccess) onSaveSuccess();
                 
                 const refetchResponse = await settingApi.getThresholdSettings();
                 const refetchData = extractResponseData(refetchResponse);
@@ -671,7 +672,7 @@ const SettingsPage = () => {
         } finally {
             setSaving(false);
         }
-    }, [thresholds, user?.id]);
+    }, [thresholds, user?.id, onSaveSuccess]);
 
     const handleClose = useCallback(() => {
         setActiveParam(null);
