@@ -6,7 +6,7 @@ import Spinner from '../components/common/Spinner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox'; 
 import { Input } from "@/components/ui/input"; 
-import { Search, Calendar, X, Settings2 } from 'lucide-react'
+import { Search, Calendar, X, Settings2, Clock } from 'lucide-react'
 import {
     Table,
     TableBody,
@@ -37,7 +37,9 @@ const DriveTestSessionsPage = () => {
     const [columnFilters, setColumnFilters] = useState({
         sessionId: "",
         userDetails: "",
+        startDate: "",
         startTime: "",
+        endDate: "",
         endTime: "",
         startLocation: "",
         endLocation: "",
@@ -57,10 +59,12 @@ const DriveTestSessionsPage = () => {
     const [visibleColumns, setVisibleColumns] = useState({
         sessionId: true,
         userDetails: true,
+        startDate: true,
         startTime: true,
-        endTime: true,
+        endDate: false,
+        endTime: false,
         startLocation: true,
-        endLocation: true,
+        endLocation: false,
         actions: true,
         distance: false,
         captureFrequency: false,
@@ -71,10 +75,12 @@ const DriveTestSessionsPage = () => {
     const allColumns = {
         sessionId: { label: 'Session ID', defaultVisible: true },
         userDetails: { label: 'User Details', defaultVisible: true },
+        startDate: { label: 'Start Date', defaultVisible: true },
         startTime: { label: 'Start Time', defaultVisible: true },
-        endTime: { label: 'End Time', defaultVisible: true },
+        endDate: { label: 'End Date', defaultVisible: false },
+        endTime: { label: 'End Time', defaultVisible: false },
         startLocation: { label: 'Start Location', defaultVisible: true },
-        endLocation: { label: 'End Location', defaultVisible: true },
+        endLocation: { label: 'End Location', defaultVisible: false },
         distance: { label: 'Distance (km)', defaultVisible: false },
         captureFrequency: { label: 'Capture Frequency', defaultVisible: false },
         sessionRemarks: { label: 'Session Remarks', defaultVisible: false },
@@ -110,7 +116,9 @@ const DriveTestSessionsPage = () => {
         setColumnFilters({
             sessionId: "",
             userDetails: "",
+            startDate: "",
             startTime: "",
+            endDate: "",
             endTime: "",
             startLocation: "",
             endLocation: "",
@@ -161,6 +169,26 @@ const DriveTestSessionsPage = () => {
         setSearchTerm("");
     };
 
+    // Format date only (without time)
+    const formatDateOnly = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString();
+    };
+
+    // Format time only (without date)
+    const formatTimeOnly = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleTimeString();
+    };
+
+    // Original format function for combined date-time
+    const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        return new Date(dateString).toLocaleString();
+    };
+
     // Enhanced filter function with column-specific filters
     const filteredSessions = sessions.filter(session => {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
@@ -187,11 +215,17 @@ const DriveTestSessionsPage = () => {
             (session.operator_name && session.operator_name.toLowerCase().includes(columnFilters.userDetails.toLowerCase()))
         );
         
+        const matchesStartDate = !columnFilters.startDate || 
+            (session.start_time && formatDateOnly(session.start_time).toLowerCase().includes(columnFilters.startDate.toLowerCase()));
+        
         const matchesStartTime = !columnFilters.startTime || 
-            (session.start_time && formatDate(session.start_time).toLowerCase().includes(columnFilters.startTime.toLowerCase()));
+            (session.start_time && formatTimeOnly(session.start_time).toLowerCase().includes(columnFilters.startTime.toLowerCase()));
+        
+        const matchesEndDate = !columnFilters.endDate || 
+            (session.end_time && formatDateOnly(session.end_time).toLowerCase().includes(columnFilters.endDate.toLowerCase()));
         
         const matchesEndTime = !columnFilters.endTime || 
-            (session.end_time && formatDate(session.end_time).toLowerCase().includes(columnFilters.endTime.toLowerCase()));
+            (session.end_time && formatTimeOnly(session.end_time).toLowerCase().includes(columnFilters.endTime.toLowerCase()));
         
         const matchesStartLocation = !columnFilters.startLocation || 
             (session.start_address && session.start_address.toLowerCase().includes(columnFilters.startLocation.toLowerCase()));
@@ -208,7 +242,7 @@ const DriveTestSessionsPage = () => {
         const matchesSessionRemarks = !columnFilters.sessionRemarks || 
             (session.notes && session.notes.toLowerCase().includes(columnFilters.sessionRemarks.toLowerCase()));
         
-        // Date filter
+        // Date range filter (for the date picker filters)
         let matchesDateRange = true;
         if (startDate || endDate) {
             const sessionDate = session.start_time ? new Date(session.start_time) : null;
@@ -239,7 +273,9 @@ const DriveTestSessionsPage = () => {
         return matchesGlobalSearch && 
                matchesSessionId && 
                matchesUserDetails && 
+               matchesStartDate && 
                matchesStartTime && 
+               matchesEndDate && 
                matchesEndTime && 
                matchesStartLocation && 
                matchesEndLocation && 
@@ -297,11 +333,6 @@ const DriveTestSessionsPage = () => {
         navigate(`/debug-map?sessionId=${encodeURIComponent(sessionIdsParam)}`);
     };
 
-    const formatDate = (dateString) => {
-        if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleString();
-    };
-
     // Pagination logic
     const indexOfLastSession = currentPage * sessionsPerPage;
     const indexOfFirstSession = indexOfLastSession - sessionsPerPage;
@@ -342,7 +373,8 @@ const DriveTestSessionsPage = () => {
                             <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             {Object.entries(allColumns).map(([key, column]) => {
-                                if (column.defaultVisible && key !== 'distance' && key !== 'captureFrequency' && key !== 'sessionRemarks') {
+                                // Skip default visible columns that can't be toggled
+                                if (key === 'sessionId' || key === 'userDetails' || key === 'actions') {
                                     return null;
                                 }
                                 return (
@@ -370,58 +402,6 @@ const DriveTestSessionsPage = () => {
                             Clear Column Filters
                         </Button>
                     )}
-
-                    {/* Date Filters */}
-                    <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-gray-500" />
-                        <Input
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className="w-36 h-9"
-                            placeholder="Start Date"
-                        />
-                        <span className="text-sm text-muted-foreground">to</span>
-                        <Input
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            className="w-36 h-9"
-                            placeholder="End Date"
-                        />
-                        {(startDate || endDate) && (
-                            <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={clearDateFilters}
-                                className="h-9 px-2"
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        )}
-                    </div>
-
-                    {/* Global Search Input */}
-                    <div className="relative w-80">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                        <Input
-                            type="text"
-                            placeholder="Global Search..."
-                            className="pl-9 pr-9 h-9"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                        {searchTerm && (
-                            <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={clearSearch}
-                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        )}
-                    </div>
 
                     {/* Multi-select actions */}
                     {selectedSessions.length > 0 && (
@@ -497,8 +477,38 @@ const DriveTestSessionsPage = () => {
                             
                             {visibleColumns.sessionId && <TableHead>Session ID</TableHead>}
                             {visibleColumns.userDetails && <TableHead>User Details</TableHead>}
-                            {visibleColumns.startTime && <TableHead>Start Time</TableHead>}
-                            {visibleColumns.endTime && <TableHead>End Time</TableHead>}
+                            {visibleColumns.startDate && (
+                                <TableHead>
+                                    <div className="flex items-center gap-1">
+                                        <Calendar className="h-3 w-3" />
+                                        Start Date
+                                    </div>
+                                </TableHead>
+                            )}
+                            {visibleColumns.startTime && (
+                                <TableHead>
+                                    <div className="flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        Start Time
+                                    </div>
+                                </TableHead>
+                            )}
+                            {visibleColumns.endDate && (
+                                <TableHead>
+                                    <div className="flex items-center gap-1">
+                                        <Calendar className="h-3 w-3" />
+                                        End Date
+                                    </div>
+                                </TableHead>
+                            )}
+                            {visibleColumns.endTime && (
+                                <TableHead>
+                                    <div className="flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        End Time
+                                    </div>
+                                </TableHead>
+                            )}
                             {visibleColumns.startLocation && <TableHead>Start Location</TableHead>}
                             {visibleColumns.endLocation && <TableHead>End Location</TableHead>}
                             {visibleColumns.distance && <TableHead>Distance (km)</TableHead>}
@@ -559,12 +569,36 @@ const DriveTestSessionsPage = () => {
                                 </TableHead>
                             )}
                             
+                            {visibleColumns.startDate && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter date..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.startDate}
+                                            onChange={(e) => updateColumnFilter('startDate', e.target.value)}
+                                        />
+                                        {columnFilters.startDate && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('startDate')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
                             {visibleColumns.startTime && (
                                 <TableHead className="p-2">
                                     <div className="relative">
                                         <Input
                                             type="text"
-                                            placeholder="Filter..."
+                                            placeholder="Filter time..."
                                             className="h-8 text-xs pr-7"
                                             value={columnFilters.startTime}
                                             onChange={(e) => updateColumnFilter('startTime', e.target.value)}
@@ -583,12 +617,36 @@ const DriveTestSessionsPage = () => {
                                 </TableHead>
                             )}
                             
+                            {visibleColumns.endDate && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter date..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.endDate}
+                                            onChange={(e) => updateColumnFilter('endDate', e.target.value)}
+                                        />
+                                        {columnFilters.endDate && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('endDate')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
                             {visibleColumns.endTime && (
                                 <TableHead className="p-2">
                                     <div className="relative">
                                         <Input
                                             type="text"
-                                            placeholder="Filter..."
+                                            placeholder="Filter time..."
                                             className="h-8 text-xs pr-7"
                                             value={columnFilters.endTime}
                                             onChange={(e) => updateColumnFilter('endTime', e.target.value)}
@@ -766,15 +824,27 @@ const DriveTestSessionsPage = () => {
                                         </TableCell>
                                     )}
                                     
+                                    {visibleColumns.startDate && (
+                                        <TableCell className="whitespace-nowrap">
+                                            {formatDateOnly(session.start_time)}
+                                        </TableCell>
+                                    )}
+                                    
                                     {visibleColumns.startTime && (
-                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
-                                            <div>{formatDate(session.start_time)}</div>
+                                        <TableCell className="whitespace-nowrap">
+                                            {formatTimeOnly(session.start_time)}
+                                        </TableCell>
+                                    )}
+                                    
+                                    {visibleColumns.endDate && (
+                                        <TableCell className="whitespace-nowrap">
+                                            {formatDateOnly(session.end_time)}
                                         </TableCell>
                                     )}
                                     
                                     {visibleColumns.endTime && (
-                                        <TableCell className="whitespace-normal break-words max-w-[200px]">
-                                            <div>{formatDate(session.end_time)}</div>
+                                        <TableCell className="whitespace-nowrap">
+                                            {formatTimeOnly(session.end_time)}
                                         </TableCell>
                                     )}
                                     
