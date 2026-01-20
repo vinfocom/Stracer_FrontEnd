@@ -33,6 +33,19 @@ const DriveTestSessionsPage = () => {
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState(""); 
     
+    // Column-specific search states
+    const [columnFilters, setColumnFilters] = useState({
+        sessionId: "",
+        userDetails: "",
+        startTime: "",
+        endTime: "",
+        startLocation: "",
+        endLocation: "",
+        distance: "",
+        captureFrequency: "",
+        sessionRemarks: "",
+    });
+    
     // Date filter states
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
@@ -40,9 +53,8 @@ const DriveTestSessionsPage = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [sessionsPerPage] = useState(10); 
 
-    // Column visibility state - default columns are always visible
+    // Column visibility state
     const [visibleColumns, setVisibleColumns] = useState({
-        // Default columns (always visible, not in the dropdown)
         sessionId: true,
         userDetails: true,
         startTime: true,
@@ -50,7 +62,6 @@ const DriveTestSessionsPage = () => {
         startLocation: true,
         endLocation: true,
         actions: true,
-        // Optional columns (can be toggled)
         distance: false,
         captureFrequency: false,
         sessionRemarks: false,
@@ -78,6 +89,37 @@ const DriveTestSessionsPage = () => {
         }));
     };
 
+    // Update column filter
+    const updateColumnFilter = (column, value) => {
+        setColumnFilters(prev => ({
+            ...prev,
+            [column]: value
+        }));
+    };
+
+    // Clear specific column filter
+    const clearColumnFilter = (column) => {
+        setColumnFilters(prev => ({
+            ...prev,
+            [column]: ""
+        }));
+    };
+
+    // Clear all column filters
+    const clearAllColumnFilters = () => {
+        setColumnFilters({
+            sessionId: "",
+            userDetails: "",
+            startTime: "",
+            endTime: "",
+            startLocation: "",
+            endLocation: "",
+            distance: "",
+            captureFrequency: "",
+            sessionRemarks: "",
+        });
+    };
+
     const fetchSessions = useCallback(async () => {
         try {
             setLoading(true);
@@ -94,10 +136,10 @@ const DriveTestSessionsPage = () => {
         fetchSessions();
     }, [fetchSessions]);
 
-    // Reset current page to 1 whenever the search term or date filters change
+    // Reset current page to 1 whenever filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, startDate, endDate]);
+    }, [searchTerm, startDate, endDate, columnFilters]);
 
     // Toggle single session selection
     const toggleSessionSelection = (sessionId) => {
@@ -119,17 +161,52 @@ const DriveTestSessionsPage = () => {
         setSearchTerm("");
     };
 
-    // Filter sessions based on search term and date range
+    // Enhanced filter function with column-specific filters
     const filteredSessions = sessions.filter(session => {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         
-        // Text search filter (includes location fields)
-        const matchesSearch = 
+        // Global text search filter
+        const matchesGlobalSearch = !searchTerm || (
             session.id.toString().toLowerCase().includes(lowerCaseSearchTerm) ||
             (session.CreatedBy && session.CreatedBy.toLowerCase().includes(lowerCaseSearchTerm)) ||
             (session.mobile && session.mobile.toLowerCase().includes(lowerCaseSearchTerm)) ||
             (session.start_address && session.start_address.toLowerCase().includes(lowerCaseSearchTerm)) ||
-            (session.end_address && session.end_address.toLowerCase().includes(lowerCaseSearchTerm));
+            (session.end_address && session.end_address.toLowerCase().includes(lowerCaseSearchTerm))
+        );
+        
+        // Column-specific filters
+        const matchesSessionId = !columnFilters.sessionId || 
+            session.id.toString().toLowerCase().includes(columnFilters.sessionId.toLowerCase());
+        
+        const matchesUserDetails = !columnFilters.userDetails || (
+            (session.CreatedBy && session.CreatedBy.toLowerCase().includes(columnFilters.userDetails.toLowerCase())) ||
+            (session.mobile && session.mobile.toLowerCase().includes(columnFilters.userDetails.toLowerCase())) ||
+            (session.make && session.make.toLowerCase().includes(columnFilters.userDetails.toLowerCase())) ||
+            (session.model && session.model.toLowerCase().includes(columnFilters.userDetails.toLowerCase())) ||
+            (session.os && session.os.toLowerCase().includes(columnFilters.userDetails.toLowerCase())) ||
+            (session.operator_name && session.operator_name.toLowerCase().includes(columnFilters.userDetails.toLowerCase()))
+        );
+        
+        const matchesStartTime = !columnFilters.startTime || 
+            (session.start_time && formatDate(session.start_time).toLowerCase().includes(columnFilters.startTime.toLowerCase()));
+        
+        const matchesEndTime = !columnFilters.endTime || 
+            (session.end_time && formatDate(session.end_time).toLowerCase().includes(columnFilters.endTime.toLowerCase()));
+        
+        const matchesStartLocation = !columnFilters.startLocation || 
+            (session.start_address && session.start_address.toLowerCase().includes(columnFilters.startLocation.toLowerCase()));
+        
+        const matchesEndLocation = !columnFilters.endLocation || 
+            (session.end_address && session.end_address.toLowerCase().includes(columnFilters.endLocation.toLowerCase()));
+        
+        const matchesDistance = !columnFilters.distance || 
+            (session.distance_km && session.distance_km.toString().includes(columnFilters.distance));
+        
+        const matchesCaptureFrequency = !columnFilters.captureFrequency || 
+            (session.capture_frequency && session.capture_frequency.toLowerCase().includes(columnFilters.captureFrequency.toLowerCase()));
+        
+        const matchesSessionRemarks = !columnFilters.sessionRemarks || 
+            (session.notes && session.notes.toLowerCase().includes(columnFilters.sessionRemarks.toLowerCase()));
         
         // Date filter
         let matchesDateRange = true;
@@ -137,7 +214,6 @@ const DriveTestSessionsPage = () => {
             const sessionDate = session.start_time ? new Date(session.start_time) : null;
             
             if (sessionDate) {
-                // Set time to start of day for comparison
                 sessionDate.setHours(0, 0, 0, 0);
                 
                 if (startDate) {
@@ -160,7 +236,17 @@ const DriveTestSessionsPage = () => {
             }
         }
         
-        return matchesSearch && matchesDateRange;
+        return matchesGlobalSearch && 
+               matchesSessionId && 
+               matchesUserDetails && 
+               matchesStartTime && 
+               matchesEndTime && 
+               matchesStartLocation && 
+               matchesEndLocation && 
+               matchesDistance && 
+               matchesCaptureFrequency && 
+               matchesSessionRemarks && 
+               matchesDateRange;
     });
 
     // Toggle select all on current page
@@ -169,10 +255,8 @@ const DriveTestSessionsPage = () => {
         const allSelectedOnPage = currentPageIds.every(id => selectedSessions.includes(id));
         
         if (allSelectedOnPage) {
-            // Deselect all on current page
             setSelectedSessions(prev => prev.filter(id => !currentPageIds.includes(id)));
         } else {
-            // Select all on current page
             setSelectedSessions(prev => [...new Set([...prev, ...currentPageIds])]);
         }
     };
@@ -187,7 +271,6 @@ const DriveTestSessionsPage = () => {
             try {
                 await adminApi.deleteSession(sessionId);
                 toast.success('Session deleted successfully');
-                // Remove from selection if it was selected
                 setSelectedSessions(prev => prev.filter(id => id !== sessionId));
                 fetchSessions();
             } catch (error) {
@@ -209,7 +292,6 @@ const DriveTestSessionsPage = () => {
             return;
         }
         
-        // Join session IDs with comma
         const sessionIdsParam = selectedSessions.join(',');
         console.log("🗺️ Navigating to map for sessions:", selectedSessions);
         navigate(`/debug-map?sessionId=${encodeURIComponent(sessionIdsParam)}`);
@@ -220,13 +302,12 @@ const DriveTestSessionsPage = () => {
         return new Date(dateString).toLocaleString();
     };
 
-    // Pagination logic now based on filteredSessions
+    // Pagination logic
     const indexOfLastSession = currentPage * sessionsPerPage;
     const indexOfFirstSession = indexOfLastSession - sessionsPerPage;
     const currentSessions = filteredSessions.slice(indexOfFirstSession, indexOfLastSession);
     const totalPages = Math.ceil(filteredSessions.length / sessionsPerPage);
 
-    // Check if all current page sessions are selected
     const allCurrentPageSelected = currentSessions.length > 0 && 
         currentSessions.every(s => selectedSessions.includes(s.id));
 
@@ -235,6 +316,9 @@ const DriveTestSessionsPage = () => {
             setCurrentPage(pageNumber);
         }
     };
+
+    // Check if any column filters are active
+    const hasActiveColumnFilters = Object.values(columnFilters).some(filter => filter !== "");
 
     if (loading) {
         return <div className="flex items-center justify-center h-full"><Spinner /></div>;
@@ -258,7 +342,6 @@ const DriveTestSessionsPage = () => {
                             <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             {Object.entries(allColumns).map(([key, column]) => {
-                                // Skip default visible columns (they can't be toggled off)
                                 if (column.defaultVisible && key !== 'distance' && key !== 'captureFrequency' && key !== 'sessionRemarks') {
                                     return null;
                                 }
@@ -274,6 +357,19 @@ const DriveTestSessionsPage = () => {
                             })}
                         </DropdownMenuContent>
                     </DropdownMenu>
+
+                    {/* Clear All Filters Button */}
+                    {hasActiveColumnFilters && (
+                        <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={clearAllColumnFilters}
+                            className="h-9"
+                        >
+                            <X className="h-4 w-4 mr-2" />
+                            Clear Column Filters
+                        </Button>
+                    )}
 
                     {/* Date Filters */}
                     <div className="flex items-center gap-2">
@@ -305,12 +401,12 @@ const DriveTestSessionsPage = () => {
                         )}
                     </div>
 
-                    {/* Search Input */}
+                    {/* Global Search Input */}
                     <div className="relative w-80">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                         <Input
                             type="text"
-                            placeholder="Search by ID, User, Mobile, Location"
+                            placeholder="Global Search..."
                             className="pl-9 pr-9 h-9"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -356,12 +452,12 @@ const DriveTestSessionsPage = () => {
             </div>
 
             {/* Active Filters Display */}
-            {(searchTerm || startDate || endDate) && (
-                <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+            {(searchTerm || startDate || endDate || hasActiveColumnFilters) && (
+                <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                     <span>Active filters:</span>
                     {searchTerm && (
                         <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
-                            Search: "{searchTerm}"
+                            Global: "{searchTerm}"
                         </span>
                     )}
                     {(startDate || endDate) && (
@@ -369,14 +465,28 @@ const DriveTestSessionsPage = () => {
                             Date: {startDate || '...'} to {endDate || '...'}
                         </span>
                     )}
+                    {Object.entries(columnFilters).map(([key, value]) => {
+                        if (value) {
+                            return (
+                                <span key={key} className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded flex items-center gap-1">
+                                    {allColumns[key]?.label}: "{value}"
+                                    <X 
+                                        className="h-3 w-3 cursor-pointer hover:text-green-950" 
+                                        onClick={() => clearColumnFilter(key)}
+                                    />
+                                </span>
+                            );
+                        }
+                        return null;
+                    })}
                 </div>
             )}
 
-            <div className="rounded-lg border shadow-sm flex-grow overflow-y-auto">
+            <div className="rounded-lg border shadow-sm flex-grow overflow-auto">
                 <Table>
                     <TableHeader>
+                        {/* Column Headers Row */}
                         <TableRow>
-                            {/* Select All Checkbox */}
                             <TableHead className="w-[50px]">
                                 <Checkbox
                                     checked={allCurrentPageSelected}
@@ -385,7 +495,6 @@ const DriveTestSessionsPage = () => {
                                 />
                             </TableHead>
                             
-                            {/* Dynamic Column Headers */}
                             {visibleColumns.sessionId && <TableHead>Session ID</TableHead>}
                             {visibleColumns.userDetails && <TableHead>User Details</TableHead>}
                             {visibleColumns.startTime && <TableHead>Start Time</TableHead>}
@@ -396,6 +505,229 @@ const DriveTestSessionsPage = () => {
                             {visibleColumns.captureFrequency && <TableHead>Capture Frequency</TableHead>}
                             {visibleColumns.sessionRemarks && <TableHead>Session Remarks</TableHead>}
                             {visibleColumns.actions && <TableHead className="text-right">Actions</TableHead>}
+                        </TableRow>
+                        
+                        {/* Column Filter Inputs Row */}
+                        <TableRow className="bg-muted/50">
+                            <TableHead className="w-[50px] p-2"></TableHead>
+                            
+                            {visibleColumns.sessionId && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.sessionId}
+                                            onChange={(e) => updateColumnFilter('sessionId', e.target.value)}
+                                        />
+                                        {columnFilters.sessionId && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('sessionId')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.userDetails && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.userDetails}
+                                            onChange={(e) => updateColumnFilter('userDetails', e.target.value)}
+                                        />
+                                        {columnFilters.userDetails && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('userDetails')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.startTime && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.startTime}
+                                            onChange={(e) => updateColumnFilter('startTime', e.target.value)}
+                                        />
+                                        {columnFilters.startTime && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('startTime')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.endTime && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.endTime}
+                                            onChange={(e) => updateColumnFilter('endTime', e.target.value)}
+                                        />
+                                        {columnFilters.endTime && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('endTime')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.startLocation && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.startLocation}
+                                            onChange={(e) => updateColumnFilter('startLocation', e.target.value)}
+                                        />
+                                        {columnFilters.startLocation && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('startLocation')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.endLocation && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.endLocation}
+                                            onChange={(e) => updateColumnFilter('endLocation', e.target.value)}
+                                        />
+                                        {columnFilters.endLocation && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('endLocation')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.distance && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.distance}
+                                            onChange={(e) => updateColumnFilter('distance', e.target.value)}
+                                        />
+                                        {columnFilters.distance && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('distance')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.captureFrequency && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.captureFrequency}
+                                            onChange={(e) => updateColumnFilter('captureFrequency', e.target.value)}
+                                        />
+                                        {columnFilters.captureFrequency && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('captureFrequency')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.sessionRemarks && (
+                                <TableHead className="p-2">
+                                    <div className="relative">
+                                        <Input
+                                            type="text"
+                                            placeholder="Filter..."
+                                            className="h-8 text-xs pr-7"
+                                            value={columnFilters.sessionRemarks}
+                                            onChange={(e) => updateColumnFilter('sessionRemarks', e.target.value)}
+                                        />
+                                        {columnFilters.sessionRemarks && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm"
+                                                onClick={() => clearColumnFilter('sessionRemarks')}
+                                                className="absolute right-0 top-0 h-8 w-7 p-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </TableHead>
+                            )}
+                            
+                            {visibleColumns.actions && <TableHead className="text-right p-2"></TableHead>}
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -411,7 +743,6 @@ const DriveTestSessionsPage = () => {
                                     key={session.id}
                                     className={selectedSessions.includes(session.id) ? 'bg-blue-900/30' : ''}
                                 >
-                                    {/* Row Checkbox */}
                                     <TableCell>
                                         <Checkbox
                                             checked={selectedSessions.includes(session.id)}
@@ -420,7 +751,6 @@ const DriveTestSessionsPage = () => {
                                         />
                                     </TableCell>
                                     
-                                    {/* Dynamic Column Cells */}
                                     {visibleColumns.sessionId && (
                                         <TableCell className="whitespace-normal break-words max-w-[150px]">
                                             <div className="font-medium">{session.id || 'N/A'}</div>
