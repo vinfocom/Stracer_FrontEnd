@@ -10,7 +10,8 @@ const MapChild = ({
     allNeighbors = [], 
     allLocations = [],
     onRemove,
-    thresholds, 
+    thresholds,
+    projectId,   
 }) => {
 
     const [metric, setMetric] = useState("rsrp"); 
@@ -126,10 +127,16 @@ const MapChild = ({
                     selectedMetric={metric}
                     thresholds={thresholds}
                     neighborData={allNeighbors} 
-                    showNeighbors={false} 
+                    showNeighbors={true} 
                     fitToLocations={true} 
                     showControls={false} 
+                    projectId={projectId}
+                    enablePolygonFilter={true} 
+                    polygonSource="map" 
+                    showPolygonBoundary={true}
                 />
+
+                
                 
                 {/* Stats Overlay */}
                 <div className="absolute bottom-2 left-2 bg-white/90 p-1 rounded text-[10px] shadow z-10">

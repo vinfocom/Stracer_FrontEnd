@@ -347,8 +347,8 @@ export const areaBreakdownApi = {
     return response;
   },
 
-  getAreaPolygons: (projectId) =>
-    pythonApi.get(`/api/area-breakup/fetch/${projectId}`),
+  getAreaPolygons: (projectId, config = {}) =>
+    pythonApi.get(`/api/area-breakup/fetch/${projectId}`, config),
 };
 
 export const predictionApi = {

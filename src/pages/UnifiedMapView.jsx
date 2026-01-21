@@ -634,10 +634,10 @@ const UnifiedMapView = () => {
 
   // ✅ 5. Use Area Polygons Hook
   const {
-    areaData,
+    areaData, // The hook now returns data from areaBreakdownApi
     loading: areaLoading,
     refetch: refetchAreaPolygons,
-  } = useAreaPolygons(projectId, areaEnabled);
+} = useAreaPolygons(projectId, areaEnabled);
 
   // ✅ 6. Use Site Data (Existing)
   const {
