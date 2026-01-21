@@ -1,4 +1,3 @@
-// src/pages/HighPerfMap.jsx
 import React, {
   useCallback,
   useEffect,
@@ -39,7 +38,6 @@ import { loadSavedViewport, saveViewport } from "@/utils/viewport";
 import { parseWKTToCoordinates } from "@/utils/wkt";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import { normalizeBandName, normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
-// ✅ Import COLOR_SCHEMES for consistent category filtering
 import { COLOR_SCHEMES } from "@/utils/metrics";
 
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
@@ -53,7 +51,6 @@ const toYmdLocal = (d) => {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 };
 
-// ... (Helper functions: extractLogsFromResponse, extractAppSummary, mergeAppSummaries remain the same) ...
 const extractLogsFromResponse = (response) => {
   if (!response) return [];
   if (Array.isArray(response)) return response;
@@ -114,7 +111,6 @@ const mergeAppSummaries = (summary1, summary2) => {
   return merged;
 };
 
-// ... (getMetricValue and getColorForMetricValue remain the same) ...
 const getMetricValue = (log, metric) => {
   if (!log || !metric) return null;
   const metricKey = metric.toLowerCase();
@@ -163,13 +159,23 @@ const getColorForMetricValue = (value, metric, thresholds) => {
 
 const coordinatesToWktPolygon = (coords) => {
   if (!Array.isArray(coords) || coords.length < 3) return null;
-  const pointsString = coords.map((p) => `${p.lng} ${p.lat}`).join(", ");
-  const firstPointString = `${coords[0].lng} ${coords[0].lat}`;
+
+  // Safe reader for different coordinate formats
+  const read = (p) => ({
+    lat: typeof p.lat === "function" ? p.lat() : p.lat,
+    lng: typeof p.lng === "function" ? p.lng() : p.lng,
+  });
+
+  const points = coords.map(read);
+  
+  // ✅ FIX: Order must be 'LAT LNG' for your backend
+  const pointsString = points.map((p) => `${p.lat} ${p.lng}`).join(", ");
+  const firstPointString = `${points[0].lat} ${points[0].lng}`;
+  
   return `POLYGON((${pointsString}, ${firstPointString}))`;
 };
 
 const MAP_STYLES = {
-  // ... (Styles remain the same) ...
   default: null,
   clean: [
     { featureType: "poi", stylers: [{ visibility: "off" }] },
@@ -236,7 +242,6 @@ export default function HighPerfMap() {
   const [selectedMetric, setSelectedMetric] = useState("rsrp");
   const [selectedSessionData, setSelectedSessionData] = useState(null);
   
-  // Separate states for main logs and neighbour logs
   const [rawLogs, setRawLogs] = useState([]);
   const [neighbourLogs, setNeighbourLogs] = useState([]);
   const [displayedLogs, setDisplayedLogs] = useState([]);
@@ -271,11 +276,8 @@ export default function HighPerfMap() {
   const [appSummary, setAppSummary] = useState(null);
   const [neighbourAppSummary, setNeighbourAppSummary] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-
-  // ✅ State for Legend Filter
   const [legendFilter, setLegendFilter] = useState(null);
 
-  // Combined logs with metric value and color pre-computed
   const combinedDisplayedLogs = useMemo(() => {
     const processLogs = (logs, isNeighbour) => {
       return logs.map(log => {
@@ -302,27 +304,20 @@ export default function HighPerfMap() {
     return mainLogsProcessed;
   }, [displayedLogs, displayedNeighbourLogs, ui.showNeighbours, selectedMetric, thresholds]);
 
-  // ✅ NEW: Apply Legend Filter specifically for the Map Layer
   const mapVisibleLogs = useMemo(() => {
-    // If no filter, show everything
     if (!legendFilter) return combinedDisplayedLogs;
 
     return combinedDisplayedLogs.filter(log => {
-      // 1. Metric Filter
       if (legendFilter.type === 'metric') {
         const val = log.metricValue;
-        // Strict inequality for max to match previous implementation
         return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
       }
 
-      // 2. PCI Filter
       if (legendFilter.type === 'pci') {
-        // Handle both main pci and neighbor pci
         const val = log.pci || log.Pci || log.PCI;
         return Math.floor(val) === legendFilter.value;
       }
 
-      // 3. Category Filter
       if (legendFilter.type === 'category') {
         const scheme = COLOR_SCHEMES[legendFilter.key];
         let key = "Unknown";
@@ -335,7 +330,6 @@ export default function HighPerfMap() {
             log.band || log.Band || log.neighbourBand || log.neighborBand
           );
         } else if (legendFilter.key === 'band') {
-          // Replicate MapLegend normalization logic for Bands
           const b = String(
             log.neighbourBand || 
             log.neighborBand || 
@@ -354,7 +348,6 @@ export default function HighPerfMap() {
     });
   }, [combinedDisplayedLogs, legendFilter]);
 
-  // Combined app summary
   const combinedAppSummary = useMemo(() => {
     if (ui.showNeighbours) {
       return mergeAppSummaries(appSummary, neighbourAppSummary);
@@ -390,8 +383,6 @@ export default function HighPerfMap() {
       bands: Array.from(bandSet).sort((a, b) => parseInt(a) - parseInt(b)).map(name => ({ id: name, name })),
     };
   }, [rawLogs, neighbourLogs]);
-
-  // ... (fetchThresholds, fetchAllSessions, fetchLogsFromApi, applyLocalFilters, handleFetchLogsForPolygon remain same) ...
 
   useEffect(() => {
     const fetchThresholds = async () => {
@@ -503,7 +494,7 @@ export default function HighPerfMap() {
         if (allPoints.length > 0) fitMapToMostlyLogs(map, allPoints);
       }
 
-      toast.success(`✅ Loaded ${fetchedMainLogs.length} main + ${fetchedNeighbourLogs.length} neighbour logs`);
+      toast.success(`Loaded ${fetchedMainLogs.length} main + ${fetchedNeighbourLogs.length} neighbour logs`);
       return { mainLogs: fetchedMainLogs, neighbourLogs: fetchedNeighbourLogs };
     } catch (error) {
       setRawLogs([]); setNeighbourLogs([]); setDisplayedLogs([]); setDisplayedNeighbourLogs([]);
@@ -574,8 +565,6 @@ export default function HighPerfMap() {
     setUi(u => ({ ...u, showLogsCircles: true, showSessions: false }));
     setShowCoverageHoleOnly(filters.coverageHoleOnly || false);
     setColorBy(filters.colorBy || null);
-    
-    // ✅ Reset legend filter when applying new main filters
     setLegendFilter(null);
 
     let mainLogsToFilter = rawLogs;
@@ -599,7 +588,6 @@ export default function HighPerfMap() {
     setRawLogs([]); setNeighbourLogs([]); setDisplayedLogs([]); setDisplayedNeighbourLogs([]);
     setAnalysis(null); setColorBy(null);
     setAppSummary(null); setNeighbourAppSummary(null);
-    // ✅ Clear legend filter
     setLegendFilter(null);
     setUi((u) => ({ ...u, showHeatmap: false, drawEnabled: false, timeFilterEnabled: false, showLogsCircles: false, showSessions: true }));
     fetchAllSessions();
@@ -673,7 +661,6 @@ export default function HighPerfMap() {
     setMap(null);
   }, []);
 
-  // ... (handleDownloadStatsCsv, handleDownloadRawCsv, handleSavePolygon, handleClearAnalysis remain same) ...
   const handleDownloadStatsCsv = useCallback(() => {
     if (!analysis || !analysis.stats) {
       toast.error("No polygon stats available. Draw a shape first.");
@@ -758,17 +745,25 @@ export default function HighPerfMap() {
       wktString = coordinatesToWktPolygon(geometry.polygon);
     } else if (geometry.type === "rectangle" && geometry.rectangle) {
       const { ne, sw } = geometry.rectangle;
-      const rectCoords = [{ lng: sw.lng, lat: ne.lat }, { lng: ne.lng, lat: ne.lat }, { lng: ne.lng, lat: sw.lat }, { lng: sw.lng, lat: sw.lat }];
-      wktString = coordinatesToWktPolygon(rectCoords);
+const rectCoords = [
+      { lat: ne.lat, lng: sw.lng },
+      { lat: ne.lat, lng: ne.lng },
+      { lat: sw.lat, lng: ne.lng },
+      { lat: sw.lat, lng: sw.lng }
+    ];
+          wktString = coordinatesToWktPolygon(rectCoords);
     } else if (geometry.type === "circle" && geometry.circle) {
       const { center, radius } = geometry.circle;
       const circleCoords = [];
       const numPoints = 32;
       for (let i = 0; i < numPoints; i++) {
-        const angle = (i / numPoints) * 360;
-        const latOffset = (radius / 111111) * Math.cos((angle * Math.PI) / 180);
-        const lngOffset = (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) * Math.sin((angle * Math.PI) / 180);
-        circleCoords.push({ lat: center.lat + latOffset, lng: center.lng + lngOffset });
+        const angle = (i / numPoints) * Math.PI * 2;
+        const latOffset = (radius / 111111) * Math.cos(angle);
+        const lngOffset = (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) * Math.sin(angle);
+        const lat = Math.max(-90, Math.min(90, center.lat + latOffset));
+      const lng = center.lng + lngOffset;
+      
+      circleCoords.push({ lat, lng });
       }
       wktString = coordinatesToWktPolygon(circleCoords);
     }
@@ -866,7 +861,6 @@ export default function HighPerfMap() {
           {activeFilters && combinedDisplayedLogs.length > 0 && (
             <LogCirclesLayer
               map={map}
-              // ✅ Pass the filtered logs to the map layer
               logs={mapVisibleLogs}
               selectedMetric={selectedMetric}
               thresholds={thresholds}
@@ -893,7 +887,6 @@ export default function HighPerfMap() {
             <DrawingToolsLayer
               map={map}
               enabled={ui.drawEnabled}
-              // ✅ Pass filtered logs to drawing tools so stats match what is seen
               logs={mapVisibleLogs}
               selectedMetric={selectedMetric}
               thresholds={thresholds}
@@ -909,7 +902,6 @@ export default function HighPerfMap() {
           )}
         </GoogleMap>
 
-        {/* ✅ Pass activeFilter state and ALL logs to MapLegend */}
         {activeFilters && (ui.showLogsCircles || ui.showHeatmap) && (
           <MapLegend
             thresholds={thresholds}
@@ -921,10 +913,8 @@ export default function HighPerfMap() {
           />
         )}
 
-        {/* Stats Panel ... (remains the same) */}
         {analysis && (
           <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[260px] border border-gray-200">
-            {/* ... Content of Stats Panel ... */}
             <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
               <h3 className="font-semibold text-white text-sm">
                 {selectedMetric.toUpperCase()} Analysis

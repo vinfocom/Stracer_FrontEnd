@@ -1148,7 +1148,6 @@ const UnifiedMapView = () => {
       // Listen for manual map type changes (Satellite/Hybrid/Roadmap)
       map.addListener("maptypeid_changed", () => {
         const currentType = map.getMapTypeId();
-        console.log("[Map] Type changed to:", currentType); // Helpful for debugging
         setUi((prev) => {
           // Sync the React state to the native Map state immediately
           if (prev.basemapStyle === currentType) return prev;
@@ -1522,6 +1521,7 @@ const UnifiedMapView = () => {
               locations={finalDisplayLocations}
               thresholds={effectiveThresholds}
               selectedMetric={selectedMetric}
+              areaData={areaData}
               technologyTransitions={technologyTransitions}
               techHandOver={techHandOver}
               colorBy={colorBy}

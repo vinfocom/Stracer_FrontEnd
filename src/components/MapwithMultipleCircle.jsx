@@ -160,27 +160,58 @@ const AGGREGATION_METHODS = {
 };
 
 // ============== WKT Parser ==============
+// src/components/MapwithMultipleCircle.jsx
+
+// src/components/MapwithMultipleCircle.jsx
+
+// src/components/MapwithMultipleCircle.jsx
+
 const parseWKTToPolygons = (wkt) => {
   if (!wkt?.trim()) return [];
+  
+  // 🔍 Add this log to verify the order in your console
+  console.log("📥 PARSING WKT:", wkt);
+
   try {
     const match = wkt.trim().match(/POLYGON\s*\(\(([^)]+)\)\)/i);
     if (!match) return [];
     const coords = match[1].split(",");
-    const points = new Array(coords.length);
-    let count = 0;
+    const points = [];
     
     for (let i = 0; i < coords.length; i++) {
       const parts = coords[i].trim().split(/\s+/);
-      const lng = parseFloat(parts[0]);
-      const lat = parseFloat(parts[1]);
+      const val1 = parseFloat(parts[0]);
+      const val2 = parseFloat(parts[1]);
+      
+      let lat, lng;
+
+      // ✅ IMPROVED HEURISTIC: 
+      // In India, Latitude is ~28 and Longitude is ~77.
+      // If the first value is > 40 AND the second is < 40, it's definitely [LNG, LAT].
+      // Otherwise, we default to the backend's expected [LAT, LNG] swap.
+      if (Math.abs(val1) > 40 && Math.abs(val2) < 40) {
+        lng = val1;
+        lat = val2;
+      } else if (Math.abs(val1) < 40 && Math.abs(val2) > 40) {
+        lat = val1;
+        lng = val2;
+      } else if (Math.abs(val1) > 90) {
+        lng = val1;
+        lat = val2;
+      } else {
+        // Fallback to the order you defined in SessionMapDebug (LAT LNG)
+        lat = val1;
+        lng = val2;
+      }
+
       if (!isNaN(lat) && !isNaN(lng)) {
-        points[count++] = { lat, lng };
+        points.push({ lat, lng });
       }
     }
     
-    points.length = count;
-    return count >= 3 ? [points] : [];
-  } catch {
+    return points.length >= 3 ? [points] : [];
+  } catch (err) {
+    console.error("WKT Parse Error:", err);
     return [];
   }
 };
@@ -607,6 +638,7 @@ const MapWithMultipleCircles = ({
   isLoaded,
   loadError,
   showNumCells = false,
+  areaData = [],
   locations = [],
   selectedMetric = "rsrp",
   colorBy = null,
@@ -1079,7 +1111,8 @@ const MapWithMultipleCircles = ({
   
   if (!isLoaded) return null;
 
-  const showPoints = showPointsProp && !enableGrid && !areaEnabled;
+  // const showPoints = showPointsProp && !enableGrid && !areaEnabled;
+  const showPoints = showPointsProp;
   const isLoadingPolygons = enablePolygonFilter && !polygonsFetched && projectId;
 
   return (
@@ -1112,6 +1145,21 @@ const MapWithMultipleCircles = ({
           />
         ))}
 
+
+        {areaEnabled && areaData.map((zone) => (
+         <PolygonF
+           key={zone.uid}
+           paths={zone.paths} // This is the array of points from your hook
+           options={{
+             fillColor: "#3b82f6",
+             fillOpacity: 0.2,
+             strokeColor: "#2563eb",
+             strokeWeight: 2,
+             zIndex: 5
+           }}
+         />
+       ))}
+       
         {/* Grid cells */}
         {enableGrid && gridCells.map((cell) => (
           <RectangleF

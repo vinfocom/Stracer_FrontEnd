@@ -1,24 +1,19 @@
-import { string } from "prop-types";
-
-// Hash function to generate consistent color from string
 const stringToColor = (str) => {
   if (!str) return "#a8a6a2";
   
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   
-  // Generate HSL color for better distribution
   const hue = Math.abs(hash % 360);
-  const saturation = 65 + (Math.abs(hash) % 20); // 65-85%
-  const lightness = 45 + (Math.abs(hash) % 15);  // 45-60%
+  const saturation = 65 + (Math.abs(hash) % 20);
+  const lightness = 45 + (Math.abs(hash) % 15);
   
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 };
 
-// Alternative: Generate hex color
 const stringToHexColor = (str) => {
   if (!str) return "#a8a6a2";
   
@@ -36,11 +31,38 @@ const stringToHexColor = (str) => {
   return color;
 };
 
-// Cache for dynamically generated colors
+const DYNAMIC_COLOR_PALETTE = [
+  "#FF5733", "#33FF57", "#3357FF", "#FF33A1", "#A133FF",
+  "#33FFF5", "#FFD133", "#FF8C33", "#8CFF33", "#338CFF",
+  "#FF3333", "#33FF8C", "#5733FF", "#FF33D1", "#33FFD1",
+  "#D1FF33", "#FF6633", "#66FF33", "#3366FF", "#FF3366",
+  "#C70039", "#900C3F", "#581845", "#1A5276", "#148F77",
+  "#D4AC0D", "#AF601A", "#6C3483", "#1E8449", "#2874A6",
+  "#CB4335", "#7D3C98", "#2E86C1", "#17A589", "#D68910",
+  "#BA4A00", "#8E44AD", "#3498DB", "#16A085", "#F39C12",
+];
+
 const dynamicColorCache = {
   provider: {},
   technology: {},
   band: {}
+};
+
+const hashString = (str) => {
+  let hash = 0;
+  const normalizedStr = String(str || "").toLowerCase().trim();
+  for (let i = 0; i < normalizedStr.length; i++) {
+    const char = normalizedStr.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+};
+
+const generateColorFromHash = (str) => {
+  const hash = hashString(str);
+  const index = hash % DYNAMIC_COLOR_PALETTE.length;
+  return DYNAMIC_COLOR_PALETTE[index];
 };
 
 export const normalizeProviderName = (rawName) => {
@@ -77,6 +99,42 @@ export const normalizeProviderName = (rawName) => {
 
   if (cleaned.includes("BSNL")) {
     return "BSNL";
+  }
+
+  if (
+    cleaned === "466001" ||
+    cleaned.includes("FAREASTONE") ||
+    cleaned.includes("FAREASTONE") ||
+    cleaned.includes("EASTONE") ||
+    cleaned.includes("遠傳電信")
+  ) {
+    return "Far Eastone";
+  }
+
+  if (
+    cleaned === "466097" ||
+    cleaned.includes("TWMOBILE") ||
+    cleaned.includes("TAIWANMOBILE") ||
+    cleaned.includes("台灣大哥大")
+  ) {
+    return "TW Mobile";
+  }
+
+  if (
+    cleaned === "466092" ||
+    cleaned.includes("CHUNGHWA") ||
+    cleaned.includes("中華電信")
+  ) {
+    return "Chunghwa Telecom";
+  }
+
+  if (
+    cleaned === "466005" ||
+    cleaned.includes("APTG") ||
+    cleaned.includes("ASIAPACIFIC") ||
+    cleaned.includes("亞太電信")
+  ) {
+    return "APTG";
   }
 
   return s;
@@ -147,7 +205,10 @@ export const COLOR_SCHEMES = {
     "VI India": "#22C55E",
     BSNL: "#F59E0B",
     Yas: "#7d1b49",
-    台灣大哥大: "#4400e2ff",
+    "Far Eastone": "#00b4d8ff",
+    "TW Mobile": "#f77f00ff",
+    "Chunghwa Telecom": "#e63946ff",
+    "APTG": "#2a9d8fff",
     Unknown: "#a8a6a2",
   },
   technology: {
@@ -187,7 +248,6 @@ export const COLOR_SCHEMES = {
   },
 };
 
-// Main function with dynamic color generation
 export const getLogColor = (colorBy, value, defaultColor = "#a8a6a2") => {
   if (!colorBy || !value) {
     return defaultColor;
@@ -200,7 +260,6 @@ export const getLogColor = (colorBy, value, defaultColor = "#a8a6a2") => {
 
   let normalizedValue = String(value).trim();
 
-  // Normalize based on type
   if (colorBy === "provider") {
     normalizedValue = normalizeProviderName(value);
   } else if (colorBy === "technology") {
@@ -213,17 +272,14 @@ export const getLogColor = (colorBy, value, defaultColor = "#a8a6a2") => {
     }
   }
 
-  // Return Unknown color if normalized value is null/Unknown
   if (!normalizedValue || normalizedValue === "Unknown") {
     return scheme["Unknown"] || defaultColor;
   }
 
-  // Check predefined color scheme
   if (scheme[normalizedValue]) {
     return scheme[normalizedValue];
   }
 
-  // Case-insensitive match
   const matchKey = Object.keys(scheme).find(
     (key) => key.toLowerCase() === normalizedValue.toLowerCase()
   );
@@ -232,12 +288,8 @@ export const getLogColor = (colorBy, value, defaultColor = "#a8a6a2") => {
     return scheme[matchKey];
   }
 
-  // 🎨 Generate dynamic color for new operators/values
-  const cacheKey = `${colorBy}_${normalizedValue}`;
-  
   if (!dynamicColorCache[colorBy][normalizedValue]) {
-    dynamicColorCache[colorBy][normalizedValue] = stringToColor(normalizedValue);
-    console.log(`🎨 Generated dynamic color for ${colorBy}: ${normalizedValue} → ${dynamicColorCache[colorBy][normalizedValue]}`);
+    dynamicColorCache[colorBy][normalizedValue] = generateColorFromHash(normalizedValue);
   }
 
   return dynamicColorCache[colorBy][normalizedValue];
@@ -258,12 +310,22 @@ export const getBandColor = (band) => {
   return getLogColor("band", normalized, "#a8a6a2");
 };
 
-// Export cache for debugging/inspection
 export const getDynamicColorCache = () => dynamicColorCache;
 
-// Optional: Clear cache function
 export const clearDynamicColorCache = () => {
   dynamicColorCache.provider = {};
   dynamicColorCache.technology = {};
   dynamicColorCache.band = {};
+};
+
+export const registerColor = (colorBy, value, color) => {
+  if (dynamicColorCache[colorBy]) {
+    dynamicColorCache[colorBy][value] = color;
+  }
+};
+
+export const getAllRegisteredColors = (colorBy) => {
+  const predefined = COLOR_SCHEMES[colorBy] || {};
+  const dynamic = dynamicColorCache[colorBy] || {};
+  return { ...predefined, ...dynamic };
 };

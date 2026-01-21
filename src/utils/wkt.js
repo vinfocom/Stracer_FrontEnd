@@ -1,9 +1,13 @@
 
 function toLatLng(pair) {
-  const [x, y] = pair.trim().split(/\s+/).map(Number);
-  return Number.isFinite(x) && Number.isFinite(y)
-    ? { lat: y, lng: x } 
-    : null;
+  const parts = pair.trim().split(/\s+/).map(Number);
+  const val1 = parts[0];
+  const val2 = parts[1];
+  
+  // Robust check for India region (Lat ~28, Lng ~77)
+  if (Math.abs(val1) > 40 && Math.abs(val2) < 40) return { lat: val2, lng: val1 }; // Lng Lat
+  if (Math.abs(val1) < 40 && Math.abs(val2) > 40) return { lat: val1, lng: val2 }; // Lat Lng
+  return { lat: val2, lng: val1 }; // Default fallback
 }
 
 

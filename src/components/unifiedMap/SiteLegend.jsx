@@ -6,7 +6,10 @@ const SITE_COLORS = [
   { label: 'Jio', color: '#3B82F6' },
   { label: 'Airtel', color: '#EF4444' },
   { label: 'Vi India', color: '#22C55E' },
+  { label: 'Far Eastone', color: '#00b4d8ff' }, // Added
+  { label: 'TW Mobile', color: '#f77f00ff' },   // Added
   { label: 'Yas', color: "#7d1b49" },
+
   { label: 'Unknown', color: '#8B5CF6' },
 ];
 

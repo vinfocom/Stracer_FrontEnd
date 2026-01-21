@@ -89,53 +89,59 @@ const getMetricValue = (log, metric) => {
 };
 
 // Enhanced WKT conversion that supports polygon, rectangle, and circle
+// src/pages/SessionMapDebug.jsx
+
 const geometryToWktPolygon = (geometry) => {
   if (!geometry) return null;
 
+  // Helper to read coordinates (handles both objects and functions)
+  const read = (p) => ({
+    lat: typeof p.lat === "function" ? p.lat() : p.lat,
+    lng: typeof p.lng === "function" ? p.lng() : p.lng,
+  });
+
+  // ---------- POLYGON ----------
   if (geometry.type === "polygon" && geometry.polygon?.length >= 3) {
-    const pointsString = geometry.polygon
-      .map((p) => `${p.lng} ${p.lat}`)
-      .join(", ");
-    const first = `${geometry.polygon[0].lng} ${geometry.polygon[0].lat}`;
-    return `POLYGON((${pointsString}, ${first}))`;
+    const points = geometry.polygon.map(read);
+    // ✅ SWAP: Send 'LATITUDE LONGITUDE' for SQL Server/C# backend
+    const wktCoords = points.map(p => `${p.lat} ${p.lng}`).join(", ");
+    const first = `${points[0].lat} ${points[0].lng}`;
+    return `POLYGON((${wktCoords}, ${first}))`;
   }
 
+  // ---------- RECTANGLE ----------
   if (geometry.type === "rectangle" && geometry.rectangle) {
-    const { ne, sw } = geometry.rectangle;
+    const ne = read(geometry.rectangle.ne);
+    const sw = read(geometry.rectangle.sw);
     const coords = [
-      { lng: sw.lng, lat: ne.lat },
-      { lng: ne.lng, lat: ne.lat },
-      { lng: ne.lng, lat: sw.lat },
-      { lng: sw.lng, lat: sw.lat },
-      { lng: sw.lng, lat: ne.lat },
+      { lat: ne.lat, lng: sw.lng },
+      { lat: ne.lat, lng: ne.lng },
+      { lat: sw.lat, lng: ne.lng },
+      { lat: sw.lat, lng: sw.lng },
+      { lat: ne.lat, lng: sw.lng }
     ];
-    const pointsString = coords.map((p) => `${p.lng} ${p.lat}`).join(", ");
-    return `POLYGON((${pointsString}))`;
+    return `POLYGON((${coords.map(p => `${p.lat} ${p.lng}`).join(", ")}))`;
   }
 
+  // ---------- CIRCLE ----------
   if (geometry.type === "circle" && geometry.circle) {
-    const { center, radius } = geometry.circle;
+    const center = read(geometry.circle.center);
+    const radius = geometry.circle.radius;
     const points = [];
-    const numPoints = 64;
-    for (let i = 0; i < numPoints; i++) {
-      const angle = (i / numPoints) * Math.PI * 2;
+    for (let i = 0; i <= 64; i++) {
+      const angle = (i / 64) * Math.PI * 2;
       const latOffset = (radius / 111111) * Math.cos(angle);
-      const lngOffset =
-        (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) *
-        Math.sin(angle);
-      points.push({
-        lat: center.lat + latOffset,
-        lng: center.lng + lngOffset,
-      });
+      const lngOffset = (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) * Math.sin(angle);
+      
+      // Clamp latitude to physical bounds
+      const lat = Math.max(-90, Math.min(90, center.lat + latOffset));
+      const lng = center.lng + lngOffset;
+      points.push(`${lat} ${lng}`);
     }
-    points.push(points[0]);
-    const pointsString = points.map((p) => `${p.lng} ${p.lat}`).join(", ");
-    return `POLYGON((${pointsString}))`;
+    return `POLYGON((${points.join(", ")}))`;
   }
-
   return null;
 };
-
 // ============================================
 // ACTIVE FILTERS BAR COMPONENT
 // ============================================
@@ -314,7 +320,7 @@ function MapLegend({ metric = "RSRP", thresholds = null }) {
     </div>
   );
 }
-
+const EMPTY_ARRAY = [];
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -330,6 +336,7 @@ function SessionMapDebug() {
   const [isSaving, setIsSaving] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
   const [sessionMarkers, setSessionMarkers] = useState([]);
+  const [onlyInsidePolygons, setOnlyInsidePolygons] = useState(false);
 
   // Use the color hook
   const {
@@ -356,7 +363,8 @@ function SessionMapDebug() {
   const sessionIdParam =
     searchParams.get("sessionId") || searchParams.get("sessionIds");
   const sessionIds = useMemo(() => {
-    if (!sessionIdParam) return [];
+    
+    if (!sessionIdParam) return EMPTY_ARRAY;
     return sessionIdParam
       .split(",")
       .map((id) => id.trim())
@@ -387,12 +395,11 @@ function SessionMapDebug() {
     error,
     progress: fetchProgress,
     appSummary,
-  } = useNetworkSamples(sessionIds, true);
+  } = useNetworkSamples(sessionIds, true, false, EMPTY_ARRAY);
 
   // Use the Session Neighbors Hook
   const { neighborData, loading: neighborsLoading } = useSessionNeighbors(
-    sessionIds,
-    true
+   sessionIds, true, false, EMPTY_ARRAY
   );
 
   // Update Available Filters and Markers when logs change
@@ -526,6 +533,11 @@ function SessionMapDebug() {
     }
 
     const wktString = geometryToWktPolygon(analysis.geometry);
+    console.log("💾 SAVING POLYGON:", {
+    name: polygonName,
+    wkt: wktString,
+    geometry: analysis.geometry
+  });
     if (!wktString) {
       toast.error("Failed to convert geometry to WKT format.");
       return;

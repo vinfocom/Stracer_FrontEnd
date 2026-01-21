@@ -9,13 +9,22 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isRequestCancelled = (error) => {
   if (!error) return false;
-  if (error.canceled === true) return true;
-  if (error.name === 'AbortError') return true;
-  if (error.name === 'CanceledError') return true;
-  if (error.code === 'ERR_CANCELED') return true;
+  
+  // 1. Check custom property from apiService.js
+  if (error.isCancelled === true) return true;
+  
+  // 2. Check standard Axios/Browser cancellation names
+  if (
+    error.name === 'AbortError' || 
+    error.name === 'CanceledError' || 
+    error.code === 'ERR_CANCELED' ||
+    error.message === 'Request cancelled' // Matches apiService.js message
+  ) {
+    return true;
+  }
+  
   return false;
 };
-
 
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
@@ -95,8 +104,9 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
   const fetchIdRef = useRef(0);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-    const fetchKey = sessionIds?.sort().join(',') || '';
-    
+const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
+
+
     if (!forceRefresh && fetchKey === lastFetchedKeyRef.current && locations.length > 0) return;
     if (!sessionIds?.length || !enabled) {
       setLocations([]);

@@ -41,6 +41,10 @@ function getColorForNetwork(network) {
     "JIO4G": "#3B82F6",
     "IND-JIO": "#3B82F6",
     "jio": "#3B82F6",
+    "Far Eastone": "#00b4d8ff",
+    "TW Mobile": "#f77f00ff",
+    "FAR EASTONE": "#00b4d8ff",
+    "TW MOBILE": "#f77f00ff",
     
     
     "IND airtel": "#EF4444",
@@ -89,6 +93,8 @@ function getColorForNetwork(network) {
   if (lowerNetwork.includes("airtel")) return "#EF4444";
   if (lowerNetwork.includes("vi") || lowerNetwork.includes("vodafone")) return "#22C55E";
   if (lowerNetwork.includes("bsnl")) return "#F59E0B";
+  if (lowerNetwork.includes("eastone")) return "#00b4d8ff";
+  if (lowerNetwork.includes("mobile") && lowerNetwork.includes("tw")) return "#f77f00ff";
 
   // Return a visible color instead of gray
   console.log(" Unknown operator:", networkStr, "using purple");

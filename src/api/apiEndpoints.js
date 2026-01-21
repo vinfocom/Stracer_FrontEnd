@@ -106,11 +106,9 @@ export const cellSiteApi = {
   },
   verifyProject: async (projectId) => {
     try {
-      console.log(`🔍 Verifying project ${projectId} exists...`);
       const response = await pythonApi.get(
         `/api/cell-site/verify-project/${projectId}`
       );
-      console.log("✅ Project verification response:", response);
       return response;
     } catch (error) {
       console.error("❌ Project verification failed:", error);
@@ -123,16 +121,8 @@ export const cellSiteApi = {
    */
   uploadSite: async (formData, onUploadProgress = null) => {
     try {
-      console.log("📤 Uploading site file...");
 
-      // Log FormData contents
-      for (let [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          console.log(`  ${key}: ${value.name} (${value.size} bytes)`);
-        } else {
-          console.log(`  ${key}: ${value}`);
-        }
-      }
+      
 
       const response = await pythonApi.post("/api/process-and-save", formData, {
         timeout: 300000, // 5 minutes
@@ -142,11 +132,9 @@ export const cellSiteApi = {
             const percentCompleted = Math.round(
               (progressEvent.loaded * 100) / progressEvent.total
             );
-            console.log(`Upload Progress: ${percentCompleted}%`);
           }),
       });
 
-      console.log("✅ Site upload response:", response);
       return response;
     } catch (error) {
       console.error("❌ Cell Site upload error:", error);

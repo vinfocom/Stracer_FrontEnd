@@ -1,42 +1,57 @@
 // src/components/maps/DeckGLOverlay.jsx
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
-// ✅ FIX: Import TextLayer here
 import { ScatterplotLayer, PolygonLayer, TextLayer } from '@deck.gl/layers';
 
-// Convert meters to degrees for square bounds
-const metersToLatDeg = (meters) => meters / 111320;
-const metersToLngDeg = (meters, lat) => meters / (111320 * Math.cos((lat * Math.PI) / 180));
+// ✅ ROBUST COLOR PARSER (Handles Hex and HSL)
+const parseColorToRGB = (colorStr) => {
+  if (!colorStr || typeof colorStr !== 'string') return [128, 128, 128, 200];
 
-// Generate square polygon coordinates
-const getSquarePolygon = (lat, lng, sizeMeters) => {
-  const halfLatDeg = metersToLatDeg(sizeMeters / 2);
-  const halfLngDeg = metersToLngDeg(sizeMeters / 2, lat);
-  
-  return [
-    [lng - halfLngDeg, lat - halfLatDeg],
-    [lng + halfLngDeg, lat - halfLatDeg],
-    [lng + halfLngDeg, lat + halfLatDeg],
-    [lng - halfLngDeg, lat + halfLatDeg],
-    [lng - halfLngDeg, lat - halfLatDeg], // Close the polygon
-  ];
-};
+  // 1. Handle HSL (used for dynamic providers)
+  if (colorStr.startsWith('hsl')) {
+    const values = colorStr.match(/\d+/g);
+    if (values && values.length >= 3) {
+      const h = parseInt(values[0]) / 360;
+      const s = parseInt(values[1]) / 100;
+      const l = parseInt(values[2]) / 100;
 
-// Parse hex color to RGB array
-const hexToRgb = (hex) => {
-  if (!hex || typeof hex !== 'string') return [128, 128, 128, 200];
-  
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (result) {
+      let r, g, b;
+      if (s === 0) {
+        r = g = b = l;
+      } else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255), 200];
+    }
+  }
+
+  // 2. Handle Hex
+  const hexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(colorStr);
+  if (hexMatch) {
     return [
-      parseInt(result[1], 16),
-      parseInt(result[2], 16),
-      parseInt(result[3], 16),
-      200, // Alpha
+      parseInt(hexMatch[1], 16),
+      parseInt(hexMatch[2], 16),
+      parseInt(hexMatch[3], 16),
+      200
     ];
   }
-  return [128, 128, 128, 200];
+
+  return [128, 128, 128, 200]; // Fallback Gray
 };
+
+// ... keep metersToLatDeg and getSquarePolygon ...
 
 const DeckGLOverlay = ({
   map,
@@ -50,34 +65,23 @@ const DeckGLOverlay = ({
   radiusMinPixels = 2,
   radiusMaxPixels = 40,
   showPrimaryLogs = true,
-  
-  // Neighbor locations (squares)
   neighbors = [],
   getNeighborColor,
-  neighborSquareSize = 25, // meters
+  neighborSquareSize = 25,
   neighborOpacity = 0.7,
   onNeighborClick,
   showNeighbors = true,
-  
-  // Shared
   pickable = true,
   autoHighlight = true,
 }) => {
   const overlayRef = useRef(null);
-  const layersRef = useRef([]);
 
-  // Initialize overlay
   useEffect(() => {
     if (!map) return;
-
     if (!overlayRef.current) {
-      overlayRef.current = new GoogleMapsOverlay({
-        interleaved: true,
-      });
+      overlayRef.current = new GoogleMapsOverlay({ interleaved: true });
     }
-
     overlayRef.current.setMap(map);
-
     return () => {
       if (overlayRef.current) {
         overlayRef.current.setMap(null);
@@ -87,181 +91,99 @@ const DeckGLOverlay = ({
     };
   }, [map]);
 
-  // Handle primary location click
-  const handlePrimaryClick = useCallback((info, event) => {
-    if (info.object && onClick) {
-      onClick(info.index, info.object);
-    }
+  const handlePrimaryClick = useCallback((info) => {
+    if (info.object && onClick) onClick(info.index, info.object);
   }, [onClick]);
 
-  // Handle neighbor click
-  const handleNeighborClick = useCallback((info, event) => {
-    if (info.object && onNeighborClick) {
-      onNeighborClick(info.object);
-    }
+  const handleNeighborClick = useCallback((info) => {
+    if (info.object && onNeighborClick) onNeighborClick(info.object);
   }, [onNeighborClick]);
 
-  // Memoize primary locations data
+  // Pre-compute colors in memo to avoid repeat parsing
   const primaryData = useMemo(() => {
     if (!showPrimaryLogs || !locations?.length) return [];
-    
     return locations.map((loc, idx) => ({
       ...loc,
       index: idx,
       position: [loc.lng, loc.lat],
-      color: getColor ? hexToRgb(getColor(loc)) : [16, 185, 129, 200],
+      // ✅ Use new robust parser
+      computedColor: getColor ? parseColorToRGB(getColor(loc)) : [16, 185, 129, 200],
     }));
   }, [locations, showPrimaryLogs, getColor]);
 
-  // Memoize neighbor data with pre-computed polygons
   const neighborData = useMemo(() => {
     if (!showNeighbors || !neighbors?.length) return [];
-    
     return neighbors.map((n, idx) => ({
       ...n,
       index: idx,
       polygon: getSquarePolygon(n.lat, n.lng, neighborSquareSize),
-      color: getNeighborColor ? hexToRgb(getNeighborColor(n)) : [139, 92, 246, 180],
+      // ✅ Use new robust parser
+      computedColor: getNeighborColor ? parseColorToRGB(getNeighborColor(n)) : [139, 92, 246, 180],
     }));
   }, [neighbors, showNeighbors, neighborSquareSize, getNeighborColor]);
 
-  // Create and update layers
   useEffect(() => {
     if (!overlayRef.current || !map) return;
 
     const layers = [];
 
-    // Neighbor locations layer (Squares)
     if (showNeighbors && neighborData.length > 0) {
-      const polygonLayer = new PolygonLayer({
+      layers.push(new PolygonLayer({
         id: 'neighbor-logs-layer',
         data: neighborData,
         getPolygon: d => d.polygon,
-        getFillColor: d => d.color,
-        getLineColor: d => {
-          const c = d.color;
-          return [c[0], c[1], c[2], 220]; // Slightly more opaque for border
-        },
+        getFillColor: d => d.computedColor, // ✅ Use pre-computed color
+        getLineColor: d => [d.computedColor[0], d.computedColor[1], d.computedColor[2], 220],
         getLineWidth: 1,
         lineWidthMinPixels: 1,
-        lineWidthMaxPixels: 3,
         filled: true,
         stroked: true,
         opacity: neighborOpacity,
         pickable,
         autoHighlight,
-        highlightColor: [255, 255, 0, 180],
         onClick: handleNeighborClick,
-        updateTriggers: {
-          getFillColor: [getNeighborColor],
-          getPolygon: [neighborSquareSize],
-        },
-        // Performance optimizations
-        parameters: {
-          depthTest: false,
-        },
-      });
-      layers.push(polygonLayer);
+      }));
     }
 
-    // Primary locations layer (Circles)
     if (showPrimaryLogs && primaryData.length > 0) {
-      const scatterLayer = new ScatterplotLayer({
+      layers.push(new ScatterplotLayer({
         id: 'primary-logs-layer',
         data: primaryData,
         getPosition: d => d.position,
-        getFillColor: d => d.color,
-        getRadius: d => d.index === selectedIndex ? radius * 1 : radius,
+        getFillColor: d => d.computedColor, // ✅ FIX: Use pre-computed color instead of undefined parseColor
+        getRadius: d => d.index === selectedIndex ? radius * 1.5 : radius,
         radiusMinPixels,
         radiusMaxPixels,
         opacity,
         pickable,
         autoHighlight,
-        highlightColor: [255, 255, 0, 200],
         onClick: handlePrimaryClick,
         updateTriggers: {
           getFillColor: [getColor],
           getRadius: [selectedIndex, radius],
         },
-        // Performance optimizations
-        parameters: {
-          depthTest: false,
-        },
-        extensions: [],
-      });
-      layers.push(scatterLayer);
+      }));
 
-      // ✅ Text Layer for Num Cells
       if (showNumCells) {
-        const textLayer = new TextLayer({
+        layers.push(new TextLayer({
           id: 'primary-logs-text-layer',
           data: primaryData,
           getPosition: d => d.position,
-          getText: d => d.num_cells ? String(d.num_cells) : '', // Ensure string
-          getSize: 14, // Slightly larger font for visibility
-          getColor: [0, 0, 0, 255], // Black text
-          getAngle: 0,
+          getText: d => d.num_cells ? String(d.num_cells) : '',
+          getSize: 14,
+          getColor: [0, 0, 0, 255],
           getTextAnchor: 'middle',
           getAlignmentBaseline: 'center',
-          fontFamily: 'Arial, sans-serif',
-          fontWeight: 'bold',
-          pickable: false, // Let clicks pass through to circles
-          billboard: true, // Face camera
           background: true,
-          getBackgroundColor: [255, 255, 255, 200], // Semi-transparent white background
-          backgroundPadding: [2, 2],
-          updateTriggers: {
-            getText: [showNumCells]
-          }
-        });
-        layers.push(textLayer);
+          getBackgroundColor: [255, 255, 255, 200],
+        }));
       }
     }
 
-    layersRef.current = layers;
     overlayRef.current.setProps({ layers });
+  }, [map, primaryData, neighborData, showPrimaryLogs, showNeighbors, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor]);
 
-    // Log performance info in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DeckGLOverlay] Layers updated:', {
-        primaryCount: primaryData.length,
-        neighborCount: neighborData.length,
-        totalLayers: layers.length,
-        showNumCells
-      });
-    }
-  }, [
-    map, 
-    primaryData, 
-    neighborData, 
-    showPrimaryLogs, 
-    showNeighbors,
-    selectedIndex, 
-    radius, 
-    radiusMinPixels, 
-    radiusMaxPixels, 
-    opacity,
-    neighborOpacity,
-    neighborSquareSize,
-    pickable, 
-    showNumCells, // ✅ Added to dependency array
-    autoHighlight,
-    handlePrimaryClick,
-    handleNeighborClick,
-    getColor,
-    getNeighborColor,
-  ]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (overlayRef.current) {
-        overlayRef.current.setProps({ layers: [] });
-      }
-    };
-  }, []);
-
-  return null; // This component doesn't render DOM elements
+  return null;
 };
 
 export default React.memo(DeckGLOverlay);

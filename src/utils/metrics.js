@@ -1,6 +1,3 @@
-// src/utils/metrics.js
-
-// ✅ PCI Color Palette - 20 distinct colors
 export const PCI_COLOR_PALETTE = [
   "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
   "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B739", "#52BE80",
@@ -8,124 +5,179 @@ export const PCI_COLOR_PALETTE = [
   "#E74C3C", "#3498DB", "#E67E22", "#9B59B6", "#1ABC9C",
 ];
 
-// ✅ Color schemes for "Color By" options (Provider, Technology, Band)
+export const DYNAMIC_PROVIDER_PALETTE = [
+  "#FF5733", "#33FF57", "#3357FF", "#FF33A1", "#A133FF",
+  "#33FFF5", "#FFD133", "#FF8C33", "#8CFF33", "#338CFF",
+  "#FF3333", "#33FF8C", "#5733FF", "#FF33D1", "#33FFD1",
+  "#D1FF33", "#FF6633", "#66FF33", "#3366FF", "#FF3366",
+  "#C70039", "#900C3F", "#581845", "#1A5276", "#148F77",
+  "#D4AC0D", "#AF601A", "#6C3483", "#1E8449", "#2874A6",
+  "#CB4335", "#7D3C98", "#2E86C1", "#17A589", "#D68910",
+  "#BA4A00", "#8E44AD", "#3498DB", "#16A085", "#F39C12",
+];
+
+const dynamicProviderColors = new Map();
+
+const hashString = (str) => {
+  let hash = 0;
+  const normalizedStr = String(str || "").toLowerCase().trim();
+  for (let i = 0; i < normalizedStr.length; i++) {
+    const char = normalizedStr.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+};
+
+const generateColorFromHash = (str) => {
+  const hash = hashString(str);
+  const index = hash % DYNAMIC_PROVIDER_PALETTE.length;
+  return DYNAMIC_PROVIDER_PALETTE[index];
+};
+
+export const getProviderColor = (providerName) => {
+  if (!providerName) return "#6B7280";
+  
+  const normalized = String(providerName).toLowerCase().trim();
+  
+  const scheme = COLOR_SCHEMES.provider;
+  const directMatch = Object.keys(scheme).find(
+    (k) => k.toLowerCase() === normalized
+  );
+  
+  if (directMatch) {
+    return scheme[directMatch];
+  }
+  
+  if (dynamicProviderColors.has(normalized)) {
+    return dynamicProviderColors.get(normalized);
+  }
+  
+  const newColor = generateColorFromHash(normalized);
+  dynamicProviderColors.set(normalized, newColor);
+  
+  return newColor;
+};
+
 export const COLOR_SCHEMES = {
   provider: {
     JIO: "#3B82F6", 
     Jio: "#3B82F6",
-    jio: "#3B82F6",       // Blue
-    Airtel: "#EF4444",     // Red
+    jio: "#3B82F6",
+    "Far Eastone": "#00b4d8ff",
+    "Far EasTone": "#00b4d8ff",
+    "far eastone": "#00b4d8ff",
+    "TW Mobile": "#f77f00ff",
+    "FAR EASTONE": "#00b4d8ff",
+    466001: "#fcba03", 
+    "TW MOBILE": "#f77f00ff",
+    Airtel: "#EF4444",
     "IND airtel": "#EF4444",
-    "Vi India": "#22C55E", // Green
+    "Vi India": "#22C55E",
     "VI India": "#22C55E",
-    Yas:"#7d1b49",
-    BSNL: "#F59E0B",       // Amber
+    Yas: "#7d1b49",
+    BSNL: "#F59E0B",
     Unknown: "#6B7280",
-    台灣大哥大: "#4400e2ff"    // Gray
+    "台灣大哥大": "#4400e2ff"
   },
   technology: {
-    "5G": "#EC4899",       // Pink
+    "5G": "#EC4899",
     "NR (5G NSA)": "#EC4899",
     "NR (5G SA)": "#EC4899",
-    "4G": "#8B5CF6",       // Purple
+    "4G": "#8B5CF6",
     "LTE": "#8B5CF6",
-    "3G": "#10B981",       // Emerald
-    "2G": "#6B7280",       // Gray
-    Unknown: "#F59E0B",    // Amber
+    "3G": "#10B981",
+    "2G": "#6B7280",
+    Unknown: "#F59E0B",
   },
   band: {
     1: "#EF4444",
-  B1: "#EF4444",
-
-  2: "#F59E0B",
-  B2: "#F59E0B",
-
-  3: "#EF4444",
-  B3: "#EF4444",
-
-  4: "#F59E0B",
-  B4: "#F59E0B",
-
-  5: "#F59E0B",
-  B5: "#F59E0B",
-
-  6: "#EF4444",
-  B6: "#EF4444",
-
-  8: "#10B981",
-  B8: "#10B981",
-
-  9: "#F59E0B",
-  B9: "#F59E0B",
-
-  19: "#EF4444",
-  B19: "#EF4444",
-
-  // ---------- 4G (LTE) ----------
-  7: "#10B981",
-  B7: "#10B981",
-
-  12: "#3B82F6",
-  B12: "#3B82F6",
-
-  13: "#3B82F6",
-  B13: "#3B82F6",
-
-  17: "#3B82F6",
-  B17: "#3B82F6",
-
-  18: "#10B981",
-  B18: "#10B981",
-
-  20: "#3B82F6",
-  B20: "#3B82F6",
-
-  25: "#8B5CF6",
-  B25: "#8B5CF6",
-
-  26: "#8B5CF6",
-  B26: "#8B5CF6",
-
-  28: "#EC4899",
-  B28: "#EC4899",
-
-  38: "#6366F1",
-  B38: "#6366F1",
-
-  39: "#6366F1",
-  B39: "#6366F1",
-
-  40: "#3B82F6",
-  B40: "#3B82F6",
-
-  41: "#8B5CF6",
-  B41: "#8B5CF6",
-
-  // ---------- 5G (already present, kept for compatibility) ----------
-  n28: "#EC4899",
-  n78: "#F472B6",
-
-  // ---------- Fallback ----------
-  Unknown: "#6B7280",
+    B1: "#EF4444",
+    2: "#F59E0B",
+    B2: "#F59E0B",
+    3: "#EF4444",
+    B3: "#EF4444",
+    4: "#F59E0B",
+    B4: "#F59E0B",
+    5: "#F59E0B",
+    B5: "#F59E0B",
+    6: "#EF4444",
+    B6: "#EF4444",
+    8: "#10B981",
+    B8: "#10B981",
+    9: "#F59E0B",
+    B9: "#F59E0B",
+    19: "#EF4444",
+    B19: "#EF4444",
+    7: "#10B981",
+    B7: "#10B981",
+    12: "#3B82F6",
+    B12: "#3B82F6",
+    13: "#3B82F6",
+    B13: "#3B82F6",
+    17: "#3B82F6",
+    B17: "#3B82F6",
+    18: "#10B981",
+    B18: "#10B981",
+    20: "#3B82F6",
+    B20: "#3B82F6",
+    25: "#8B5CF6",
+    B25: "#8B5CF6",
+    26: "#8B5CF6",
+    B26: "#8B5CF6",
+    28: "#EC4899",
+    B28: "#EC4899",
+    38: "#6366F1",
+    B38: "#6366F1",
+    39: "#6366F1",
+    B39: "#6366F1",
+    40: "#3B82F6",
+    B40: "#3B82F6",
+    41: "#8B5CF6",
+    B41: "#8B5CF6",
+    n28: "#EC4899",
+    n78: "#F472B6",
+    Unknown: "#6B7280",
   },
 };
 
-// ✅ Helper to get color for provider/technology/band
 export const getColorByValue = (colorBy, value) => {
+  if (colorBy === 'provider') {
+    return getProviderColor(value);
+  }
+  
   const scheme = COLOR_SCHEMES[colorBy];
   if (!scheme) return "#6B7280";
   
-  // Direct match
   if (scheme[value]) return scheme[value];
   
-  // Case-insensitive match
   const match = Object.keys(scheme).find(
     (k) => k.toLowerCase() === String(value || "").toLowerCase()
   );
   
-  return match ? scheme[match] : scheme["Unknown"] || "#6B7280";
+  if (match) return scheme[match];
+  
+  if (colorBy === 'technology' || colorBy === 'band') {
+    const hash = hashString(value);
+    const index = hash % DYNAMIC_PROVIDER_PALETTE.length;
+    return DYNAMIC_PROVIDER_PALETTE[index];
+  }
+  
+  return scheme["Unknown"] || "#6B7280";
 };
 
+export const getAllDynamicProviderColors = () => {
+  return new Map(dynamicProviderColors);
+};
+
+export const clearDynamicProviderColors = () => {
+  dynamicProviderColors.clear();
+};
+
+export const registerProviderColor = (providerName, color) => {
+  const normalized = String(providerName).toLowerCase().trim();
+  dynamicProviderColors.set(normalized, color);
+};
 
 export const getPciColor = (pciValue) => {
   const numValue = parseFloat(pciValue);
@@ -133,7 +185,6 @@ export const getPciColor = (pciValue) => {
   return PCI_COLOR_PALETTE[Math.abs(Math.floor(numValue)) % PCI_COLOR_PALETTE.length];
 };
 
-// metric 
 export const METRIC_CONFIG = {
   rsrp: {
     thresholdKey: 'rsrp',
@@ -185,7 +236,6 @@ export const METRIC_CONFIG = {
   },
 };
 
-// ✅ Alias mappings
 const METRIC_ALIASES = {
   'dl_tpt': 'dl_thpt',     
   'ul_tpt': 'ul_thpt',     
@@ -193,7 +243,6 @@ const METRIC_ALIASES = {
   'lte-bler': 'lte_bler',
   'mos_score': 'mos',
 };
-
 
 export const getMetricConfig = (metric) => {
   if (!metric) {
@@ -217,13 +266,9 @@ export const getMetricConfig = (metric) => {
     return { ...METRIC_CONFIG[matchedKey], key: matchedKey };
   }
 
-  console.warn(`[metrics] Unknown metric: "${metric}"`);
   return { ...METRIC_CONFIG.rsrp, key: 'rsrp' };
 };
 
-/**
- * Legacy function - ensures backward compatibility
- */
 export const resolveMetricConfig = (key) => {
   const config = getMetricConfig(key);
   return {
@@ -234,9 +279,6 @@ export const resolveMetricConfig = (key) => {
   };
 };
 
-/**
- * Extract metric value from log - handles strings and numbers
- */
 export const getMetricValueFromLog = (log, metric) => {
   if (!log) return NaN;
 
@@ -256,11 +298,7 @@ export const getMetricValueFromLog = (log, metric) => {
   return NaN;
 };
 
-/**
- * Get color for metric value based on thresholds
- */
 export const getColorForMetric = (metric, value, thresholds) => {
-  
   if (String(metric).toLowerCase() === 'pci') {
     return getPciColor(value);
   }

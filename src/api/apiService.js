@@ -196,6 +196,8 @@ const redirectToLogin = () => {
 // ============================================
 // API SERVICE WITH QUEUE
 // ============================================
+// src/api/apiService.js
+
 const apiService = async (endpoint, options = {}) => {
   const { priority = 0, dedupe = true, ...axiosOptions } = options;
   
@@ -204,9 +206,15 @@ const apiService = async (endpoint, options = {}) => {
     return response.status === 204 ? null : response.data;
   };
 
-  // Use queue for non-priority requests
   if (priority === 0) {
-    const cacheKey = `${axiosOptions.method || 'GET'}:${endpoint}`;
+    // ✅ FIX: Create a unique key that includes parameters/data
+    // This prevents "Network Logs" from sharing a promise with "Neighbors"
+    const cacheKey = JSON.stringify({
+      method: axiosOptions.method || 'GET',
+      endpoint,
+      params: axiosOptions.params,
+      data: axiosOptions.data
+    });
     
     if (dedupe) {
       return dedupeRequest(cacheKey, () => requestQueue.add(makeRequest, priority));
@@ -215,7 +223,6 @@ const apiService = async (endpoint, options = {}) => {
     return requestQueue.add(makeRequest, priority);
   }
 
-  // High priority requests bypass the queue
   return makeRequest();
 };
 

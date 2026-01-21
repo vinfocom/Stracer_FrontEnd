@@ -5,13 +5,24 @@ import { mapViewApi } from '@/api/apiEndpoints';
 import { normalizeProviderName, normalizeTechName } from '@/utils/colorUtils';
 
 // ✅ FIX 1: Robust cancellation check including Axios 'CanceledError'
-const isRequestCancelled = (err) => 
-  err?.name === 'AbortError' || 
-  err?.canceled === true ||
-  err?.name === 'CanceledError' || 
-  err?.code === 'ERR_CANCELED';
-
-
+const isRequestCancelled = (error) => {
+  if (!error) return false;
+  
+  // 1. Check custom property from apiService.js
+  if (error.isCancelled === true) return true;
+  
+  // 2. Check standard Axios/Browser cancellation names
+  if (
+    error.name === 'AbortError' || 
+    error.name === 'CanceledError' || 
+    error.code === 'ERR_CANCELED' ||
+    error.message === 'Request cancelled' // Matches apiService.js message
+  ) {
+    return true;
+  }
+  
+  return false;
+};
   const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
   if (!path?.length) return false;
@@ -44,8 +55,8 @@ export const useSessionNeighbors = (sessionIds, enabled = true, filterEnabled = 
   const currentFetchingKeyRef = useRef(null);
 
   const fetchData = useCallback(async (force = false) => {
-    const fetchKey = sessionIds?.sort().join(',') || '';
-    
+const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
+
     if (!sessionIds?.length || !enabled) {
       if (mountedRef.current) {
         setNeighborData([]);
