@@ -9,10 +9,30 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isRequestCancelled = (error) => {
   if (!error) return false;
+  if (error.canceled === true) return true;
   if (error.name === 'AbortError') return true;
   if (error.name === 'CanceledError') return true;
   if (error.code === 'ERR_CANCELED') return true;
   return false;
+};
+
+
+const isPointInPolygon = (point, polygon) => {
+  const path = polygon?.paths?.[0];
+  if (!path?.length) return false;
+  const lat = point.lat ?? point.latitude;
+  const lng = point.lng ?? point.longitude;
+  if (lat == null || lng == null) return false;
+
+  let inside = false;
+  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+    const { lng: xi, lat: yi } = path[i];
+    const { lng: xj, lat: yj } = path[j];
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
 };
 
 const parseLogEntry = (log, sessionId) => {
@@ -58,7 +78,7 @@ const parseLogEntry = (log, sessionId) => {
   };
 };
 
-export const useNetworkSamples = (sessionIds, enabled = true) => {
+export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = false, polygons = []) => {
   const [locations, setLocations] = useState([]);
   const [appSummary, setAppSummary] = useState({});
   const [inpSummary, setInpSummary] = useState({});
@@ -176,18 +196,29 @@ export const useNetworkSamples = (sessionIds, enabled = true) => {
         }
       }
 
+      let finalLogs = allParsedLogs;
+
+      if (filterEnabled && polygons?.length > 0) {
+        finalLogs = allParsedLogs.filter(log => 
+          polygons.some(poly => isPointInPolygon(log, poly))
+        );
+      }
+
       const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
-      setLocations(allParsedLogs);
+      setLocations(finalLogs); 
       setAppSummary(summaryData.app);
       setInpSummary(summaryData.io);
       setTptVolume(summaryData.tpt);
       lastFetchedKeyRef.current = fetchKey;
+
 
       if (allParsedLogs.length > 0) {
         toast.success(`${allParsedLogs.length.toLocaleString()} points loaded in ${fetchTime}s`);
       } else {
         toast.warn('No valid log data found');
       }
+
+      
 
     } catch (err) {
       if (isRequestCancelled(err)) return;
@@ -205,7 +236,7 @@ export const useNetworkSamples = (sessionIds, enabled = true) => {
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, [sessionIds, enabled]);
+  }, [sessionIds, enabled, filterEnabled, polygons]);
 
   // Handle Technology Transitions Logic
   useEffect(() => {

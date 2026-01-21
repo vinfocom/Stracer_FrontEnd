@@ -187,6 +187,8 @@ const getThresholdKey = (metric) => {
   return mapping[metric?.toLowerCase()] || metric;
 };
 
+// yeh jo polygon logs ko cut karte ki iuske bahar points na bane
+
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
   if (!path?.length) return false;
@@ -585,6 +587,23 @@ const UnifiedMapView = () => {
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
   const { thresholds: baseThresholds, refetch: refetchColors } =
     useColorForLog();
+     const {
+    polygons,
+    loading: polygonLoading,
+    refetch: refetchPolygons,
+  } = useProjectPolygons(projectId, showPolygons, polygonSource);
+
+  // ✅ 5. Use Area Polygons Hook
+  const {
+    areaData, // The hook now returns data from areaBreakdownApi
+    loading: areaLoading,
+    refetch: refetchAreaPolygons,
+  } = useAreaPolygons(projectId, areaEnabled);
+
+    const rawFilteringPolygons = useMemo(() => [
+  ...(showPolygons && polygons ? polygons : []),
+  ...(areaEnabled && areaData ? areaData : [])
+], [showPolygons, polygons, areaEnabled, areaData]);
 
   // ✅ 1. Use Network Samples Hook (replaces local useSampleData)
   const {
@@ -600,6 +619,8 @@ const UnifiedMapView = () => {
   } = useNetworkSamples(
     sessionIds,
     enableDataToggle && dataToggle === "sample",
+    onlyInsidePolygons,
+   rawFilteringPolygons
   );
 
   // ✅ 2. Use Prediction Data Hook
@@ -623,21 +644,10 @@ const UnifiedMapView = () => {
     loading: sessionNeighborLoading,
     error: sessionNeighborError,
     refetch: refetchSessionNeighbors,
-  } = useSessionNeighbors(sessionIds, showSessionNeighbors);
+  } = useSessionNeighbors(sessionIds, showSessionNeighbors, onlyInsidePolygons, rawFilteringPolygons);
 
   // ✅ 4. Use Project Polygons Hook
-  const {
-    polygons,
-    loading: polygonLoading,
-    refetch: refetchPolygons,
-  } = useProjectPolygons(projectId, showPolygons, polygonSource);
-
-  // ✅ 5. Use Area Polygons Hook
-  const {
-    areaData, // The hook now returns data from areaBreakdownApi
-    loading: areaLoading,
-    refetch: refetchAreaPolygons,
-} = useAreaPolygons(projectId, areaEnabled);
+ 
 
   // ✅ 6. Use Site Data (Existing)
   const {
@@ -786,7 +796,7 @@ const UnifiedMapView = () => {
     bestNetworkOptions,
     areaData,
   );
-
+  // filter ke options hai yaha pe
   const availableFilterOptions = useMemo(() => {
     const providers = new Set();
     const bands = new Set();
@@ -1103,7 +1113,7 @@ const UnifiedMapView = () => {
     enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
 
   const locationsToDisplay = useMemo(() => {
-    if (onlyInsidePolygons) return [];
+    // if (onlyInsidePolygons) return [];
     if (!showDataCircles) return [];
     return finalDisplayLocations;
   }, [showDataCircles, finalDisplayLocations, onlyInsidePolygons]);
@@ -1129,41 +1139,41 @@ const UnifiedMapView = () => {
 
   // src/pages/UnifiedMapView.jsx
 
-// src/pages/UnifiedMapView.jsx
+  // src/pages/UnifiedMapView.jsx
 
-const handleMapLoad = useCallback(
-  (map) => {
-    mapRef.current = map;
+  const handleMapLoad = useCallback(
+    (map) => {
+      mapRef.current = map;
 
-    // Listen for manual map type changes (Satellite/Hybrid/Roadmap)
-    map.addListener("maptypeid_changed", () => {
-      const currentType = map.getMapTypeId();
-      console.log("[Map] Type changed to:", currentType); // Helpful for debugging
-      setUi((prev) => {
-        // Sync the React state to the native Map state immediately
-        if (prev.basemapStyle === currentType) return prev;
-        return { ...prev, basemapStyle: currentType };
+      // Listen for manual map type changes (Satellite/Hybrid/Roadmap)
+      map.addListener("maptypeid_changed", () => {
+        const currentType = map.getMapTypeId();
+        console.log("[Map] Type changed to:", currentType); // Helpful for debugging
+        setUi((prev) => {
+          // Sync the React state to the native Map state immediately
+          if (prev.basemapStyle === currentType) return prev;
+          return { ...prev, basemapStyle: currentType };
+        });
       });
-    });
 
-    // Existing Viewport logic...
-    const updateViewport = () => {
-      const bounds = map.getBounds();
-      if (!bounds) return;
-      const newViewport = {
-        north: bounds.getNorthEast().lat(),
-        south: bounds.getSouthWest().lat(),
-        east: bounds.getNorthEast().lng(),
-        west: bounds.getSouthWest().lng(),
+      // Existing Viewport logic...
+      const updateViewport = () => {
+        const bounds = map.getBounds();
+        if (!bounds) return;
+        const newViewport = {
+          north: bounds.getNorthEast().lat(),
+          south: bounds.getSouthWest().lat(),
+          east: bounds.getNorthEast().lng(),
+          west: bounds.getSouthWest().lng(),
+        };
+        debouncedSetViewport(newViewport);
       };
-      debouncedSetViewport(newViewport);
-    };
 
-    map.addListener("idle", updateViewport);
-    updateViewport();
-  },
-  [debouncedSetViewport]
-);
+      map.addListener("idle", updateViewport);
+      updateViewport();
+    },
+    [debouncedSetViewport],
+  );
 
   const handleUIChange = useCallback((newUI) => {
     setUi((prev) => {

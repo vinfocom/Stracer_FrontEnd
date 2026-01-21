@@ -631,7 +631,8 @@ export const mapViewApi = {
       params: { projectId },
     }),
 
-  getProjectPolygonsV2: (projectId, source = "map") =>
+  
+    getProjectPolygonsV2: (projectId, source = "map") =>
     api.get("/api/MapView/GetProjectPolygonsV2", {
       params: { projectId, source },
     }),

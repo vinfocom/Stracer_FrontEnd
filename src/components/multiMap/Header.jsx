@@ -63,8 +63,10 @@ export default function Header({
         <Button  size="sm" className="bg-blue-600 text-white" asChild>
           <Link to="/dashboard">Dashboard</Link>
         </Button>
-        <Button  size="sm" className="bg-blue-600 text-white" asChild>
-          <Link to="/unified-map">Unified Map</Link>
+        <Button size="sm" className="bg-blue-600 text-white" asChild>
+          <Link to={`/unified-map?${searchParams.toString()}`}>
+            Unified Map
+          </Link>
         </Button>
 
         <div className="h-6 w-px bg-gray-300 mx-1" />

@@ -7,10 +7,30 @@ import { normalizeProviderName, normalizeTechName } from '@/utils/colorUtils';
 // ✅ FIX 1: Robust cancellation check including Axios 'CanceledError'
 const isRequestCancelled = (err) => 
   err?.name === 'AbortError' || 
+  err?.canceled === true ||
   err?.name === 'CanceledError' || 
   err?.code === 'ERR_CANCELED';
 
-export const useSessionNeighbors = (sessionIds, enabled = true) => {
+
+  const isPointInPolygon = (point, polygon) => {
+  const path = polygon?.paths?.[0];
+  if (!path?.length) return false;
+  const lat = point.lat ?? point.latitude;
+  const lng = point.lng ?? point.longitude;
+  if (lat == null || lng == null) return false;
+
+  let inside = false;
+  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+    const { lng: xi, lat: yi } = path[i];
+    const { lng: xj, lat: yj } = path[j];
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+};
+
+export const useSessionNeighbors = (sessionIds, enabled = true, filterEnabled = false, polygons = []) => {
   const [neighborData, setNeighborData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -84,13 +104,23 @@ export const useSessionNeighbors = (sessionIds, enabled = true) => {
             };
         }).filter(Boolean);
 
+        let finalNeighbors = formattedData;
+      
+      
+      if (filterEnabled && polygons?.length > 0) {
+          finalNeighbors = formattedData.filter(log => 
+            polygons.some(poly => isPointInPolygon(log, poly))
+          );
+        }
+
         const statsObj = { 
           total: formattedData.length,
           uniquePCIs: new Set(formattedData.map(d => d.primaryPci)).size
         }; 
 
         if (mountedRef.current) {
-          setNeighborData(formattedData);
+          // ✅ FIX: Set finalNeighbors to state
+          setNeighborData(finalNeighbors);
           setStats(statsObj);
           lastFetchKeyRef.current = fetchKey;
         }
