@@ -9,7 +9,8 @@ import React, {
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { mapViewApi } from "../api/apiEndpoints";
-import { ArrowLeft, Download, Save, X, Filter, Loader2 } from "lucide-react";
+import Spinner from "../components/common/Spinner";
+import { ArrowLeft, Download, Save, X, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
@@ -36,7 +37,13 @@ import MapWithMultipleCircles from "@/components/MapwithMultipleCircle";
 // ============================================
 // CONSTANTS & HELPERS
 // ============================================
-const EMPTY_ARRAY = [];
+const containerStyle = {
+  width: "100%",
+  height: "100%",
+  position: "absolute",
+  top: 0,
+  left: 0,
+};
 
 const DEFAULT_CENTER = { lat: 28.6139, lng: 77.209 };
 
@@ -82,23 +89,28 @@ const getMetricValue = (log, metric) => {
   return log[key] ?? log.rsrp ?? -120;
 };
 
+// Enhanced WKT conversion that supports polygon, rectangle, and circle
+// src/pages/SessionMapDebug.jsx
+
 const geometryToWktPolygon = (geometry) => {
   if (!geometry) return null;
 
+  // Helper to read coordinates (handles both objects and functions)
   const read = (p) => ({
     lat: typeof p.lat === "function" ? p.lat() : p.lat,
     lng: typeof p.lng === "function" ? p.lng() : p.lng,
   });
 
-  // POLYGON
+  // ---------- POLYGON ----------
   if (geometry.type === "polygon" && geometry.polygon?.length >= 3) {
     const points = geometry.polygon.map(read);
+    // ✅ SWAP: Send 'LATITUDE LONGITUDE' for SQL Server/C# backend
     const wktCoords = points.map((p) => `${p.lat} ${p.lng}`).join(", ");
     const first = `${points[0].lat} ${points[0].lng}`;
     return `POLYGON((${wktCoords}, ${first}))`;
   }
 
-  // RECTANGLE
+  // ---------- RECTANGLE ----------
   if (geometry.type === "rectangle" && geometry.rectangle) {
     const ne = read(geometry.rectangle.ne);
     const sw = read(geometry.rectangle.sw);
@@ -112,7 +124,7 @@ const geometryToWktPolygon = (geometry) => {
     return `POLYGON((${coords.map((p) => `${p.lat} ${p.lng}`).join(", ")}))`;
   }
 
-  // CIRCLE
+  // ---------- CIRCLE ----------
   if (geometry.type === "circle" && geometry.circle) {
     const center = read(geometry.circle.center);
     const radius = geometry.circle.radius;
@@ -124,6 +136,7 @@ const geometryToWktPolygon = (geometry) => {
         (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) *
         Math.sin(angle);
 
+      // Clamp latitude to physical bounds
       const lat = Math.max(-90, Math.min(90, center.lat + latOffset));
       const lng = center.lng + lngOffset;
       points.push(`${lat} ${lng}`);
@@ -132,16 +145,6 @@ const geometryToWktPolygon = (geometry) => {
   }
   return null;
 };
-
-// ============================================
-// SPINNER COMPONENT
-// ============================================
-function Spinner({ className = "" }) {
-  return (
-    <Loader2 className={`h-8 w-8 animate-spin text-blue-500 ${className}`} />
-  );
-}
-
 // ============================================
 // ACTIVE FILTERS BAR COMPONENT
 // ============================================
@@ -207,22 +210,22 @@ function ActiveFiltersBar({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-1.5 rounded-lg bg-white/95 px-2 py-1 shadow-lg backdrop-blur-sm sm:gap-2 sm:px-3 sm:py-2 ${className}`}
+      className={`bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-3 py-2 flex items-center gap-2 flex-wrap ${className}`}
     >
       <div className="flex items-center gap-1.5 text-gray-500">
-        <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-        <span className="text-[10px] font-medium sm:text-xs">Filters:</span>
+        <Filter className="h-4 w-4" />
+        <span className="text-xs font-medium">Filters:</span>
       </div>
 
       {activeFilters.map((filter) => (
         <Badge
           key={filter.key}
           variant="secondary"
-          className={`${filter.color} flex cursor-pointer items-center gap-1 text-[10px] font-medium transition-colors sm:text-xs`}
+          className={`${filter.color} cursor-pointer flex items-center gap-1 text-xs font-medium transition-colors`}
           onClick={() => onClearFilter(filter.key)}
         >
           {filter.label}
-          <X className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+          <X className="h-3 w-3" />
         </Badge>
       ))}
 
@@ -230,7 +233,7 @@ function ActiveFiltersBar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-5 px-1.5 text-[10px] text-gray-500 hover:text-gray-700 sm:h-6 sm:px-2 sm:text-xs"
+          className="h-6 px-2 text-xs text-gray-500 hover:text-gray-700"
           onClick={onClearAll}
         >
           Clear All
@@ -240,9 +243,8 @@ function ActiveFiltersBar({
   );
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
+const EMPTY_ARRAY = [];
+
 function SessionMapDebug() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -255,6 +257,7 @@ function SessionMapDebug() {
   const [isSaving, setIsSaving] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
   const [sessionMarkers, setSessionMarkers] = useState([]);
+  const [onlyInsidePolygons, setOnlyInsidePolygons] = useState(false);
   const [legendFilter, setLegendFilter] = useState(null);
 
   // Use the color hook
@@ -303,7 +306,7 @@ function SessionMapDebug() {
       colorizeCells: true,
       ...ui,
     }),
-    [ui]
+    [ui],
   );
 
   // Use the Network Samples Hook
@@ -320,7 +323,7 @@ function SessionMapDebug() {
     sessionIds,
     true,
     false,
-    EMPTY_ARRAY
+    EMPTY_ARRAY,
   );
 
   // Update Available Filters and Markers when logs change
@@ -365,35 +368,13 @@ function SessionMapDebug() {
     return getThresholdsForMetric(filters.metric || "RSRP");
   }, [getThresholdsForMetric, filters.metric]);
 
-  // Formatted thresholds
-  const formattedThresholds = useMemo(() => {
-    return allThresholds
-      ? {
-          rsrp: allThresholds.rsrp || [],
-          rsrq: allThresholds.rsrq || [],
-          sinr: allThresholds.sinr || [],
-          dl_thpt:
-            allThresholds.dlThpt ||
-            allThresholds.dl_tpt ||
-            allThresholds.dl_thpt ||
-            [],
-          ul_thpt:
-            allThresholds.ulThpt ||
-            allThresholds.ul_tpt ||
-            allThresholds.ul_thpt ||
-            [],
-          mos: allThresholds.mos || [],
-          lte_bler: allThresholds.lteBler || [],
-        }
-      : {};
-  }, [allThresholds]);
-
   // Filter logs logic
   const filteredLogs = useMemo(() => {
     if (!logs.length) return [];
 
     return logs
       .filter((log) => {
+        // ✅ FIX: Use normalized value helper for filtering
         const metricValue = getMetricValue(log, filters.metric);
 
         if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
@@ -433,6 +414,7 @@ function SessionMapDebug() {
         return true;
       })
       .map((log) => ({
+        // ✅ FIX: Map data to ensure normalized keys exist for the map component
         ...log,
         dl_thpt: log.dl_thpt ?? log.dl_tpt ?? log.DL_TPT ?? null,
         ul_thpt: log.ul_thpt ?? log.ul_tpt ?? log.UL_TPT ?? null,
@@ -462,10 +444,10 @@ function SessionMapDebug() {
 
   const handleClearFilter = useCallback(
     (key) => resetFilter(key),
-    [resetFilter]
+    [resetFilter],
   );
 
-  // Save Polygon
+  // Enhanced Save Polygon with full support for polygon/rectangle/circle
   const handleSavePolygon = async () => {
     if (!analysis || !analysis.geometry) {
       toast.warn("No analysis geometry found to save.");
@@ -607,7 +589,7 @@ function SessionMapDebug() {
           l.band || "",
           l.timestamp || "",
           l.source || "",
-        ].join(",")
+        ].join(","),
       ),
     ];
 
@@ -621,7 +603,7 @@ function SessionMapDebug() {
     toast.success(`Downloaded ${filteredLogs.length.toLocaleString()} points!`);
   }, [filteredLogs]);
 
-  // Set download handlers in context
+  // Set download handlers in context (prevents stale closures)
   const downloadHandlersRef = useRef({
     stats: handleStatsDownload,
     raw: handleRawDownload,
@@ -638,7 +620,7 @@ function SessionMapDebug() {
     });
   }, [setDownloadHandlers]);
 
-  // Update polygon stats
+  // Update polygon stats whenever filtered logs change
   const prevFilteredLengthRef = useRef(0);
   useEffect(() => {
     if (filteredLogs.length !== prevFilteredLengthRef.current) {
@@ -685,7 +667,7 @@ function SessionMapDebug() {
       setAnalysis(stats);
       setPolygonStats(stats);
     },
-    [setPolygonStats]
+    [setPolygonStats],
   );
 
   const handleCloseAnalysis = useCallback(() => {
@@ -695,33 +677,56 @@ function SessionMapDebug() {
 
   const goBack = useCallback(() => navigate(-1), [navigate]);
 
+  // ✅ FIX: Move formattedThresholds useMemo BEFORE loading check to fix Hooks error
+  const formattedThresholds = useMemo(() => {
+    return allThresholds
+      ? {
+          rsrp: allThresholds.rsrp || [],
+          rsrq: allThresholds.rsrq || [],
+          sinr: allThresholds.sinr || [],
+          dl_thpt:
+            allThresholds.dlThpt ||
+            allThresholds.dl_tpt ||
+            allThresholds.dl_thpt ||
+            [],
+          ul_thpt:
+            allThresholds.ulThpt ||
+            allThresholds.ul_tpt ||
+            allThresholds.ul_thpt ||
+            [],
+          mos: allThresholds.mos || [],
+          lte_bler: allThresholds.lteBler || [],
+        }
+      : {};
+  }, [allThresholds]);
+
   const mapCenter = useMemo(() => {
     if (filteredLogs.length > 0)
       return { lat: filteredLogs[0].lat, lng: filteredLogs[0].lng };
     return DEFAULT_CENTER;
   }, [filteredLogs]);
 
-  // Loading State
+  // Loading State - This is the conditional return that was causing issues
   if (!isLoaded || loading || thresholdsLoading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-gray-900">
-        <div className="max-w-md px-4 text-center">
-          <Spinner className="mx-auto" />
-          <p className="mt-4 text-sm text-white sm:text-base">
+      <div className="flex items-center justify-center h-screen w-screen bg-gray-900">
+        <div className="text-center">
+          <Spinner />
+          <p className="mt-4 text-white">
             {thresholdsLoading
               ? "Loading thresholds..."
               : loading && fetchProgress?.total > 0
-              ? `Loading... ${fetchProgress.current.toLocaleString()} / ${fetchProgress.total.toLocaleString()} points`
-              : "Loading map..."}
+                ? `Loading... ${fetchProgress.current.toLocaleString()} / ${fetchProgress.total.toLocaleString()} points`
+                : "Loading map..."}
           </p>
           {loading && fetchProgress?.total > 0 && (
-            <div className="mx-auto mt-2 h-2 w-64 rounded-full bg-gray-700">
+            <div className="mt-2 w-64 mx-auto bg-gray-700 rounded-full h-2">
               <div
-                className="h-2 rounded-full bg-blue-500 transition-all duration-300"
+                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.min(
                     100,
-                    (fetchProgress.current / fetchProgress.total) * 100
+                    (fetchProgress.current / fetchProgress.total) * 100,
                   )}%`,
                 }}
               />
@@ -734,12 +739,10 @@ function SessionMapDebug() {
 
   if (loadError || error) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-gray-900 text-white">
-        <div className="max-w-md px-4 text-center">
-          <h2 className="mb-4 text-xl font-bold sm:text-2xl">Error</h2>
-          <p className="mb-4 text-sm text-red-400 sm:text-base">
-            {loadError?.message || error}
-          </p>
+      <div className="flex items-center justify-center h-screen w-screen bg-gray-900 text-white">
+        <div className="text-center max-w-md px-4">
+          <h2 className="text-2xl font-bold mb-4">Error</h2>
+          <p className="text-red-400 mb-4">{loadError?.message || error}</p>
           <Button onClick={goBack} className="bg-blue-600 hover:bg-blue-700">
             <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
           </Button>
@@ -748,259 +751,245 @@ function SessionMapDebug() {
     );
   }
 
+  // ✅ Force metric to lowercase for correct data mapping
   const selectedMetric = normalizeMetric(filters.metric);
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-gray-900">
-      {/* Map Container - Fixed full screen */}
-      <div className="absolute inset-0">
-        <MapWithMultipleCircles
-          isLoaded={isLoaded}
-          loadError={loadError}
-          locations={filteredLogs}
-          neighborData={neighborData}
-          showNeighbors={true}
-          selectedMetric={selectedMetric}
-          thresholds={formattedThresholds}
-          onLoad={onMapLoad}
-          options={MAP_OPTIONS}
-          legendFilter={legendFilter}
-          center={mapCenter}
-          showPoints={true}
-          pointRadius={8}
-          showStats={false}
-          activeMarkerIndex={null}
-          onMarkerClick={() => {}}
-          debugNeighbors={true}
-          neighborSquareSize={15}
-          neighborOpacity={0.5}
-        >
-          {map && (
-            <DrawingToolsLayer
-              map={map}
-              enabled={safeUi.drawEnabled}
-              logs={filteredLogs}
-              sessions={sessionMarkers}
-              thresholds={formattedThresholds}
-              selectedMetric={selectedMetric}
-              shapeMode={safeUi.shapeMode}
-              pixelateRect={safeUi.drawPixelateRect}
-              cellSizeMeters={safeUi.drawCellSizeMeters}
-              colorizeCells={safeUi.colorizeCells}
-              onSummary={handleDrawingSummary}
-              onDrawingsChange={() => {}}
-              clearSignal={safeUi.drawClearSignal}
-            />
-          )}
-        </MapWithMultipleCircles>
-      </div>
-
-      {/* All Logs Panel Toggle - Fixed position */}
-      <div className="pointer-events-none absolute inset-0 z-11">
-        <div className="pointer-events-auto">
-          <AllLogsPanelToggle
-          z={15}
+    <div
+      style={{
+        height: "100%",
+        width: "100%",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <MapWithMultipleCircles
+        isLoaded={isLoaded}
+        loadError={loadError}
+        locations={filteredLogs}
+        neighborData={neighborData}
+        showNeighbors={true}
+        // ✅ Passed lowercased metric to fix color issue
+        selectedMetric={selectedMetric}
+        thresholds={formattedThresholds}
+        onLoad={onMapLoad}
+        options={MAP_OPTIONS}
+        legendFilter={legendFilter}
+        center={mapCenter}
+        showPoints={true}
+        pointRadius={12}
+        showStats={false}
+        activeMarkerIndex={null}
+        onMarkerClick={() => {}}
+        debugNeighbors={true}
+        neighborSquareSize={15}
+        neighborOpacity={0.5}
+      >
+        {map && (
+          <DrawingToolsLayer
+            map={map}
+            enabled={safeUi.drawEnabled}
             logs={filteredLogs}
+            sessions={sessionMarkers}
             thresholds={formattedThresholds}
             selectedMetric={selectedMetric}
-            isLoading={loading}
-            appSummary={appSummary}
-            getMetricColor={getMetricColor}
+            shapeMode={safeUi.shapeMode}
+            pixelateRect={safeUi.drawPixelateRect}
+            cellSizeMeters={safeUi.drawCellSizeMeters}
+            colorizeCells={safeUi.colorizeCells}
+            onSummary={handleDrawingSummary}
+            onDrawingsChange={() => {}}
+            clearSignal={safeUi.drawClearSignal}
           />
-        </div>
-      </div>
+        )}
+      </MapWithMultipleCircles>
 
-      {/* Active Filters Bar - Fixed position */}
+      <AllLogsPanelToggle
+        logs={filteredLogs}
+        thresholds={formattedThresholds}
+        selectedMetric={selectedMetric}
+        isLoading={loading}
+        appSummary={appSummary}
+        getMetricColor={getMetricColor}
+      />
+
       {hasActiveFilters && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center p-2 sm:justify-start sm:p-4">
-          <div className="pointer-events-auto max-w-full sm:max-w-lg">
-            <ActiveFiltersBar
-              filters={filters}
-              onClearFilter={handleClearFilter}
-              onClearAll={clearFilters}
-            />
-          </div>
-        </div>
+        <ActiveFiltersBar
+          filters={filters}
+          onClearFilter={handleClearFilter}
+          onClearAll={clearFilters}
+          className="absolute top-4 left-4 z-20 max-w-lg"
+        />
       )}
-
-      {/* Map Legend - Fixed position */}
       {showLegend && (
-        <div className="pointer-events-none absolute inset-0 ">
-          <div className="pointer-events-auto">
-            <MapLegend
-              thresholds={formattedThresholds}
-              selectedMetric={selectedMetric}
-              colorBy={null}
-              logs={filteredLogs}
-              activeFilter={legendFilter}
-              onFilterChange={setLegendFilter}
-            />
-          </div>
-        </div>
+        <MapLegend
+          thresholds={formattedThresholds}
+          selectedMetric={selectedMetric}
+          colorBy={null} // Or pass a colorBy state if implemented
+          logs={filteredLogs}
+          activeFilter={legendFilter}
+          onFilterChange={setLegendFilter}
+        />
       )}
 
-      {/* No Results Overlay - Fixed position */}
+      {/* No results overlay when filters eliminate everything */}
       {filteredLogs.length === 0 && logs.length > 0 && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
-          <div className="pointer-events-auto w-full max-w-sm rounded-lg bg-white/95 px-4 py-3 text-center shadow-lg backdrop-blur-sm sm:px-6 sm:py-4">
-            <Filter className="mx-auto mb-2 h-6 w-6 text-gray-400 sm:h-8 sm:w-8" />
-            <p className="text-sm font-medium text-gray-700 sm:text-base">
-              No points match current filters
-            </p>
-            <p className="mt-1 text-xs text-gray-500 sm:text-sm">
-              {logs.length.toLocaleString()} points available. Try adjusting
-              your filters.
-            </p>
-            <Button size="sm" className="mt-3" onClick={clearFilters}>
-              Clear All Filters
-            </Button>
-          </div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-6 py-4 text-center">
+          <Filter className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-gray-700 font-medium">
+            No points match current filters
+          </p>
+          <p className="text-gray-500 text-sm mt-1">
+            {logs.length.toLocaleString()} points available. Try adjusting your
+            filters.
+          </p>
+          <Button size="sm" className="mt-3" onClick={clearFilters}>
+            Clear All Filters
+          </Button>
         </div>
       )}
 
-      {/* Analysis Panel - Fixed position */}
+      {/* Analysis Panel */}
       {analysis && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-2 sm:justify-start sm:p-4">
-          <div className="pointer-events-auto w-full max-w-sm rounded-lg border border-gray-200 bg-white shadow-lg sm:w-[320px]">
-            <div className="flex items-center justify-between rounded-t-lg bg-blue-600 px-3 py-2">
-              <h3 className="text-xs font-semibold text-white sm:text-sm">
-                Selection Analysis
-              </h3>
-              <button
-                onClick={handleCloseAnalysis}
-                className="p-1 text-white/80 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
+        <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[320px] border border-gray-200">
+          <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
+            <h3 className="font-semibold text-white text-sm">
+              Selection Analysis
+            </h3>
+            <button
+              onClick={handleCloseAnalysis}
+              className="text-white/80 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="p-3 text-xs space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-gray-50 rounded px-2 py-1.5">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+                  Shape
+                </div>
+                <div className="font-medium text-gray-800 capitalize">
+                  {analysis.type || "Unknown"}
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded px-2 py-1.5">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+                  Points
+                </div>
+                <div className="font-medium text-gray-800">
+                  {(analysis.count || 0).toLocaleString()}
+                </div>
+              </div>
             </div>
 
-            <div className="max-h-[50vh] space-y-2 overflow-y-auto p-3 text-xs">
+            {analysis.stats && (
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded bg-gray-50 px-2 py-1.5">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                    Shape
+                <div className="bg-blue-50 rounded px-2 py-1.5 border border-blue-100">
+                  <div className="text-[10px] text-blue-600 uppercase tracking-wide">
+                    Mean
                   </div>
-                  <div className="font-medium capitalize text-gray-800">
-                    {analysis.type || "Unknown"}
+                  <div className="font-bold text-blue-700">
+                    {analysis.stats.mean?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
                   </div>
                 </div>
-                <div className="rounded bg-gray-50 px-2 py-1.5">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                    Points
+                <div className="bg-green-50 rounded px-2 py-1.5 border border-green-100">
+                  <div className="text-[10px] text-green-600 uppercase tracking-wide">
+                    Median
                   </div>
-                  <div className="font-medium text-gray-800">
-                    {(analysis.count || 0).toLocaleString()}
+                  <div className="font-bold text-green-700">
+                    {analysis.stats.median?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
+                  </div>
+                </div>
+                <div className="bg-orange-50 rounded px-2 py-1.5 border border-orange-100">
+                  <div className="text-[10px] text-orange-600 uppercase tracking-wide">
+                    Min
+                  </div>
+                  <div className="font-bold text-orange-700">
+                    {analysis.stats.min?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
+                  </div>
+                </div>
+                <div className="bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                  <div className="text-[10px] text-red-600 uppercase tracking-wide">
+                    Max
+                  </div>
+                  <div className="font-bold text-red-700">
+                    {analysis.stats.max?.toFixed(1) ?? "-"}{" "}
+                    {getMetricUnit(filters.metric)}
                   </div>
                 </div>
               </div>
+            )}
 
-              {analysis.stats && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded border border-blue-100 bg-blue-50 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wide text-blue-600">
-                      Mean
-                    </div>
-                    <div className="font-bold text-blue-700">
-                      {analysis.stats.mean?.toFixed(1) ?? "-"}{" "}
-                      {getMetricUnit(filters.metric)}
-                    </div>
-                  </div>
-                  <div className="rounded border border-green-100 bg-green-50 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wide text-green-600">
-                      Median
-                    </div>
-                    <div className="font-bold text-green-700">
-                      {analysis.stats.median?.toFixed(1) ?? "-"}{" "}
-                      {getMetricUnit(filters.metric)}
-                    </div>
-                  </div>
-                  <div className="rounded border border-orange-100 bg-orange-50 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wide text-orange-600">
-                      Min
-                    </div>
-                    <div className="font-bold text-orange-700">
-                      {analysis.stats.min?.toFixed(1) ?? "-"}{" "}
-                      {getMetricUnit(filters.metric)}
-                    </div>
-                  </div>
-                  <div className="rounded border border-red-100 bg-red-50 px-2 py-1.5">
-                    <div className="text-[10px] uppercase tracking-wide text-red-600">
-                      Max
-                    </div>
-                    <div className="font-bold text-red-700">
-                      {analysis.stats.max?.toFixed(1) ?? "-"}{" "}
-                      {getMetricUnit(filters.metric)}
-                    </div>
-                  </div>
+            {analysis.area > 0 && (
+              <div className="bg-gray-50 rounded px-2 py-1.5">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+                  Area
                 </div>
-              )}
-
-              {analysis.area > 0 && (
-                <div className="rounded bg-gray-50 px-2 py-1.5">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                    Area
-                  </div>
-                  <div className="font-medium text-gray-800">
-                    {analysis.area > 1_000_000
-                      ? `${(analysis.area / 1_000_000).toFixed(2)} km²`
-                      : `${analysis.area.toFixed(0)} m²`}
-                  </div>
+                <div className="font-medium text-gray-800">
+                  {analysis.area > 1_000_000
+                    ? `${(analysis.area / 1_000_000).toFixed(2)} km²`
+                    : `${analysis.area.toFixed(0)} m²`}
                 </div>
-              )}
+              </div>
+            )}
 
-              {hasActiveFilters && (
-                <div className="rounded border border-yellow-100 bg-yellow-50 px-2 py-1.5 text-xs text-yellow-800">
-                  Analysis based on filtered data
-                </div>
-              )}
-            </div>
+            {hasActiveFilters && (
+              <div className="bg-yellow-50 rounded px-2 py-1.5 border border-yellow-100 text-xs text-yellow-800">
+                Analysis based on filtered data
+              </div>
+            )}
+          </div>
 
-            <div className="flex gap-2 rounded-b-lg border-t border-gray-200 bg-gray-50 px-3 py-2">
-              <Button
-                size="sm"
-                className="h-9 flex-1 text-xs sm:h-8"
-                onClick={() => setIsSaveDialogOpen(true)}
-                disabled={!analysis.geometry}
-              >
-                <Save className="mr-1.5 h-3 w-3" />
-                Save Polygon
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-9 px-2 sm:h-8"
-                onClick={handleStatsDownload}
-              >
-                <Download className="h-3 w-3" />
-              </Button>
-            </div>
+          <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 rounded-b-lg flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1 h-8 text-xs"
+              onClick={() => setIsSaveDialogOpen(true)}
+              disabled={!analysis.geometry}
+            >
+              <Save className="h-3 w-3 mr-1.5" />
+              Save Polygon
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 px-2"
+              onClick={handleStatsDownload}
+            >
+              <Download className="h-3 w-3" />
+            </Button>
           </div>
         </div>
       )}
 
       {/* Save Polygon Dialog */}
       <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Save Polygon Analysis</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
-              <Label htmlFor="polygon-name" className="sm:text-right">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="polygon-name" className="text-right">
                 Name
               </Label>
               <Input
                 id="polygon-name"
                 value={polygonName}
                 onChange={(e) => setPolygonName(e.target.value)}
-                className="sm:col-span-3"
+                className="col-span-3"
                 placeholder="e.g., Poor Coverage Zone - Downtown"
                 autoFocus
               />
             </div>
 
             {analysis && (
-              <div className="ml-0 space-y-1 text-xs text-gray-600 sm:ml-[calc(25%+1rem)]">
+              <div className="text-xs text-gray-600 space-y-1 ml-[calc(25%+1rem)]">
                 <div>
                   Shape:{" "}
                   <span className="font-medium capitalize">
@@ -1037,7 +1026,7 @@ function SessionMapDebug() {
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Spinner className="h-4 w-4 mr-2" />
                   Saving...
                 </>
               ) : (
