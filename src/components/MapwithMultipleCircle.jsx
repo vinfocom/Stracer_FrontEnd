@@ -1111,8 +1111,8 @@ const MapWithMultipleCircles = ({
   
   if (!isLoaded) return null;
 
-  // const showPoints = showPointsProp && !enableGrid && !areaEnabled;
-  const showPoints = showPointsProp;
+  const showPoints = showPointsProp && !enableGrid && !areaEnabled;
+  // const showPoints = showPointsProp;
   const isLoadingPolygons = enablePolygonFilter && !polygonsFetched && projectId;
 
   return (

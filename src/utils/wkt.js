@@ -65,20 +65,49 @@ export function parseWKTToCoordinates(wkt) {
 
 export default parseWKTToCoordinates;
 
-const parseWKTToPolygons = (wkt) => {
+// src/utils/wkt.js
+
+export const parseWKTToPolygons = (wkt) => {
   if (!wkt?.trim()) return [];
   try {
     const match = wkt.trim().match(/POLYGON\s*\(\(([^)]+)\)\)/i);
     if (!match) return [];
 
     const points = match[1].split(",").reduce((acc, coord) => {
-      const [lng, lat] = coord.trim().split(/\s+/).map(parseFloat);
-      if (!isNaN(lat) && !isNaN(lng)) acc.push({ lat, lng });
+      const parts = coord.trim().split(/\s+/).map(parseFloat);
+      const val1 = parts[0];
+      const val2 = parts[1];
+      
+      let lat, lng;
+
+      // Robust heuristic for India (Lng ~77, Lat ~28) and Taiwan (Lng ~121, Lat ~25)
+      if (Math.abs(val1) > 40 && Math.abs(val2) < 40) {
+        // Input is [Lng, Lat]
+        lng = val1;
+        lat = val2;
+      } else if (Math.abs(val1) < 40 && Math.abs(val2) > 40) {
+        // Input is [Lat, Lng]
+        lat = val1;
+        lng = val2;
+      } else if (Math.abs(val1) > 90) {
+        // Extra fallback for Longitude values > 90 (like Taiwan)
+        lng = val1;
+        lat = val2;
+      } else {
+        // Default fallback (assuming Lat Lng)
+        lat = val1;
+        lng = val2;
+      }
+
+      if (!isNaN(lat) && !isNaN(lng)) {
+        acc.push({ lat, lng });
+      }
       return acc;
     }, []);
 
     return points.length >= 3 ? [{ paths: [points] }] : [];
-  } catch {
+  } catch (err) {
+    console.error("WKT Parsing Error:", err);
     return [];
   }
 };
@@ -97,4 +126,4 @@ const computeBbox = (points) => {
   );
 };
 
-export { parseWKTToPolygons, computeBbox };
+export {  computeBbox };
