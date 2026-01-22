@@ -45,7 +45,7 @@ function getColorForNetwork(network) {
     "TW Mobile": "#F77F00",       // FIX: Changed from #f77f00ff
     "FAR EASTONE": "#00B4D8",     // FIX: Changed from #00b4d8ff
     "TW MOBILE": "#F77F00",
-     IR: "#6b705c",
+    "(466001)IR": "#6b705c",
     
     
     "IND airtel": "#EF4444",

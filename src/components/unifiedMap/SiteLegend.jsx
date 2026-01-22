@@ -9,6 +9,7 @@ const SITE_COLORS = [
   { label: 'Far Eastone', color: '#00b4d8ff' }, // Added
   { label: 'TW Mobile', color: '#f77f00ff' },   // Added
   { label: 'Yas', color: "#7d1b49" },
+  { label: '(466001)IR', color: '#6b705c' }, // Added
 
   { label: 'Unknown', color: '#8B5CF6' },
 ];

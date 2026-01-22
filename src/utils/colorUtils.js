@@ -113,7 +113,7 @@ export const normalizeProviderName = (rawName) => {
 
   if(
     (cleaned === "466001")
-  )return "IR"
+  )return "(466001)IR"
   if (
     
     cleaned.includes("TWMOBILE") ||
@@ -208,7 +208,7 @@ export const COLOR_SCHEMES = {
     "VI India": "#22C55E",
     BSNL: "#F59E0B",
     Yas: "#7d1b49",
-    IR: "#6b705c",
+    "(466001)IR": "#6b705c",
     "Far Eastone": "#00B4D8", 
     "TW Mobile": "#F77F00",   
     "Chunghwa Telecom": "#E63946", 

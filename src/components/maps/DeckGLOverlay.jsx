@@ -51,7 +51,24 @@ const parseColorToRGB = (colorStr) => {
   return [128, 128, 128, 200]; // Fallback Gray
 };
 
-// ... keep metersToLatDeg and getSquarePolygon ...
+
+const metersToLatDeg = 1 / 111320;
+
+const getSquarePolygon = (lat, lng, sizeMeters) => {
+  const halfSize = sizeMeters / 2;
+  const latDelta = halfSize * metersToLatDeg;
+  // Adjust longitude delta based on latitude
+  const lngDelta = (halfSize * metersToLatDeg) / Math.cos((lat * Math.PI) / 180);
+
+  return [
+    [lng - lngDelta, lat + latDelta], // Top Left
+    [lng + lngDelta, lat + latDelta], // Top Right
+    [lng + lngDelta, lat - latDelta], // Bottom Right
+    [lng - lngDelta, lat - latDelta], // Bottom Left
+    [lng - lngDelta, lat + latDelta]  // Close the loop
+  ];
+};
+
 
 const DeckGLOverlay = ({
   map,
