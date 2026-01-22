@@ -561,11 +561,11 @@ const AllLogsDetailPanel = ({
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-400">DL:</span>
-                          <span className="text-slate-200">{safeNum(app.avgDl, " Mbps")}</span>
+                          <span className="text-slate-200">{safeNum(app.avgDlTptMbps, " Mbps")}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-400">UL:</span>
-                          <span className="text-slate-200">{safeNum(app.avgUl, " Mbps")}</span>
+                          <span className="text-slate-200">{safeNum(app.avgUlTptMbps, " Mbps")}</span>
                         </div>
                       </div>
                     </div>
