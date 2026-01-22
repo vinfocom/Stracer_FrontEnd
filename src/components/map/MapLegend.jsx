@@ -7,7 +7,7 @@ import {
   getMetricConfig,
   getMetricValueFromLog,
 } from "@/utils/metrics";
-import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
+import { normalizeProviderName, normalizeTechName , normalizeBandName} from "@/utils/colorUtils";
 
 // Helper to get normalized key for counting
 const getNormalizedKey = (log, colorBy, scheme) => {
@@ -29,8 +29,10 @@ const getNormalizedKey = (log, colorBy, scheme) => {
         log.Band || 
         ""
       ).trim();
+
+      const normalizedBand = normalizeBandName(b);
       
-      return b === "-1" || b === "" ? "Unknown" : (scheme[b] ? b : "Unknown");
+      return normalizedBand === "-1" || normalizedBand === "" ? "Unknown" : (scheme[normalizedBand] ? normalizedBand : "Unknown");
     }
     default:
       return "Unknown";

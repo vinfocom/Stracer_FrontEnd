@@ -69,8 +69,10 @@ export const COLOR_SCHEMES = {
     "far eastone": "#00b4d8ff",
     "TW Mobile": "#f77f00ff",
     "FAR EASTONE": "#00b4d8ff",
-    466001: "#fcba03", 
+    466001: "#fcba03",
+      IR: "#6b705c", 
     "TW MOBILE": "#f77f00ff",
+    
     Airtel: "#EF4444",
     "IND airtel": "#EF4444",
     "Vi India": "#22C55E",

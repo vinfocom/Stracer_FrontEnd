@@ -41,10 +41,11 @@ function getColorForNetwork(network) {
     "JIO4G": "#3B82F6",
     "IND-JIO": "#3B82F6",
     "jio": "#3B82F6",
-    "Far Eastone": "#00b4d8ff",
-    "TW Mobile": "#f77f00ff",
-    "FAR EASTONE": "#00b4d8ff",
-    "TW MOBILE": "#f77f00ff",
+   "Far Eastone": "#00B4D8",     // FIX: Changed from #00b4d8ff
+    "TW Mobile": "#F77F00",       // FIX: Changed from #f77f00ff
+    "FAR EASTONE": "#00B4D8",     // FIX: Changed from #00b4d8ff
+    "TW MOBILE": "#F77F00",
+     IR: "#6b705c",
     
     
     "IND airtel": "#EF4444",

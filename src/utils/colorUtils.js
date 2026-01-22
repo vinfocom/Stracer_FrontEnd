@@ -102,7 +102,7 @@ export const normalizeProviderName = (rawName) => {
   }
 
   if (
-    cleaned === "466001" ||
+    
     cleaned.includes("FAREASTONE") ||
     cleaned.includes("FAREASTONE") ||
     cleaned.includes("EASTONE") ||
@@ -111,8 +111,11 @@ export const normalizeProviderName = (rawName) => {
     return "Far Eastone";
   }
 
+  if(
+    (cleaned === "466001")
+  )return "IR"
   if (
-    cleaned === "466097" ||
+    
     cleaned.includes("TWMOBILE") ||
     cleaned.includes("TAIWANMOBILE") ||
     cleaned.includes("台灣大哥大")
@@ -121,7 +124,7 @@ export const normalizeProviderName = (rawName) => {
   }
 
   if (
-    cleaned === "466092" ||
+    
     cleaned.includes("CHUNGHWA") ||
     cleaned.includes("中華電信")
   ) {
@@ -129,7 +132,7 @@ export const normalizeProviderName = (rawName) => {
   }
 
   if (
-    cleaned === "466005" ||
+   
     cleaned.includes("APTG") ||
     cleaned.includes("ASIAPACIFIC") ||
     cleaned.includes("亞太電信")
@@ -205,10 +208,11 @@ export const COLOR_SCHEMES = {
     "VI India": "#22C55E",
     BSNL: "#F59E0B",
     Yas: "#7d1b49",
-    "Far Eastone": "#00b4d8ff",
-    "TW Mobile": "#f77f00ff",
-    "Chunghwa Telecom": "#e63946ff",
-    "APTG": "#2a9d8fff",
+    IR: "#6b705c",
+    "Far Eastone": "#00B4D8", 
+    "TW Mobile": "#F77F00",   
+    "Chunghwa Telecom": "#E63946", 
+    "APTG": "#2A9D8F",        
     Unknown: "#a8a6a2",
   },
   technology: {
