@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { Globe, Settings } from "lucide-react";
+import { Globe, Settings, BarChart3, TrendingUp, Hash } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -32,10 +32,43 @@ const safeNumber = (value) => {
   return num;
 };
 
+// Calculate mode (most frequent value)
+const calculateMode = (values) => {
+  if (!values.length) return null;
+
+  // Round values to 1 decimal place for grouping
+  const frequencyMap = {};
+  values.forEach((v) => {
+    const rounded = Math.round(v * 10) / 10;
+    frequencyMap[rounded] = (frequencyMap[rounded] || 0) + 1;
+  });
+
+  let maxFreq = 0;
+  let mode = null;
+
+  Object.entries(frequencyMap).forEach(([value, freq]) => {
+    if (freq > maxFreq) {
+      maxFreq = freq;
+      mode = parseFloat(value);
+    }
+  });
+
+  // If all values appear only once, return the median as fallback
+  if (maxFreq === 1) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? parseFloat(sorted[mid].toFixed(2))
+      : parseFloat(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(2));
+  }
+
+  return mode;
+};
+
 const calculateStats = (values) => {
   const valid = values.filter((v) => v !== null);
   if (valid.length === 0)
-    return { avg: null, median: null, min: null, max: null, count: 0 };
+    return { avg: null, median: null, mode: null, min: null, max: null, count: 0 };
 
   const sorted = [...valid].sort((a, b) => a - b);
   const sum = valid.reduce((a, b) => a + b, 0);
@@ -43,10 +76,12 @@ const calculateStats = (values) => {
   const mid = Math.floor(sorted.length / 2);
   const median =
     sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const mode = calculateMode(valid);
 
   return {
     avg: parseFloat(avg.toFixed(2)),
     median: parseFloat(median.toFixed(2)),
+    mode: mode,
     min: parseFloat(Math.min(...valid).toFixed(2)),
     max: parseFloat(Math.max(...valid).toFixed(2)),
     count: valid.length,
@@ -112,6 +147,33 @@ const AVAILABLE_METRICS = {
   },
 };
 
+const STAT_MODES = {
+  avg: {
+    key: "avg",
+    label: "Mean",
+    shortLabel: "Avg",
+    
+    icon: BarChart3,
+    color: "#3B82F6",
+  },
+  median: {
+    key: "median",
+    label: "Median",
+    shortLabel: "Med",
+    
+    icon: TrendingUp,
+    color: "#8B5CF6",
+  },
+  mode: {
+    key: "mode",
+    label: "Mode",
+    shortLabel: "Mode",
+    
+    icon: Hash,
+    color: "#22C55E",
+  },
+};
+
 const DEFAULT_METRICS = ["rsrp"];
 
 const getProviderColor = (provider) => {
@@ -121,12 +183,19 @@ const getProviderColor = (provider) => {
 
 export const OperatorComparisonChart = React.forwardRef(
   (
-    { locations, defaultMetrics = DEFAULT_METRICS, showRadar = true, showTable = true },
+    {
+      locations,
+      defaultMetrics = DEFAULT_METRICS,
+      showRadar = true,
+      showTable = true,
+      defaultStatMode = "avg",
+    },
     ref
   ) => {
     const [selectedMetrics, setSelectedMetrics] = useState(defaultMetrics);
     const [showSettings, setShowSettings] = useState(false);
     const [viewMode, setViewMode] = useState("bar");
+    const [statMode, setStatMode] = useState(defaultStatMode); // 'avg', 'median', or 'mode'
 
     const operatorData = useMemo(() => {
       if (!locations?.length) return [];
@@ -220,11 +289,11 @@ export const OperatorComparisonChart = React.forwardRef(
       return operatorData.map((op) => {
         const data = { name: op.name, color: op.color, samples: op.samples };
         selectedMetrics.forEach((metricKey) => {
-          data[metricKey] = op[metricKey]?.avg;
+          data[metricKey] = op[metricKey]?.[statMode];
         });
         return data;
       });
-    }, [operatorData, selectedMetrics]);
+    }, [operatorData, selectedMetrics, statMode]);
 
     const radarChartData = useMemo(() => {
       if (!operatorData.length) return [];
@@ -253,14 +322,14 @@ export const OperatorComparisonChart = React.forwardRef(
         const dataPoint = { metric: config.label };
 
         operatorData.forEach((op) => {
-          const rawValue = op[metricKey]?.avg;
+          const rawValue = op[metricKey]?.[statMode];
           dataPoint[op.name] = normalizers[metricKey]?.(rawValue) || 0;
           dataPoint[`${op.name}_raw`] = rawValue;
         });
 
         return dataPoint;
       });
-    }, [operatorData, selectedMetrics]);
+    }, [operatorData, selectedMetrics, statMode]);
 
     const toggleMetric = useCallback((metricKey) => {
       setSelectedMetrics((prev) => {
@@ -272,6 +341,18 @@ export const OperatorComparisonChart = React.forwardRef(
       });
     }, []);
 
+    // Get other stat values for comparison display
+    const getOtherStats = (stats) => {
+      const others = Object.keys(STAT_MODES).filter((key) => key !== statMode);
+      return others
+        .map((key) => ({
+          key,
+          label: STAT_MODES[key].shortLabel,
+          value: stats?.[key],
+        }))
+        .filter((s) => s.value !== null && s.value !== undefined);
+    };
+
     const CustomBarTooltip = ({ active, payload, label }) => {
       if (!active || !payload?.length) return null;
 
@@ -279,7 +360,7 @@ export const OperatorComparisonChart = React.forwardRef(
       if (!operator) return null;
 
       return (
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl min-w-[200px]">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl min-w-[220px]">
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
             <div
               className="w-3 h-3 rounded-full"
@@ -290,19 +371,46 @@ export const OperatorComparisonChart = React.forwardRef(
               {operator.samples} samples
             </span>
           </div>
-          <div className="space-y-1.5">
+          <div
+            className="text-[9px] mb-2 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+            style={{
+              backgroundColor: `${STAT_MODES[statMode].color}20`,
+              color: STAT_MODES[statMode].color,
+            }}
+          >
+            {(() => {
+              const Icon = STAT_MODES[statMode].icon;
+              return <Icon className="w-2.5 h-2.5" />;
+            })()}
+            {STAT_MODES[statMode].label}
+          </div>
+          <div className="space-y-2">
             {payload.map((entry, idx) => {
               const config = AVAILABLE_METRICS[entry.dataKey];
               if (!config) return null;
+              const stats = operator[entry.dataKey];
+              const otherStats = getOtherStats(stats);
+
               return (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-4 text-xs"
-                >
-                  <span style={{ color: config.color }}>{config.label}:</span>
-                  <span className="text-white font-semibold">
-                    {entry.value?.toFixed(1) ?? "N/A"} {config.unit}
-                  </span>
+                <div key={idx} className="text-xs">
+                  <div className="flex items-center justify-between gap-4">
+                    <span style={{ color: config.color }}>{config.label}:</span>
+                    <span className="text-white font-semibold">
+                      {entry.value?.toFixed(1) ?? "N/A"} {config.unit}
+                    </span>
+                  </div>
+                  {otherStats.length > 0 && (
+                    <div className="flex justify-between text-[9px] text-slate-500 mt-0.5">
+                      {otherStats.map((s) => (
+                        <span key={s.key}>
+                          {s.label}: {s.value?.toFixed(1)}
+                        </span>
+                      ))}
+                      <span>
+                        Range: {stats.min?.toFixed(1)} - {stats.max?.toFixed(1)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -322,7 +430,20 @@ export const OperatorComparisonChart = React.forwardRef(
 
       return (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl">
-          <div className="font-semibold text-white mb-2">{data.metric}</div>
+          <div className="font-semibold text-white mb-1">{data.metric}</div>
+          <div
+            className="text-[9px] mb-2 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+            style={{
+              backgroundColor: `${STAT_MODES[statMode].color}20`,
+              color: STAT_MODES[statMode].color,
+            }}
+          >
+            {(() => {
+              const Icon = STAT_MODES[statMode].icon;
+              return <Icon className="w-2.5 h-2.5" />;
+            })()}
+            {STAT_MODES[statMode].label}
+          </div>
           <div className="space-y-1">
             {operatorData.map((op) => (
               <div
@@ -362,6 +483,32 @@ export const OperatorComparisonChart = React.forwardRef(
         subtitle={`${operatorData.length} operators | ${locations?.length || 0} samples`}
         headerExtra={
           <div className="flex items-center gap-2">
+            {/* Stat Mode Toggle (Mean/Median/Mode) */}
+            <div className="flex rounded-lg overflow-hidden border border-slate-600">
+              {Object.entries(STAT_MODES).map(([key, mode]) => {
+                const Icon = mode.icon;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setStatMode(key)}
+                    title={mode.description}
+                    className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium transition-colors ${
+                      statMode === key
+                        ? "text-white"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                    style={{
+                      backgroundColor: statMode === key ? mode.color : undefined,
+                    }}
+                  >
+                    <Icon className="h-3 w-3" />
+                    {mode.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* View Mode Toggle */}
             <div className="flex rounded-lg overflow-hidden border border-slate-600">
               {["bar", "table"].map((mode) => (
                 <button
@@ -378,6 +525,7 @@ export const OperatorComparisonChart = React.forwardRef(
               ))}
             </div>
 
+            {/* Metrics Settings */}
             <div className="relative">
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -438,7 +586,24 @@ export const OperatorComparisonChart = React.forwardRef(
         expandable
         collapsible
       >
-        <div className="flex flex-wrap gap-1 mb-3">
+        {/* Active filters display */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {/* Stat mode indicator */}
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+            style={{
+              backgroundColor: `${STAT_MODES[statMode].color}20`,
+              color: STAT_MODES[statMode].color,
+            }}
+          >
+            {(() => {
+              const Icon = STAT_MODES[statMode].icon;
+              return <Icon className="w-3 h-3" />;
+            })()}
+            {STAT_MODES[statMode].label}
+          </span>
+
+          {/* Selected metrics */}
           {selectedMetrics.map((metricKey) => {
             const config = AVAILABLE_METRICS[metricKey];
             return (
@@ -474,7 +639,7 @@ export const OperatorComparisonChart = React.forwardRef(
                 textAnchor="end"
                 height={60}
               />
-              <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} />
+              <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} reversed={true} />
               <Tooltip content={<CustomBarTooltip />} />
               <Legend wrapperStyle={{ fontSize: "11px" }} />
               {selectedMetrics.map((metricKey) => {
@@ -483,7 +648,7 @@ export const OperatorComparisonChart = React.forwardRef(
                   <Bar
                     key={metricKey}
                     dataKey={metricKey}
-                    name={config.label}
+                    name={`${config.label} (${STAT_MODES[statMode].label})`}
                     radius={[4, 4, 0, 0]}
                   >
                     {barChartData.map((entry, index) => (
@@ -551,12 +716,20 @@ export const OperatorComparisonChart = React.forwardRef(
                         className="text-center p-2 font-medium"
                         style={{ color: config.color }}
                       >
-                        {config.label}
-                        {config.unit && (
-                          <span className="text-[9px] text-slate-500 ml-0.5">
-                            ({config.unit})
-                          </span>
-                        )}
+                        <div>{config.label}</div>
+                        <div
+                          className="text-[9px] inline-flex items-center gap-0.5 mt-0.5"
+                          style={{ color: STAT_MODES[statMode].color }}
+                        >
+                          {(() => {
+                            const Icon = STAT_MODES[statMode].icon;
+                            return <Icon className="w-2.5 h-2.5" />;
+                          })()}
+                          {STAT_MODES[statMode].label}
+                          {config.unit && (
+                            <span className="text-slate-500"> ({config.unit})</span>
+                          )}
+                        </div>
                       </th>
                     );
                   })}
@@ -598,27 +771,42 @@ export const OperatorComparisonChart = React.forwardRef(
                     {selectedMetrics.map((metricKey) => {
                       const config = AVAILABLE_METRICS[metricKey];
                       const stats = op[metricKey];
-                      const value = stats?.avg;
+                      const value = stats?.[statMode];
 
                       const allValues = operatorData
-                        .map((o) => o[metricKey]?.avg)
-                        .filter(Boolean);
-                      const isBest = config.higherBetter
-                        ? value === Math.max(...allValues)
-                        : value === Math.min(...allValues);
+                        .map((o) => o[metricKey]?.[statMode])
+                        .filter((v) => v !== null && v !== undefined);
+                      const isBest =
+                        allValues.length > 0 &&
+                        (config.higherBetter
+                          ? value === Math.max(...allValues)
+                          : value === Math.min(...allValues));
+
+                      const otherStats = getOtherStats(stats);
 
                       return (
                         <td
                           key={metricKey}
-                          className={`p-2 text-center font-medium ${
+                          className={`p-2 text-center ${
                             isBest ? "text-green-400" : "text-slate-300"
                           }`}
                         >
-                          {value?.toFixed(1) ?? "-"}
-                          {isBest && (
-                            <span className="ml-1 text-yellow-400 text-[10px]">
-                              Best
-                            </span>
+                          <div className="font-medium">
+                            {value?.toFixed(1) ?? "-"}
+                            {isBest && (
+                              <span className="ml-1 text-yellow-400 text-[10px]">
+                                ★
+                              </span>
+                            )}
+                          </div>
+                          {otherStats.length > 0 && (
+                            <div className="text-[9px] text-slate-500 space-x-1">
+                              {otherStats.map((s) => (
+                                <span key={s.key}>
+                                  {s.label}: {s.value?.toFixed(1)}
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </td>
                       );
@@ -636,6 +824,7 @@ export const OperatorComparisonChart = React.forwardRef(
           </div>
         )}
 
+        {/* Operator legend */}
         <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-700">
           {operatorData.map((op) => (
             <div
@@ -650,6 +839,30 @@ export const OperatorComparisonChart = React.forwardRef(
               <span className="text-[10px] text-slate-400">{op.samples}</span>
             </div>
           ))}
+        </div>
+
+        {/* Stats explanation footer */}
+        <div className="mt-3 pt-2 border-t border-slate-700/50">
+          <div className="flex flex-wrap gap-3 text-[9px] text-slate-500">
+            {Object.entries(STAT_MODES).map(([key, mode]) => {
+              const Icon = mode.icon;
+              return (
+                <div key={key} className="flex items-center gap-1">
+                  <Icon
+                    className="w-3 h-3"
+                    style={{ color: statMode === key ? mode.color : undefined }}
+                  />
+                  <span
+                    className={statMode === key ? "font-medium" : ""}
+                    style={{ color: statMode === key ? mode.color : undefined }}
+                  >
+                    {mode.label}:
+                  </span>
+                  <span>{mode.description}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </ChartContainer>
     );

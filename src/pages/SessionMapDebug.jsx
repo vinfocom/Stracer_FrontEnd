@@ -9,13 +9,13 @@ import React, {
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { mapViewApi } from "../api/apiEndpoints";
-import Spinner from "../components/common/Spinner";
-import { ArrowLeft, Download, Save, X, Filter } from "lucide-react";
+import { ArrowLeft, Download, Save, X, Filter, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import { toast } from "react-toastify";
 import { useMapContext } from "../context/MapContext";
+import MapLegend from "@/components/map/MapLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 import AllLogsPanelToggle from "@/components/map/layout/AllLogsPanelToggle";
 import {
@@ -36,13 +36,7 @@ import MapWithMultipleCircles from "@/components/MapwithMultipleCircle";
 // ============================================
 // CONSTANTS & HELPERS
 // ============================================
-const containerStyle = {
-  width: "100%",
-  height: "100%",
-  position: "absolute",
-  top: 0,
-  left: 0,
-};
+const EMPTY_ARRAY = [];
 
 const DEFAULT_CENTER = { lat: 28.6139, lng: 77.209 };
 
@@ -88,28 +82,23 @@ const getMetricValue = (log, metric) => {
   return log[key] ?? log.rsrp ?? -120;
 };
 
-// Enhanced WKT conversion that supports polygon, rectangle, and circle
-// src/pages/SessionMapDebug.jsx
-
 const geometryToWktPolygon = (geometry) => {
   if (!geometry) return null;
 
-  // Helper to read coordinates (handles both objects and functions)
   const read = (p) => ({
     lat: typeof p.lat === "function" ? p.lat() : p.lat,
     lng: typeof p.lng === "function" ? p.lng() : p.lng,
   });
 
-  // ---------- POLYGON ----------
+  // POLYGON
   if (geometry.type === "polygon" && geometry.polygon?.length >= 3) {
     const points = geometry.polygon.map(read);
-    // ✅ SWAP: Send 'LATITUDE LONGITUDE' for SQL Server/C# backend
-    const wktCoords = points.map(p => `${p.lat} ${p.lng}`).join(", ");
+    const wktCoords = points.map((p) => `${p.lat} ${p.lng}`).join(", ");
     const first = `${points[0].lat} ${points[0].lng}`;
     return `POLYGON((${wktCoords}, ${first}))`;
   }
 
-  // ---------- RECTANGLE ----------
+  // RECTANGLE
   if (geometry.type === "rectangle" && geometry.rectangle) {
     const ne = read(geometry.rectangle.ne);
     const sw = read(geometry.rectangle.sw);
@@ -118,12 +107,12 @@ const geometryToWktPolygon = (geometry) => {
       { lat: ne.lat, lng: ne.lng },
       { lat: sw.lat, lng: ne.lng },
       { lat: sw.lat, lng: sw.lng },
-      { lat: ne.lat, lng: sw.lng }
+      { lat: ne.lat, lng: sw.lng },
     ];
-    return `POLYGON((${coords.map(p => `${p.lat} ${p.lng}`).join(", ")}))`;
+    return `POLYGON((${coords.map((p) => `${p.lat} ${p.lng}`).join(", ")}))`;
   }
 
-  // ---------- CIRCLE ----------
+  // CIRCLE
   if (geometry.type === "circle" && geometry.circle) {
     const center = read(geometry.circle.center);
     const radius = geometry.circle.radius;
@@ -131,9 +120,10 @@ const geometryToWktPolygon = (geometry) => {
     for (let i = 0; i <= 64; i++) {
       const angle = (i / 64) * Math.PI * 2;
       const latOffset = (radius / 111111) * Math.cos(angle);
-      const lngOffset = (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) * Math.sin(angle);
-      
-      // Clamp latitude to physical bounds
+      const lngOffset =
+        (radius / (111111 * Math.cos((center.lat * Math.PI) / 180))) *
+        Math.sin(angle);
+
       const lat = Math.max(-90, Math.min(90, center.lat + latOffset));
       const lng = center.lng + lngOffset;
       points.push(`${lat} ${lng}`);
@@ -142,6 +132,16 @@ const geometryToWktPolygon = (geometry) => {
   }
   return null;
 };
+
+// ============================================
+// SPINNER COMPONENT
+// ============================================
+function Spinner({ className = "" }) {
+  return (
+    <Loader2 className={`h-8 w-8 animate-spin text-blue-500 ${className}`} />
+  );
+}
+
 // ============================================
 // ACTIVE FILTERS BAR COMPONENT
 // ============================================
@@ -207,22 +207,22 @@ function ActiveFiltersBar({
 
   return (
     <div
-      className={`bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-3 py-2 flex items-center gap-2 flex-wrap ${className}`}
+      className={`flex flex-wrap items-center gap-1.5 rounded-lg bg-white/95 px-2 py-1 shadow-lg backdrop-blur-sm sm:gap-2 sm:px-3 sm:py-2 ${className}`}
     >
       <div className="flex items-center gap-1.5 text-gray-500">
-        <Filter className="h-4 w-4" />
-        <span className="text-xs font-medium">Filters:</span>
+        <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+        <span className="text-[10px] font-medium sm:text-xs">Filters:</span>
       </div>
 
       {activeFilters.map((filter) => (
         <Badge
           key={filter.key}
           variant="secondary"
-          className={`${filter.color} cursor-pointer flex items-center gap-1 text-xs font-medium transition-colors`}
+          className={`${filter.color} flex cursor-pointer items-center gap-1 text-[10px] font-medium transition-colors sm:text-xs`}
           onClick={() => onClearFilter(filter.key)}
         >
           {filter.label}
-          <X className="h-3 w-3" />
+          <X className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
         </Badge>
       ))}
 
@@ -230,7 +230,7 @@ function ActiveFiltersBar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-xs text-gray-500 hover:text-gray-700"
+          className="h-5 px-1.5 text-[10px] text-gray-500 hover:text-gray-700 sm:h-6 sm:px-2 sm:text-xs"
           onClick={onClearAll}
         >
           Clear All
@@ -240,87 +240,6 @@ function ActiveFiltersBar({
   );
 }
 
-// ============================================
-// MAP LEGEND COMPONENT
-// ============================================
-function MapLegend({ metric = "RSRP", thresholds = null }) {
-  const unit = getMetricUnit(metric);
-
-  const legendItems = useMemo(() => {
-    if (!thresholds || !Array.isArray(thresholds) || thresholds.length === 0) {
-      const defaultLegends = {
-        RSRP: [
-          { color: "#00FF00", label: ">= -80 dBm (Excellent)" },
-          { color: "#7FFF00", label: "-80 to -90 dBm (Good)" },
-          { color: "#FFFF00", label: "-90 to -100 dBm (Fair)" },
-          { color: "#FFA500", label: "-100 to -110 dBm (Poor)" },
-          { color: "#FF0000", label: "< -110 dBm (No Signal)" },
-        ],
-        RSRQ: [
-          { color: "#00FF00", label: ">= -10 dB (Excellent)" },
-          { color: "#7FFF00", label: "-10 to -15 dB (Good)" },
-          { color: "#FFFF00", label: "-15 to -20 dB (Fair)" },
-          { color: "#FFA500", label: "-20 to -25 dB (Poor)" },
-          { color: "#FF0000", label: "< -25 dB (Bad)" },
-        ],
-        SINR: [
-          { color: "#00FF00", label: ">= 20 dB (Excellent)" },
-          { color: "#7FFF00", label: "13 to 20 dB (Good)" },
-          { color: "#FFFF00", label: "0 to 13 dB (Fair)" },
-          { color: "#FFA500", label: "-5 to 0 dB (Poor)" },
-          { color: "#FF0000", label: "< -5 dB (Bad)" },
-        ],
-        DL_THPT: [
-          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
-          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
-          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
-          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
-          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
-        ],
-        UL_THPT: [
-          { color: "#00FF00", label: ">= 50 Mbps (Excellent)" },
-          { color: "#7FFF00", label: "20-50 Mbps (Good)" },
-          { color: "#FFFF00", label: "10-20 Mbps (Fair)" },
-          { color: "#FFA500", label: "5-10 Mbps (Poor)" },
-          { color: "#FF0000", label: "< 5 Mbps (Bad)" },
-        ],
-      };
-      return defaultLegends[metric?.toUpperCase()] || defaultLegends.RSRP;
-    }
-
-    const isNegativeMetric = ["RSRP", "RSRQ"].includes(metric?.toUpperCase());
-    const sorted = [...thresholds].sort((a, b) => {
-      return isNegativeMetric
-        ? parseFloat(b.min) - parseFloat(a.min)
-        : parseFloat(b.min) - parseFloat(a.min);
-    });
-
-    return sorted.map((t) => ({
-      color: t.color,
-      label: t.label || `${t.range || `${t.min} to ${t.max}`} ${unit}`.trim(),
-    }));
-  }, [thresholds, metric, unit]);
-
-  return (
-    <div className="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3">
-      <h4 className="text-xs font-semibold text-gray-700 mb-2">
-        {metric || "RSRP"} Legend {unit && `(${unit})`}
-      </h4>
-      <div className="space-y-1">
-        {legendItems.map((item, index) => (
-          <div key={index} className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded-sm border border-gray-300"
-              style={{ backgroundColor: item.color }}
-            />
-            <span className="text-xs text-gray-600">{item.label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-const EMPTY_ARRAY = [];
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -336,7 +255,7 @@ function SessionMapDebug() {
   const [isSaving, setIsSaving] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
   const [sessionMarkers, setSessionMarkers] = useState([]);
-  const [onlyInsidePolygons, setOnlyInsidePolygons] = useState(false);
+  const [legendFilter, setLegendFilter] = useState(null);
 
   // Use the color hook
   const {
@@ -363,7 +282,6 @@ function SessionMapDebug() {
   const sessionIdParam =
     searchParams.get("sessionId") || searchParams.get("sessionIds");
   const sessionIds = useMemo(() => {
-    
     if (!sessionIdParam) return EMPTY_ARRAY;
     return sessionIdParam
       .split(",")
@@ -399,7 +317,10 @@ function SessionMapDebug() {
 
   // Use the Session Neighbors Hook
   const { neighborData, loading: neighborsLoading } = useSessionNeighbors(
-   sessionIds, true, false, EMPTY_ARRAY
+    sessionIds,
+    true,
+    false,
+    EMPTY_ARRAY
   );
 
   // Update Available Filters and Markers when logs change
@@ -444,56 +365,79 @@ function SessionMapDebug() {
     return getThresholdsForMetric(filters.metric || "RSRP");
   }, [getThresholdsForMetric, filters.metric]);
 
+  // Formatted thresholds
+  const formattedThresholds = useMemo(() => {
+    return allThresholds
+      ? {
+          rsrp: allThresholds.rsrp || [],
+          rsrq: allThresholds.rsrq || [],
+          sinr: allThresholds.sinr || [],
+          dl_thpt:
+            allThresholds.dlThpt ||
+            allThresholds.dl_tpt ||
+            allThresholds.dl_thpt ||
+            [],
+          ul_thpt:
+            allThresholds.ulThpt ||
+            allThresholds.ul_tpt ||
+            allThresholds.ul_thpt ||
+            [],
+          mos: allThresholds.mos || [],
+          lte_bler: allThresholds.lteBler || [],
+        }
+      : {};
+  }, [allThresholds]);
+
   // Filter logs logic
   const filteredLogs = useMemo(() => {
     if (!logs.length) return [];
 
-    return logs.filter((log) => {
-      // ✅ FIX: Use normalized value helper for filtering
-      const metricValue = getMetricValue(log, filters.metric);
+    return logs
+      .filter((log) => {
+        const metricValue = getMetricValue(log, filters.metric);
 
-      if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
-        if (metricValue < parseFloat(filters.minSignal)) return false;
-      }
-      if (filters.maxSignal !== "" && !isNaN(parseFloat(filters.maxSignal))) {
-        if (metricValue > parseFloat(filters.maxSignal)) return false;
-      }
-      if (filters.technology && filters.technology !== "ALL") {
-        if (
-          log.technology?.toUpperCase() !== filters.technology.toUpperCase()
-        )
-          return false;
-      }
-      if (filters.band && filters.band !== "" && filters.band !== "all") {
-        if (log.band?.toString() !== filters.band) return false;
-      }
-      if (filters.provider && filters.provider !== "all") {
-        if (log.provider?.toLowerCase() !== filters.provider.toLowerCase())
-          return false;
-      }
-      if (filters.dataSource && filters.dataSource !== "all") {
-        if (log.source?.toLowerCase() !== filters.dataSource.toLowerCase())
-          return false;
-      }
-      if (filters.startDate || filters.endDate) {
-        if (log.timestamp) {
-          const logDate = new Date(log.timestamp);
-          if (filters.startDate && logDate < filters.startDate) return false;
-          if (filters.endDate) {
-            const endOfDay = new Date(filters.endDate);
-            endOfDay.setHours(23, 59, 59, 999);
-            if (logDate > endOfDay) return false;
+        if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
+          if (metricValue < parseFloat(filters.minSignal)) return false;
+        }
+        if (filters.maxSignal !== "" && !isNaN(parseFloat(filters.maxSignal))) {
+          if (metricValue > parseFloat(filters.maxSignal)) return false;
+        }
+        if (filters.technology && filters.technology !== "ALL") {
+          if (
+            log.technology?.toUpperCase() !== filters.technology.toUpperCase()
+          )
+            return false;
+        }
+        if (filters.band && filters.band !== "" && filters.band !== "all") {
+          if (log.band?.toString() !== filters.band) return false;
+        }
+        if (filters.provider && filters.provider !== "all") {
+          if (log.provider?.toLowerCase() !== filters.provider.toLowerCase())
+            return false;
+        }
+        if (filters.dataSource && filters.dataSource !== "all") {
+          if (log.source?.toLowerCase() !== filters.dataSource.toLowerCase())
+            return false;
+        }
+        if (filters.startDate || filters.endDate) {
+          if (log.timestamp) {
+            const logDate = new Date(log.timestamp);
+            if (filters.startDate && logDate < filters.startDate) return false;
+            if (filters.endDate) {
+              const endOfDay = new Date(filters.endDate);
+              endOfDay.setHours(23, 59, 59, 999);
+              if (logDate > endOfDay) return false;
+            }
           }
         }
-      }
-      return true;
-    }).map(log => ({
-      // ✅ FIX: Map data to ensure normalized keys exist for the map component
-      ...log,
-      dl_thpt: log.dl_thpt ?? log.dl_tpt ?? log.DL_TPT ?? null,
-      ul_thpt: log.ul_thpt ?? log.ul_tpt ?? log.UL_TPT ?? null,
-      lte_bler: log.lte_bler ?? log.lteBler ?? null
-    }));
+        return true;
+      })
+      .map((log) => ({
+        ...log,
+        dl_thpt: log.dl_thpt ?? log.dl_tpt ?? log.DL_TPT ?? null,
+        ul_thpt: log.ul_thpt ?? log.ul_tpt ?? log.UL_TPT ?? null,
+        lte_bler: log.lte_bler ?? log.lteBler ?? null,
+      }));
   }, [logs, filters]);
 
   // Show toast when filtered count changes
@@ -521,7 +465,7 @@ function SessionMapDebug() {
     [resetFilter]
   );
 
-  // Enhanced Save Polygon with full support for polygon/rectangle/circle
+  // Save Polygon
   const handleSavePolygon = async () => {
     if (!analysis || !analysis.geometry) {
       toast.warn("No analysis geometry found to save.");
@@ -534,10 +478,10 @@ function SessionMapDebug() {
 
     const wktString = geometryToWktPolygon(analysis.geometry);
     console.log("💾 SAVING POLYGON:", {
-    name: polygonName,
-    wkt: wktString,
-    geometry: analysis.geometry
-  });
+      name: polygonName,
+      wkt: wktString,
+      geometry: analysis.geometry,
+    });
     if (!wktString) {
       toast.error("Failed to convert geometry to WKT format.");
       return;
@@ -677,7 +621,7 @@ function SessionMapDebug() {
     toast.success(`Downloaded ${filteredLogs.length.toLocaleString()} points!`);
   }, [filteredLogs]);
 
-  // Set download handlers in context (prevents stale closures)
+  // Set download handlers in context
   const downloadHandlersRef = useRef({
     stats: handleStatsDownload,
     raw: handleRawDownload,
@@ -694,7 +638,7 @@ function SessionMapDebug() {
     });
   }, [setDownloadHandlers]);
 
-  // Update polygon stats whenever filtered logs change
+  // Update polygon stats
   const prevFilteredLengthRef = useRef(0);
   useEffect(() => {
     if (filteredLogs.length !== prevFilteredLengthRef.current) {
@@ -717,7 +661,8 @@ function SessionMapDebug() {
                 : 0,
             min: values.length > 0 ? Math.min(...values) : 0,
             max: values.length > 0 ? Math.max(...values) : 0,
-            median: values.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0,
+            median:
+              values.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0,
           },
           intersectingSessions: sessionIds.map((id) => ({ id })),
           activeFilters: filters,
@@ -750,34 +695,19 @@ function SessionMapDebug() {
 
   const goBack = useCallback(() => navigate(-1), [navigate]);
 
-  // ✅ FIX: Move formattedThresholds useMemo BEFORE loading check to fix Hooks error
-  const formattedThresholds = useMemo(() => {
-    return allThresholds
-      ? {
-          rsrp: allThresholds.rsrp || [],
-          rsrq: allThresholds.rsrq || [],
-          sinr: allThresholds.sinr || [],
-          dl_thpt: allThresholds.dlThpt || allThresholds.dl_tpt || allThresholds.dl_thpt || [],
-          ul_thpt: allThresholds.ulThpt || allThresholds.ul_tpt || allThresholds.ul_thpt || [],
-          mos: allThresholds.mos || [],
-          lte_bler: allThresholds.lteBler || [],
-        }
-      : {};
-  }, [allThresholds]);
-
   const mapCenter = useMemo(() => {
     if (filteredLogs.length > 0)
       return { lat: filteredLogs[0].lat, lng: filteredLogs[0].lng };
     return DEFAULT_CENTER;
   }, [filteredLogs]);
 
-  // Loading State - This is the conditional return that was causing issues
+  // Loading State
   if (!isLoaded || loading || thresholdsLoading) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-900">
-        <div className="text-center">
-          <Spinner />
-          <p className="mt-4 text-white">
+      <div className="fixed inset-0 flex items-center justify-center bg-gray-900">
+        <div className="max-w-md px-4 text-center">
+          <Spinner className="mx-auto" />
+          <p className="mt-4 text-sm text-white sm:text-base">
             {thresholdsLoading
               ? "Loading thresholds..."
               : loading && fetchProgress?.total > 0
@@ -785,9 +715,9 @@ function SessionMapDebug() {
               : "Loading map..."}
           </p>
           {loading && fetchProgress?.total > 0 && (
-            <div className="mt-2 w-64 mx-auto bg-gray-700 rounded-full h-2">
+            <div className="mx-auto mt-2 h-2 w-64 rounded-full bg-gray-700">
               <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                className="h-2 rounded-full bg-blue-500 transition-all duration-300"
                 style={{
                   width: `${Math.min(
                     100,
@@ -804,10 +734,12 @@ function SessionMapDebug() {
 
   if (loadError || error) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-900 text-white">
-        <div className="text-center max-w-md px-4">
-          <h2 className="text-2xl font-bold mb-4">Error</h2>
-          <p className="text-red-400 mb-4">{loadError?.message || error}</p>
+      <div className="fixed inset-0 flex items-center justify-center bg-gray-900 text-white">
+        <div className="max-w-md px-4 text-center">
+          <h2 className="mb-4 text-xl font-bold sm:text-2xl">Error</h2>
+          <p className="mb-4 text-sm text-red-400 sm:text-base">
+            {loadError?.message || error}
+          </p>
           <Button onClick={goBack} className="bg-blue-600 hover:bg-blue-700">
             <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
           </Button>
@@ -816,246 +748,264 @@ function SessionMapDebug() {
     );
   }
 
-  // ✅ Force metric to lowercase for correct data mapping
   const selectedMetric = normalizeMetric(filters.metric);
 
   return (
-    <div
-      style={{
-        height: "100%",
-        width: "100%",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <MapWithMultipleCircles
-        isLoaded={isLoaded}
-        loadError={loadError}
-        locations={filteredLogs}
-        neighborData={neighborData}
-        showNeighbors={true}
-        // ✅ Passed lowercased metric to fix color issue
-        selectedMetric={selectedMetric}
-        thresholds={formattedThresholds}
-        onLoad={onMapLoad}
-        options={MAP_OPTIONS}
-        center={mapCenter}
-        showPoints={true}
-        pointRadius={12}
-        showStats={false}
-        activeMarkerIndex={null}
-        onMarkerClick={() => {}}
-        debugNeighbors={true}
-        neighborSquareSize={15}
-        neighborOpacity={0.5}
-      >
-        {map && (
-          <DrawingToolsLayer
-            map={map}
-            enabled={safeUi.drawEnabled}
+    <div className="fixed inset-0 overflow-hidden bg-gray-900">
+      {/* Map Container - Fixed full screen */}
+      <div className="absolute inset-0">
+        <MapWithMultipleCircles
+          isLoaded={isLoaded}
+          loadError={loadError}
+          locations={filteredLogs}
+          neighborData={neighborData}
+          showNeighbors={true}
+          selectedMetric={selectedMetric}
+          thresholds={formattedThresholds}
+          onLoad={onMapLoad}
+          options={MAP_OPTIONS}
+          legendFilter={legendFilter}
+          center={mapCenter}
+          showPoints={true}
+          pointRadius={8}
+          showStats={false}
+          activeMarkerIndex={null}
+          onMarkerClick={() => {}}
+          debugNeighbors={true}
+          neighborSquareSize={15}
+          neighborOpacity={0.5}
+        >
+          {map && (
+            <DrawingToolsLayer
+              map={map}
+              enabled={safeUi.drawEnabled}
+              logs={filteredLogs}
+              sessions={sessionMarkers}
+              thresholds={formattedThresholds}
+              selectedMetric={selectedMetric}
+              shapeMode={safeUi.shapeMode}
+              pixelateRect={safeUi.drawPixelateRect}
+              cellSizeMeters={safeUi.drawCellSizeMeters}
+              colorizeCells={safeUi.colorizeCells}
+              onSummary={handleDrawingSummary}
+              onDrawingsChange={() => {}}
+              clearSignal={safeUi.drawClearSignal}
+            />
+          )}
+        </MapWithMultipleCircles>
+      </div>
+
+      {/* All Logs Panel Toggle - Fixed position */}
+      <div className="pointer-events-none absolute inset-0 z-11">
+        <div className="pointer-events-auto">
+          <AllLogsPanelToggle
+          z={15}
             logs={filteredLogs}
-            sessions={sessionMarkers}
             thresholds={formattedThresholds}
             selectedMetric={selectedMetric}
-            shapeMode={safeUi.shapeMode}
-            pixelateRect={safeUi.drawPixelateRect}
-            cellSizeMeters={safeUi.drawCellSizeMeters}
-            colorizeCells={safeUi.colorizeCells}
-            onSummary={handleDrawingSummary}
-            onDrawingsChange={() => {}}
-            clearSignal={safeUi.drawClearSignal}
+            isLoading={loading}
+            appSummary={appSummary}
+            getMetricColor={getMetricColor}
           />
-        )}
-      </MapWithMultipleCircles>
+        </div>
+      </div>
 
-      <AllLogsPanelToggle
-        logs={filteredLogs}
-        thresholds={formattedThresholds}
-        selectedMetric={selectedMetric}
-        isLoading={loading}
-        appSummary={appSummary}
-        getMetricColor={getMetricColor}
-      />
-
+      {/* Active Filters Bar - Fixed position */}
       {hasActiveFilters && (
-        <ActiveFiltersBar
-          filters={filters}
-          onClearFilter={handleClearFilter}
-          onClearAll={clearFilters}
-          className="absolute top-4 left-4 z-20 max-w-lg"
-        />
-      )}
-
-      {showLegend && (
-        <div className="absolute top-20 right-4 z-20">
-          <MapLegend
-            metric={filters.metric || "RSRP"}
-            thresholds={currentThresholds}
-          />
-        </div>
-      )}
-
-      {/* No results overlay when filters eliminate everything */}
-      {filteredLogs.length === 0 && logs.length > 0 && (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-6 py-4 text-center">
-          <Filter className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-gray-700 font-medium">
-            No points match current filters
-          </p>
-          <p className="text-gray-500 text-sm mt-1">
-            {logs.length.toLocaleString()} points available. Try adjusting your
-            filters.
-          </p>
-          <Button size="sm" className="mt-3" onClick={clearFilters}>
-            Clear All Filters
-          </Button>
-        </div>
-      )}
-
-      {/* Analysis Panel */}
-      {analysis && (
-        <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[320px] border border-gray-200">
-          <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
-            <h3 className="font-semibold text-white text-sm">
-              Selection Analysis
-            </h3>
-            <button
-              onClick={handleCloseAnalysis}
-              className="text-white/80 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center p-2 sm:justify-start sm:p-4">
+          <div className="pointer-events-auto max-w-full sm:max-w-lg">
+            <ActiveFiltersBar
+              filters={filters}
+              onClearFilter={handleClearFilter}
+              onClearAll={clearFilters}
+            />
           </div>
+        </div>
+      )}
 
-          <div className="p-3 text-xs space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-gray-50 rounded px-2 py-1.5">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
-                  Shape
-                </div>
-                <div className="font-medium text-gray-800 capitalize">
-                  {analysis.type || "Unknown"}
-                </div>
-              </div>
-              <div className="bg-gray-50 rounded px-2 py-1.5">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
-                  Points
-                </div>
-                <div className="font-medium text-gray-800">
-                  {(analysis.count || 0).toLocaleString()}
-                </div>
-              </div>
+      {/* Map Legend - Fixed position */}
+      {showLegend && (
+        <div className="pointer-events-none absolute inset-0 ">
+          <div className="pointer-events-auto">
+            <MapLegend
+              thresholds={formattedThresholds}
+              selectedMetric={selectedMetric}
+              colorBy={null}
+              logs={filteredLogs}
+              activeFilter={legendFilter}
+              onFilterChange={setLegendFilter}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* No Results Overlay - Fixed position */}
+      {filteredLogs.length === 0 && logs.length > 0 && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
+          <div className="pointer-events-auto w-full max-w-sm rounded-lg bg-white/95 px-4 py-3 text-center shadow-lg backdrop-blur-sm sm:px-6 sm:py-4">
+            <Filter className="mx-auto mb-2 h-6 w-6 text-gray-400 sm:h-8 sm:w-8" />
+            <p className="text-sm font-medium text-gray-700 sm:text-base">
+              No points match current filters
+            </p>
+            <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+              {logs.length.toLocaleString()} points available. Try adjusting
+              your filters.
+            </p>
+            <Button size="sm" className="mt-3" onClick={clearFilters}>
+              Clear All Filters
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Analysis Panel - Fixed position */}
+      {analysis && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-2 sm:justify-start sm:p-4">
+          <div className="pointer-events-auto w-full max-w-sm rounded-lg border border-gray-200 bg-white shadow-lg sm:w-[320px]">
+            <div className="flex items-center justify-between rounded-t-lg bg-blue-600 px-3 py-2">
+              <h3 className="text-xs font-semibold text-white sm:text-sm">
+                Selection Analysis
+              </h3>
+              <button
+                onClick={handleCloseAnalysis}
+                className="p-1 text-white/80 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            {analysis.stats && (
+            <div className="max-h-[50vh] space-y-2 overflow-y-auto p-3 text-xs">
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-blue-50 rounded px-2 py-1.5 border border-blue-100">
-                  <div className="text-[10px] text-blue-600 uppercase tracking-wide">
-                    Mean
+                <div className="rounded bg-gray-50 px-2 py-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                    Shape
                   </div>
-                  <div className="font-bold text-blue-700">
-                    {analysis.stats.mean?.toFixed(1) ?? "-"}{" "}
-                    {getMetricUnit(filters.metric)}
-                  </div>
-                </div>
-                <div className="bg-green-50 rounded px-2 py-1.5 border border-green-100">
-                  <div className="text-[10px] text-green-600 uppercase tracking-wide">
-                    Median
-                  </div>
-                  <div className="font-bold text-green-700">
-                    {analysis.stats.median?.toFixed(1) ?? "-"}{" "}
-                    {getMetricUnit(filters.metric)}
+                  <div className="font-medium capitalize text-gray-800">
+                    {analysis.type || "Unknown"}
                   </div>
                 </div>
-                <div className="bg-orange-50 rounded px-2 py-1.5 border border-orange-100">
-                  <div className="text-[10px] text-orange-600 uppercase tracking-wide">
-                    Min
+                <div className="rounded bg-gray-50 px-2 py-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                    Points
                   </div>
-                  <div className="font-bold text-orange-700">
-                    {analysis.stats.min?.toFixed(1) ?? "-"}{" "}
-                    {getMetricUnit(filters.metric)}
-                  </div>
-                </div>
-                <div className="bg-red-50 rounded px-2 py-1.5 border border-red-100">
-                  <div className="text-[10px] text-red-600 uppercase tracking-wide">
-                    Max
-                  </div>
-                  <div className="font-bold text-red-700">
-                    {analysis.stats.max?.toFixed(1) ?? "-"}{" "}
-                    {getMetricUnit(filters.metric)}
+                  <div className="font-medium text-gray-800">
+                    {(analysis.count || 0).toLocaleString()}
                   </div>
                 </div>
               </div>
-            )}
 
-            {analysis.area > 0 && (
-              <div className="bg-gray-50 rounded px-2 py-1.5">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
-                  Area
+              {analysis.stats && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded border border-blue-100 bg-blue-50 px-2 py-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-blue-600">
+                      Mean
+                    </div>
+                    <div className="font-bold text-blue-700">
+                      {analysis.stats.mean?.toFixed(1) ?? "-"}{" "}
+                      {getMetricUnit(filters.metric)}
+                    </div>
+                  </div>
+                  <div className="rounded border border-green-100 bg-green-50 px-2 py-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-green-600">
+                      Median
+                    </div>
+                    <div className="font-bold text-green-700">
+                      {analysis.stats.median?.toFixed(1) ?? "-"}{" "}
+                      {getMetricUnit(filters.metric)}
+                    </div>
+                  </div>
+                  <div className="rounded border border-orange-100 bg-orange-50 px-2 py-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-orange-600">
+                      Min
+                    </div>
+                    <div className="font-bold text-orange-700">
+                      {analysis.stats.min?.toFixed(1) ?? "-"}{" "}
+                      {getMetricUnit(filters.metric)}
+                    </div>
+                  </div>
+                  <div className="rounded border border-red-100 bg-red-50 px-2 py-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-red-600">
+                      Max
+                    </div>
+                    <div className="font-bold text-red-700">
+                      {analysis.stats.max?.toFixed(1) ?? "-"}{" "}
+                      {getMetricUnit(filters.metric)}
+                    </div>
+                  </div>
                 </div>
-                <div className="font-medium text-gray-800">
-                  {analysis.area > 1_000_000
-                    ? `${(analysis.area / 1_000_000).toFixed(2)} km²`
-                    : `${analysis.area.toFixed(0)} m²`}
+              )}
+
+              {analysis.area > 0 && (
+                <div className="rounded bg-gray-50 px-2 py-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                    Area
+                  </div>
+                  <div className="font-medium text-gray-800">
+                    {analysis.area > 1_000_000
+                      ? `${(analysis.area / 1_000_000).toFixed(2)} km²`
+                      : `${analysis.area.toFixed(0)} m²`}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {hasActiveFilters && (
-              <div className="bg-yellow-50 rounded px-2 py-1.5 border border-yellow-100 text-xs text-yellow-800">
-                Analysis based on filtered data
-              </div>
-            )}
-          </div>
+              {hasActiveFilters && (
+                <div className="rounded border border-yellow-100 bg-yellow-50 px-2 py-1.5 text-xs text-yellow-800">
+                  Analysis based on filtered data
+                </div>
+              )}
+            </div>
 
-          <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 rounded-b-lg flex gap-2">
-            <Button
-              size="sm"
-              className="flex-1 h-8 text-xs"
-              onClick={() => setIsSaveDialogOpen(true)}
-              disabled={!analysis.geometry}
-            >
-              <Save className="h-3 w-3 mr-1.5" />
-              Save Polygon
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 px-2"
-              onClick={handleStatsDownload}
-            >
-              <Download className="h-3 w-3" />
-            </Button>
+            <div className="flex gap-2 rounded-b-lg border-t border-gray-200 bg-gray-50 px-3 py-2">
+              <Button
+                size="sm"
+                className="h-9 flex-1 text-xs sm:h-8"
+                onClick={() => setIsSaveDialogOpen(true)}
+                disabled={!analysis.geometry}
+              >
+                <Save className="mr-1.5 h-3 w-3" />
+                Save Polygon
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 px-2 sm:h-8"
+                onClick={handleStatsDownload}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Save Polygon Dialog */}
       <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="max-w-[95vw] sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Save Polygon Analysis</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="polygon-name" className="text-right">
+            <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              <Label htmlFor="polygon-name" className="sm:text-right">
                 Name
               </Label>
               <Input
                 id="polygon-name"
                 value={polygonName}
                 onChange={(e) => setPolygonName(e.target.value)}
-                className="col-span-3"
+                className="sm:col-span-3"
                 placeholder="e.g., Poor Coverage Zone - Downtown"
                 autoFocus
               />
             </div>
 
             {analysis && (
-              <div className="text-xs text-gray-600 space-y-1 ml-[calc(25%+1rem)]">
+              <div className="ml-0 space-y-1 text-xs text-gray-600 sm:ml-[calc(25%+1rem)]">
                 <div>
                   Shape:{" "}
-                  <span className="font-medium capitalize">{analysis.type}</span>{" "}
+                  <span className="font-medium capitalize">
+                    {analysis.type}
+                  </span>{" "}
                   - Points:{" "}
                   <span className="font-medium">
                     {(analysis.count || 0).toLocaleString()}
@@ -1087,7 +1037,7 @@ function SessionMapDebug() {
             >
               {isSaving ? (
                 <>
-                  <Spinner className="h-4 w-4 mr-2" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Saving...
                 </>
               ) : (

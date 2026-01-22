@@ -372,7 +372,7 @@ export default function MapLegend({
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
       `}</style>
 
-      <div className="absolute top-28 right-4 z-10">
+      <div className="absolute top-35 right-4 z-10">
         <div
           className={`bg-gray-900/95 backdrop-blur-lg border border-gray-700/40 rounded-lg shadow-xl shadow-black/20 transition-all duration-200 ${
             collapsed ? "w-auto" : "min-w-[240px] max-w-[280px]"
