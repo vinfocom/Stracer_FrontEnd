@@ -677,7 +677,7 @@ function SessionMapDebug() {
 
   const goBack = useCallback(() => navigate(-1), [navigate]);
 
-  // ✅ FIX: Move formattedThresholds useMemo BEFORE loading check to fix Hooks error
+  
   const formattedThresholds = useMemo(() => {
     return allThresholds
       ? {
@@ -756,12 +756,7 @@ function SessionMapDebug() {
 
   return (
     <div
-      style={{
-        height: "100%",
-        width: "100%",
-        position: "relative",
-        overflow: "hidden",
-      }}
+      className="h-full w-full "
     >
       <MapWithMultipleCircles
         isLoaded={isLoaded}

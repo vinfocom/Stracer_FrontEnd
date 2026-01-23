@@ -69,6 +69,7 @@ const parseLogEntry = (log, sessionId) => {
     dl_tpt: parseNum(log.dl_tpt),
     ul_tpt: parseNum(log.ul_tpt),
     mos: parseNum(log.mos),
+    level: parseNum(log.level),
     jitter: parseNum(log.jitter),
     latency: parseNum(log.latency),
     packet_loss: parseNum(log.packet_loss),
@@ -148,6 +149,8 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
             limit: PAGE_SIZE,
             signal: abortControllerRef.current.signal,
           });
+
+          console.log(`Fetched page ${currentPage} with ${response?.data?.data?.length || 0} records`);
         } catch (fetchErr) {
           if (isRequestCancelled(fetchErr)) return;
           throw fetchErr;

@@ -78,6 +78,11 @@ const MapChild = ({
             <option value="sinr">SINR</option>
             <option value="ul_tpt">Ul Tpt</option>
             <option value="dl_tpt">DL Tpt</option>
+            <option value="mos">MOS</option>
+            <option value="lte_bler">LTE BLER</option>
+            <option value="pci">PCI</option>
+            <option value="num_cells">Pilot pollution</option>
+            <option value="level">SSI</option>
           </select>
         </div>
 

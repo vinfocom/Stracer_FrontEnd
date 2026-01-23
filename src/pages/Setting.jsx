@@ -16,7 +16,9 @@ const PARAMETERS = {
     ul_thpt: "UL Throughput",
     lte_bler: "LTE BLER",
     mos: "MOS",
-    coveragehole: "Coverage Hole"
+    coveragehole: "Coverage Hole",
+    num_cells: "Pilot pollution",
+    level: "SSI",
 };
 
 const SPECIAL_FIELDS = {
@@ -535,7 +537,33 @@ const parseThresholdData = (data) => {
     Object.keys(PARAMETERS).forEach(key => {
         if (key === "coveragehole") {
             parsedData[key] = parseNumber(data.coveragehole_json || data.coveragehole) || DEFAULT_COVERAGE_HOLE;
-        } else {
+        } else if (key === "num_cells" || key === "level") {
+      
+            const jsonString = data[key]; // Read directly from num_cells and level
+            let parsed = [];
+            
+            if (jsonString) {
+                try {
+                    parsed = typeof jsonString === 'object' 
+                        ? (Array.isArray(jsonString) ? jsonString : [jsonString])
+                        : JSON.parse(jsonString);
+                } catch (e) {
+                    console.error(`Error parsing ${key}:`, e);
+                    parsed = [];
+                }
+            }
+            
+            parsedData[key] = (Array.isArray(parsed) ? parsed : [parsed])
+                .map(normalizeRow)
+                .filter(row => {
+                    // Make sure row has valid min/max
+                    return row.min !== undefined && 
+                           row.max !== undefined && 
+                           row.min !== null && 
+                           row.max !== null;
+                });
+        }
+        else {
             const jsonString = data[`${key}_json`];
             let parsed = [];
             
@@ -594,6 +622,8 @@ const buildSavePayload = (thresholds, userId) => {
         mos_json: JSON.stringify(normalizeArray(thresholds.mos)),
         volte_call: JSON.stringify(normalizeArray(thresholds.volte_call)),
         coveragehole_json: String(thresholds.coveragehole ?? DEFAULT_COVERAGE_HOLE),
+        num_cells: JSON.stringify(normalizeArray(thresholds.num_cells)),
+        level: JSON.stringify(normalizeArray(thresholds.level)),
     };
 
     return payload;

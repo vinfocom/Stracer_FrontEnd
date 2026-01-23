@@ -2,7 +2,7 @@
 import { settingApi } from "@/api/apiEndpoints";
 import { useCallback, useEffect, useState } from "react";
 import { getLogColor } from "@/utils/colorUtils"; 
-import { getPciColor } from "@/utils/metrics"; // ✅ IMPORT THIS
+import { getPciColor } from "@/utils/metrics";
 
 function useColorForLog() {
     const [parsedData, setParsedData] = useState(null);
@@ -16,20 +16,38 @@ function useColorForLog() {
             
             if (res.Status === 1) {
                 const data = res.Data;
+                
+                // ✅ Safe parsing with fallback to empty array
+                const safeParse = (jsonString) => {
+                    try {
+                        if (!jsonString) return [];
+                        const parsed = typeof jsonString === 'string' 
+                            ? JSON.parse(jsonString) 
+                            : jsonString;
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                        console.error('Parse error:', e);
+                        return [];
+                    }
+                };
+
                 const parsed = {
                     id: data.id,
                     userId: data.user_id,
                     isDefault: data.is_default,
-                    coverageHole: JSON.parse(data.coveragehole_json),
-                    rsrp: JSON.parse(data.rsrp_json),
-                    rsrq: JSON.parse(data.rsrq_json),
-                    sinr: JSON.parse(data.sinr_json),
-                    dl_thpt: JSON.parse(data.dl_thpt_json),
-                    ul_thpt: JSON.parse(data.ul_thpt_json),
-                    volteCall: JSON.parse(data.volte_call),
-                    lte_bler: JSON.parse(data.lte_bler_json),
-                    mos: JSON.parse(data.mos_json)
+                    coverageHole: data.coveragehole_json ? parseFloat(data.coveragehole_json) : -110,
+                    rsrp: safeParse(data.rsrp_json),
+                    rsrq: safeParse(data.rsrq_json),
+                    sinr: safeParse(data.sinr_json),
+                    dl_thpt: safeParse(data.dl_thpt_json),
+                    ul_thpt: safeParse(data.ul_thpt_json),
+                    volteCall: safeParse(data.volte_call),
+                    lte_bler: safeParse(data.lte_bler_json),
+                    mos: safeParse(data.mos_json),
+                    num_cells: safeParse(data.num_cells),
+                    level: safeParse(data.level)
                 };
+                
                 setParsedData(parsed);
             }
         } catch (err) {
@@ -52,13 +70,19 @@ function useColorForLog() {
             return getLogColor(lowerMetric, value);
         }
 
-        // ✅ 2. Handle PCI specifically (Algorithmic coloring, not threshold-based)
+        // 2. Handle PCI specifically (Algorithmic coloring)
         if (lowerMetric === 'pci') {
             return getPciColor(value);
         }
 
         // 3. Handle Numeric/Threshold Coloring
-        if (value === null || value === undefined || isNaN(value)) {
+        // ✅ Validate value early
+        if (value === null || value === undefined || value === '' || isNaN(value)) {
+            return "#808080";
+        }
+
+        const numValue = parseFloat(value);
+        if (isNaN(numValue)) {
             return "#808080";
         }
 
@@ -77,41 +101,86 @@ function useColorForLog() {
             'mos': 'mos',
             'lte_bler': 'lte_bler',
             'volte_call': 'volteCall',
-            'coveragehole': 'coverageHole'
+            'coveragehole': 'coverageHole',
+            'num_cells': 'num_cells',
+            'level': 'level'    
         };
 
         const key = metricKeyMap[lowerMetric] || lowerMetric;
         const thresholds = parsedData[key];
 
-        if (!thresholds || !Array.isArray(thresholds)) {
+        // ✅ Validate thresholds array
+        if (!thresholds || !Array.isArray(thresholds) || thresholds.length === 0) {
             return "#808080";
         }
 
-        for (const thres of thresholds) {
+        // ✅ Filter out invalid thresholds
+        const validThresholds = thresholds.filter(t => {
+            const min = parseFloat(t.min);
+            const max = parseFloat(t.max);
+            return !isNaN(min) && !isNaN(max) && t.color;
+        });
+
+        if (validThresholds.length === 0) {
+            return "#808080";
+        }
+
+        // ✅ Sort thresholds by min value to ensure correct range matching
+        const sortedThresholds = [...validThresholds].sort((a, b) => 
+            parseFloat(a.min) - parseFloat(b.min)
+        );
+
+        // Find matching threshold
+        for (const thres of sortedThresholds) {
             const min = parseFloat(thres.min);
             const max = parseFloat(thres.max);
             
-            if (value >= min && value < max) {
+            // Standard range check: min <= value < max
+            if (numValue >= min && numValue < max) {
                 return thres.color;
             }
         }
 
-        // Handle edge cases
-        const lastThreshold = thresholds[thresholds.length - 1];
-        if (value >= parseFloat(lastThreshold.max)) {
+        // ✅ Handle edge cases more safely
+        const lastThreshold = sortedThresholds[sortedThresholds.length - 1];
+        const firstThreshold = sortedThresholds[0];
+
+        // If value is greater than or equal to last threshold's max
+        if (lastThreshold && numValue >= parseFloat(lastThreshold.max)) {
             return lastThreshold.color;
         }
 
-        const firstThreshold = thresholds[0];
-        if (value < parseFloat(firstThreshold.min)) {
+        // If value is less than first threshold's min
+        if (firstThreshold && numValue < parseFloat(firstThreshold.min)) {
             return firstThreshold.color;
         }
 
-        return "#808080";
+        // ✅ Fallback: find closest threshold
+        let closestThreshold = sortedThresholds[0];
+        let minDistance = Math.abs(numValue - parseFloat(closestThreshold.min));
+
+        for (const thres of sortedThresholds) {
+            const min = parseFloat(thres.min);
+            const max = parseFloat(thres.max);
+            const midPoint = (min + max) / 2;
+            const distance = Math.abs(numValue - midPoint);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestThreshold = thres;
+            }
+        }
+
+        return closestThreshold?.color || "#808080";
     }, [parsedData]);
 
     const getThresholdInfo = useCallback((value, metric) => {
         if (!parsedData || value === null || value === undefined) {
+            return null;
+        }
+
+        const numValue = parseFloat(value);
+        if (isNaN(numValue)) {
             return null;
         }
 
@@ -124,26 +193,50 @@ function useColorForLog() {
             'ul_thpt': 'ul_thpt',
             'ul_tpt': 'ul_thpt',
             'mos': 'mos',
-            'lte_bler': 'lte_bler'
+            'lte_bler': 'lte_bler',
+            'num_cells': 'num_cells',
+            'level': 'level'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();
         const thresholds = parsedData[key];
 
-        if (!thresholds || !Array.isArray(thresholds)) {
+        if (!thresholds || !Array.isArray(thresholds) || thresholds.length === 0) {
             return null;
         }
 
-        for (const thres of thresholds) {
-            if (value >= parseFloat(thres.min) && value < parseFloat(thres.max)) {
+        // ✅ Find valid matching threshold
+        const validThresholds = thresholds.filter(t => {
+            const min = parseFloat(t.min);
+            const max = parseFloat(t.max);
+            return !isNaN(min) && !isNaN(max);
+        });
+
+        for (const thres of validThresholds) {
+            const min = parseFloat(thres.min);
+            const max = parseFloat(thres.max);
+            
+            if (numValue >= min && numValue < max) {
                 return {
                     color: thres.color,
-                    label: thres.label,
-                    range: thres.range,
+                    label: thres.label || '',
+                    range: thres.range || `${min} to ${max}`,
                     min: thres.min,
                     max: thres.max
                 };
             }
+        }
+
+        // ✅ Return last threshold info if value exceeds all ranges
+        const lastValid = validThresholds[validThresholds.length - 1];
+        if (lastValid && numValue >= parseFloat(lastValid.max)) {
+            return {
+                color: lastValid.color,
+                label: lastValid.label || '',
+                range: lastValid.range || `${lastValid.min}+`,
+                min: lastValid.min,
+                max: lastValid.max
+            };
         }
 
         return null;
@@ -161,11 +254,26 @@ function useColorForLog() {
             'ul_thpt': 'ul_thpt',
             'ul_tpt': 'ul_thpt',
             'mos': 'mos',
-            'lte_bler': 'lte_bler'
+            'lte_bler': 'lte_bler',
+            'volte_call': 'volteCall',
+            'coveragehole': 'coverageHole',
+            'num_cells': 'num_cells',
+            'level': 'level'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();
-        return parsedData[key] || null;
+        const thresholds = parsedData[key];
+        
+        // ✅ Return valid thresholds only
+        if (!thresholds || !Array.isArray(thresholds)) {
+            return null;
+        }
+
+        return thresholds.filter(t => {
+            const min = parseFloat(t.min);
+            const max = parseFloat(t.max);
+            return !isNaN(min) && !isNaN(max) && t.color;
+        });
     }, [parsedData]);
 
     return {

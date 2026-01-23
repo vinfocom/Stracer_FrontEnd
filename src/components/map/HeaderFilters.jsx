@@ -50,7 +50,7 @@ const HeaderFilters = () => {
 
   const { providers, bands, technologies } = availableFilters;
 
-  const metricOptions = ['RSRP', 'RSRQ', 'SINR', 'DL_THPT', 'UL_THPT', 'MOS'];
+  const metricOptions = ['RSRP', 'RSRQ', 'SINR', 'DL_THPT', 'UL_THPT', 'MOS', 'LTE_BLER', 'PCI', 'NUM_CELLS', 'LEVEL'];
   
   // ✅ FIX: Use 'all' instead of empty string ''
   const bandOptions = React.useMemo(() => {

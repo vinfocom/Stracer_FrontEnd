@@ -53,7 +53,7 @@ const Checkbox = memo(
     >
       {checked && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
     </button>
-  )
+  ),
 );
 Checkbox.displayName = "Checkbox";
 
@@ -114,7 +114,7 @@ const CollapsibleSection = memo(
         )}
       </div>
     );
-  }
+  },
 );
 CollapsibleSection.displayName = "CollapsibleSection";
 
@@ -145,7 +145,7 @@ const ToggleRow = memo(
         <Checkbox checked={checked} onChange={onChange} disabled={disabled} />
       )}
     </div>
-  )
+  ),
 );
 ToggleRow.displayName = "ToggleRow";
 
@@ -175,7 +175,7 @@ const SelectRow = memo(
         </SelectContent>
       </Select>
     </div>
-  )
+  ),
 );
 SelectRow.displayName = "SelectRow";
 
@@ -202,7 +202,7 @@ const SegmentedControl = memo(
         </button>
       ))}
     </div>
-  )
+  ),
 );
 SegmentedControl.displayName = "SegmentedControl";
 
@@ -269,7 +269,7 @@ const ThresholdInput = memo(
         <span className="text-[10px] text-slate-400 w-8">{unit}</span>
       </div>
     );
-  }
+  },
 );
 ThresholdInput.displayName = "ThresholdInput";
 
@@ -360,8 +360,10 @@ const UnifiedMapSidebar = ({
       { value: "ul_tpt", label: "UL Throughput" },
       { value: "mos", label: "MOS" },
       { value: "pci", label: "PCI" },
+      { value: "num_cells", label: "Pilot pollution" },
+      { value: "level", label: "SSI" },
     ],
-    []
+    [],
   );
 
   const colorOptions = useMemo(
@@ -371,7 +373,7 @@ const UnifiedMapSidebar = ({
       { value: "band", label: "By Band" },
       { value: "technology", label: "By Technology" },
     ],
-    []
+    [],
   );
 
   // Filter handlers
@@ -382,7 +384,7 @@ const UnifiedMapSidebar = ({
         [filterType]: value === "all" ? [] : [value],
       }));
     },
-    [setDataFilters]
+    [setDataFilters],
   );
 
   const clearAllDataFilters = useCallback(() => {
@@ -405,7 +407,7 @@ const UnifiedMapSidebar = ({
         [metric]: { ...prev[metric], [field]: value },
       }));
     },
-    [setCoverageHoleFilters]
+    [setCoverageHoleFilters],
   );
 
   const activeCoverageFiltersCount = useMemo(() => {
@@ -418,23 +420,25 @@ const UnifiedMapSidebar = ({
       enableDataToggle ||
       (enableSiteToggle && siteToggle === "sites-prediction") ||
       showPolygons,
-    [enableDataToggle, enableSiteToggle, siteToggle, showPolygons]
+    [enableDataToggle, enableSiteToggle, siteToggle, showPolygons],
   );
 
-  const toggleEnvironment = useCallback((value) => {
-    setDataFilters?.((prev) => {
-      const current = prev.indoorOutdoor || [];
-      const exists = current.includes(value);
-      let newValues;
-      if (exists) {
-        newValues = current.filter(v => v !== value);
-      } else {
-        newValues = [...current, value];
-      }
-      return { ...prev, indoorOutdoor: newValues };
-    });
-  }, [setDataFilters]);
-
+  const toggleEnvironment = useCallback(
+    (value) => {
+      setDataFilters?.((prev) => {
+        const current = prev.indoorOutdoor || [];
+        const exists = current.includes(value);
+        let newValues;
+        if (exists) {
+          newValues = current.filter((v) => v !== value);
+        } else {
+          newValues = [...current, value];
+        }
+        return { ...prev, indoorOutdoor: newValues };
+      });
+    },
+    [setDataFilters],
+  );
 
   return (
     <>
@@ -733,28 +737,30 @@ const UnifiedMapSidebar = ({
                     disabled={!enableDataToggle}
                   />
                 </div>
-                
+
                 <div className="space-y-1.5 pt-1">
-                    <Label className="text-xs text-slate-400">Environment</Label>
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
-                        <Checkbox 
-                          checked={dataFilters?.indoorOutdoor?.includes("Indoor")}
-                          onChange={() => toggleEnvironment("Indoor")}
-                          disabled={!enableDataToggle}
-                        />
-                        <span className="text-sm text-slate-300">Indoor</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
-                        <Checkbox 
-                          checked={dataFilters?.indoorOutdoor?.includes("Outdoor")}
-                          onChange={() => toggleEnvironment("Outdoor")}
-                          disabled={!enableDataToggle}
-                        />
-                        <span className="text-sm text-slate-300">Outdoor</span>
-                      </label>
-                    </div>
+                  <Label className="text-xs text-slate-400">Environment</Label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
+                      <Checkbox
+                        checked={dataFilters?.indoorOutdoor?.includes("Indoor")}
+                        onChange={() => toggleEnvironment("Indoor")}
+                        disabled={!enableDataToggle}
+                      />
+                      <span className="text-sm text-slate-300">Indoor</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
+                      <Checkbox
+                        checked={dataFilters?.indoorOutdoor?.includes(
+                          "Outdoor",
+                        )}
+                        onChange={() => toggleEnvironment("Outdoor")}
+                        disabled={!enableDataToggle}
+                      />
+                      <span className="text-sm text-slate-300">Outdoor</span>
+                    </label>
                   </div>
+                </div>
 
                 {activeDataFiltersCount > 0 && (
                   <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/50 rounded text-xs text-blue-300">

@@ -98,6 +98,7 @@ const METRIC_CONFIG = {
     min: 0,
     max: 100,
   },
+
 };
 
 const COLOR_GRADIENT = [
@@ -183,6 +184,8 @@ const getThresholdKey = (metric) => {
     mos: "mos",
     lte_bler: "lte_bler_json",
     pci: "pci",
+    num_cells: "num_cells",
+    level: "level"
   };
   return mapping[metric?.toLowerCase()] || metric;
 };

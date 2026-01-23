@@ -235,6 +235,18 @@ export const METRIC_CONFIG = {
     unit: '',
     fields: ['pci', 'PCI', 'Pci', 'physical_cell_id'],
   },
+  num_cells: {
+    thresholdKey: 'num_cells',
+    label: 'Pilot Pollution',
+    unit: '',
+    fields: ['num_cells', 'num_cell', 'pilot_pollution', 'serving_cells'],
+  },
+  level: {
+    thresholdKey: 'level',
+    label: 'SSI',
+    unit: 'dBm',
+    fields: ['level', 'ssi', 'ss_rsrp'],
+  },
 };
 
 const METRIC_ALIASES = {
