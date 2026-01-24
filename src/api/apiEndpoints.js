@@ -651,6 +651,20 @@ export const mapViewApi = {
       params: { polygonId, projectId },
     }),
 
+    // src/api/apiEndpoints.js
+getPciDistribution: async (sessionIds) => {
+  try {
+    const response = await api.get(`/api/MapView/GetPciDistribution`, {
+      params: { session_ids: sessionIds.join(',') }
+    });
+    // REMOVE .data here because api.get already returns the JSON body
+    return response; 
+  } catch (error) {
+    console.error("Error fetching PCI distribution:", error);
+    return null;
+  }
+},
+
   // ==================== Project Management ====================
   getProjects: () => api.get("/api/MapView/GetProjects"),
 

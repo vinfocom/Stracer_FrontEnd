@@ -569,6 +569,8 @@ const UnifiedMapView = () => {
   const [distance, setDistance] = useState(null);
   const [logArea, setLogArea] = useState(null);
   const [project, setProject] = useState(null);
+  const [pciDistData, setPciDistData] = useState(null);
+const [pciThreshold, setPciThreshold] = useState(0);
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
@@ -741,6 +743,23 @@ const UnifiedMapView = () => {
     ioAnalysis();
   }, [sessionIds]);
 
+ useEffect(() => {
+  if (sessionIds.length > 0) {
+    const fetchDist = async () => {
+      try {
+        const data = await mapViewApi.getPciDistribution(sessionIds);
+        if (data && data.success) {
+          // Store only the primary_yes data as requested
+          setPciDistData(data.primary_yes);
+        }
+      } catch (error) {
+        console.error("Failed to fetch PCI distribution", error);
+      }
+    };
+    fetchDist();
+  }
+}, [sessionIds]);
+
   // --- Derived State & Computations ---
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
@@ -860,8 +879,42 @@ const UnifiedMapView = () => {
       );
     }
 
+    if (pciDistData && pciThreshold > 0) {
+    result = result.filter((loc) => {
+      // Get the log's PCI identifier
+      const logPci = String(loc.pci || loc.PCI || "");
+      if (!logPci) return true; // Show logs without a valid PCI
+
+      // In your data, logPci (e.g., "79") is the top-level key in primary_yes
+      const pciGroup = pciDistData[logPci];
+
+      if (pciGroup) {
+        /**
+         * The object looks like: "79": { "1": 0.004, "2": 0.0546, ... }
+         * We sum all values inside this object to get the total appearance weight.
+         */
+        const totalWeight = Object.values(pciGroup).reduce(
+          (sum, value) => sum + (parseFloat(value) || 0), 
+          0
+        );
+
+        // Convert the sum (e.g., 0.0546) to a percentage (e.g., 5.46%)
+        const totalPercentage = totalWeight * 100;
+
+        // Only show the log if its total appearance is above the threshold
+        return totalPercentage >= pciThreshold;
+      }
+
+      /**
+       * If no distribution data exists for this specific PCI, 
+       * we return true to show it by default.
+       */
+      return true;
+    });
+  }
+
     return result;
-  }, [locations, coverageHoleFilters, dataFilters]);
+  }, [locations, coverageHoleFilters, dataFilters,pciDistData, pciThreshold]);
 
   const finalDisplayLocations = useMemo(() => {
     if (drawnPoints !== null) {
@@ -1398,6 +1451,8 @@ const UnifiedMapView = () => {
 
       <UnifiedMapSidebar
         open={isSideOpen}
+        pciThreshold={pciThreshold}       // Pass threshold state
+        setPciThreshold={setPciThreshold}
         onOpenChange={setIsSideOpen}
         enableDataToggle={enableDataToggle}
         setEnableDataToggle={setEnableDataToggle}

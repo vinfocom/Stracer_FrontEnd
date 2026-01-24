@@ -295,6 +295,8 @@ InfoBadge.displayName = "InfoBadge";
 const UnifiedMapSidebar = ({
   open,
   onOpenChange,
+  pciThreshold,    // New Prop
+  setPciThreshold,
   showNumCells,
   setShowNumCells,
   enableDataToggle,
@@ -761,6 +763,32 @@ const UnifiedMapSidebar = ({
                     </label>
                   </div>
                 </div>
+
+                <div className="border-t border-slate-700/50 pt-3 mt-2">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-slate-400">PCI Appearance Filter</span>
+          <span className="text-xs font-mono text-blue-400">{pciThreshold}%</span>
+        </div>
+        
+        <div className="px-1">
+          <input
+            type="range"
+            min="0"
+            max="20" // Usually distribution > 10% covers main cells
+            step="0.1"
+            value={pciThreshold}
+            onChange={(e) => setPciThreshold(parseFloat(e.target.value))}
+            className="w-full h-1.5 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+            <span>Show All</span>
+            <span>Common Only</span>
+          </div>
+        </div>
+        <p className="text-[10px] text-slate-500 mt-2 italic">
+          Hides PCIs that appear less than {pciThreshold}% of the time in this session.
+        </p>
+      </div>
 
                 {activeDataFiltersCount > 0 && (
                   <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/50 rounded text-xs text-blue-300">
