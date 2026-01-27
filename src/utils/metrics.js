@@ -247,6 +247,30 @@ export const METRIC_CONFIG = {
     unit: 'dBm',
     fields: ['level', 'ssi', 'ss_rsrp'],
   },
+  jitter: {
+    thresholdKey: 'jitter',
+    label: 'Jitter',
+    unit: 'ms',
+    fields: ['jitter'],
+  },
+  latency: {
+    thresholdKey: 'latency',
+    label: 'Latency',
+    unit: 'ms',
+    fields: ['latency'],
+  },
+  packet_loss: {
+    thresholdKey: 'packet_loss',
+    label: 'Packet Loss',
+    unit: '%',
+    fields: ['packet_loss', 'packetloss', 'packet_loss_rate'],
+  },
+  tac: {
+    thresholdKey: 'tac',
+    label: 'TAC',
+    unit: '',
+    fields: ['tac', 'TAC'],
+  },
 };
 
 const METRIC_ALIASES = {

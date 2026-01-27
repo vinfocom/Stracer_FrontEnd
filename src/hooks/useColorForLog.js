@@ -45,7 +45,12 @@ function useColorForLog() {
                     lte_bler: safeParse(data.lte_bler_json),
                     mos: safeParse(data.mos_json),
                     num_cells: safeParse(data.num_cells),
-                    level: safeParse(data.level)
+                    level: safeParse(data.level),
+                    jitter: safeParse(data.jitter),
+                    latency: safeParse(data.latency),
+                    packet_loss: safeParse(data.packet_loss),
+                    tac: safeParse(data.tac),
+
                 };
                 
                 setParsedData(parsed);
@@ -103,7 +108,11 @@ function useColorForLog() {
             'volte_call': 'volteCall',
             'coveragehole': 'coverageHole',
             'num_cells': 'num_cells',
-            'level': 'level'    
+            'level': 'level' ,     
+            'jitter': 'jitter',
+            'latency': 'latency',
+            'packet_loss': 'packet_loss',
+            'tac': 'tac'
         };
 
         const key = metricKeyMap[lowerMetric] || lowerMetric;
@@ -195,7 +204,11 @@ function useColorForLog() {
             'mos': 'mos',
             'lte_bler': 'lte_bler',
             'num_cells': 'num_cells',
-            'level': 'level'
+            'level': 'level',
+            'jitter': 'jitter',
+            'latency': 'latency',
+            'packet_loss': 'packet_loss',
+            'tac': 'tac'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();
@@ -258,7 +271,11 @@ function useColorForLog() {
             'volte_call': 'volteCall',
             'coveragehole': 'coverageHole',
             'num_cells': 'num_cells',
-            'level': 'level'
+            'level': 'level',
+            'jitter': 'jitter',
+            'latency': 'latency',
+            'packet_loss': 'packet_loss',
+            'tac': 'tac'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();

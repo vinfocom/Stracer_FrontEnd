@@ -19,6 +19,10 @@ const PARAMETERS = {
     coveragehole: "Coverage Hole",
     num_cells: "Pilot pollution",
     level: "SSI",
+    jitter: "Jitter",
+    latency: "Latency",
+    packet_loss: "Packet Loss",
+    tac: "TAC",
 };
 
 const SPECIAL_FIELDS = {
@@ -537,7 +541,7 @@ const parseThresholdData = (data) => {
     Object.keys(PARAMETERS).forEach(key => {
         if (key === "coveragehole") {
             parsedData[key] = parseNumber(data.coveragehole_json || data.coveragehole) || DEFAULT_COVERAGE_HOLE;
-        } else if (key === "num_cells" || key === "level") {
+        } else if (key === "num_cells" || key === "level" || key === "jitter" || key === "latency" || key === "packet_loss" || key === "tac") {
       
             const jsonString = data[key]; // Read directly from num_cells and level
             let parsed = [];
@@ -624,6 +628,10 @@ const buildSavePayload = (thresholds, userId) => {
         coveragehole_json: String(thresholds.coveragehole ?? DEFAULT_COVERAGE_HOLE),
         num_cells: JSON.stringify(normalizeArray(thresholds.num_cells)),
         level: JSON.stringify(normalizeArray(thresholds.level)),
+        jitter: JSON.stringify(normalizeArray(thresholds.jitter)),
+        latency: JSON.stringify(normalizeArray(thresholds.latency)),
+        packet_loss: JSON.stringify(normalizeArray(thresholds.packet_loss)),
+        tac: JSON.stringify(normalizeArray(thresholds.tac)),
     };
 
     return payload;

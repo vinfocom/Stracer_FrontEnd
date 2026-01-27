@@ -98,6 +98,12 @@ const METRIC_CONFIG = {
     min: 0,
     max: 100,
   },
+  num_cells: { higherIsBetter: false, unit: "", label: "Pilot Pollution", min: 1, max: 20 },
+  level: { higherIsBetter: true, unit: "dB", label: "SSI", min: -120, max: -30 },
+  jitter: { higherIsBetter: false, unit: "ms", label: "Jitter", min: 0, max: 100 },
+  latency: { higherIsBetter: false, unit: "ms", label: "Latency", min: 0, max: 500 },
+  packet_loss: { higherIsBetter: false, unit: "%", label: "Packet Loss", min: 0, max: 100 },
+  tac: { higherIsBetter: true, unit: "", label: "TAC", min: 0, max: 65535 },
 
 };
 
@@ -185,7 +191,11 @@ const getThresholdKey = (metric) => {
     lte_bler: "lte_bler_json",
     pci: "pci",
     num_cells: "num_cells",
-    level: "level"
+    level: "level",
+    jitter: "jitter",
+    latency: "latency",
+    packet_loss: "packet_loss",
+    tac: "tac",
   };
   return mapping[metric?.toLowerCase()] || metric;
 };
@@ -571,6 +581,13 @@ const UnifiedMapView = () => {
   const [project, setProject] = useState(null);
   const [pciDistData, setPciDistData] = useState(null);
 const [pciThreshold, setPciThreshold] = useState(0);
+const [dominanceData, setDominanceData] = useState([]);
+const [dominanceSettings, setDominanceSettings] = useState({
+  enabled: false,
+  threshold: 6,
+  showOverlap: false,
+  showCoverageViolation: false,
+});
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
@@ -758,6 +775,22 @@ const [pciThreshold, setPciThreshold] = useState(0);
     };
     fetchDist();
   }
+}, [sessionIds]);
+
+useEffect(() => {
+  const fetchDominance = async () => {
+    if (sessionIds.length > 0) {
+      try {
+        const res = await mapViewApi.getDominanceDetails(sessionIds);
+        if (res?.success && res.data) {
+          setDominanceData(res.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch dominance details", err);
+      }
+    }
+  };
+  fetchDominance();
 }, [sessionIds]);
 
   // --- Derived State & Computations ---

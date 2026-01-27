@@ -21,6 +21,13 @@ const resolveMetricConfig = (key) => {
     "ul-throughput": { field: "ul_tpt", thresholdKey: "ul_thpt" },
     mos: { field: "mos", thresholdKey: "mos" },
     "lte-bler": { field: "bler", thresholdKey: "lte_bler" },
+    pci: { field: "pci", thresholdKey: "pci" },
+    num_cells: { field: "num_cells", thresholdKey: "num_cells" },
+    level: { field: "level", thresholdKey: "level" },
+    jitter: { field: "jitter", thresholdKey: "jitter" },
+    latency: { field: "latency", thresholdKey: "latency" },
+    packet_loss: { field: "packet_loss", thresholdKey: "packet_loss" },
+    tac: { field: "tac", thresholdKey: "tac" },
   };
   return map[key?.toLowerCase()] || map.rsrp;
 };

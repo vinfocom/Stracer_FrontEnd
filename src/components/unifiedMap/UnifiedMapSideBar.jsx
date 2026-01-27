@@ -364,6 +364,10 @@ const UnifiedMapSidebar = ({
       { value: "pci", label: "PCI" },
       { value: "num_cells", label: "Pilot pollution" },
       { value: "level", label: "SSI" },
+      {value: "jitter", label: "Jitter"},
+      {value: "latency", label: "Latency"},
+      {value: "packet_loss", label: "Packet Loss"},
+      { value: "tac", label: "TAC" },
     ],
     [],
   );

@@ -72,6 +72,7 @@ const parseLogEntry = (log, sessionId) => {
     level: parseNum(log.level),
     jitter: parseNum(log.jitter),
     latency: parseNum(log.latency),
+    tac: parseNum(log.tac),
     packet_loss: parseNum(log.packet_loss),
     provider: normalizeProviderName(log.m_alpha_long || ''),
     technology: normalizeTechName(log.network || ''),
