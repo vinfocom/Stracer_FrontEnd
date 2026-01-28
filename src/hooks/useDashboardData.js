@@ -8,7 +8,7 @@ import {
   toNumber,
   ensureNegative
 } from '../utils/dashboardUtils';
-import { normalizeProviderName } from '@/utils/colorUtils';
+import { normalizeProviderName, normalizeTechName } from '@/utils/colorUtils';
 
 
 
@@ -801,20 +801,27 @@ export const useOperatorsAndNetworks = () => {
   }, [rawOperators]);
 
   const networks = useMemo(() => {
-    if (!rawNetworks || (Array.isArray(rawNetworks) && rawNetworks.length === 0)) {
-      return [];
-    }
-    
-    const networkKeys = [
-      'network', 'Network',
-      'networkType', 'NetworkType',
-      'type', 'Type',
-      'name', 'Name'
-    ];
-    
-    const processed = processUniqueList(rawNetworks, networkKeys);
-    return processed;
-  }, [rawNetworks]);
+  if (!rawNetworks || (Array.isArray(rawNetworks) && rawNetworks.length === 0)) {
+    return [];
+  }
+  
+  const networkKeys = [
+    'network', 'Network',
+    'networkType', 'NetworkType',
+    'type', 'Type',
+    'name', 'Name'
+  ];
+  
+  // 1. Get the unique raw list from the API
+  const rawList = processUniqueList(rawNetworks, networkKeys);
+  
+  // 2. Map through each item to normalize it (e.g., "LTE" -> "4G")
+  const normalizedList = rawList.map(tech => normalizeTechName(tech));
+  
+  // 3. Create a New Set to remove duplicates created by normalization
+  // This ensures "LTE" and "4G" (which both become "4G") only show up once.
+  return [...new Set(normalizedList)].filter(t => t !== "Unknown");
+}, [rawNetworks]);
 
   return { 
     operators, 

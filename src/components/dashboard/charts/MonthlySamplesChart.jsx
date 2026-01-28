@@ -18,7 +18,7 @@ const MonthlySamplesChart = ({ chartFilters, onChartFiltersChange, operators, ne
       onChartFiltersChange={onChartFiltersChange}
       operators={operators}
       networks={networks}
-      showChartFilters={true}
+      showChartFilters={false}
     >
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 16, right: 24, left: -10, bottom: 8 }}>

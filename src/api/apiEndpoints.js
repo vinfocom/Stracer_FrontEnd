@@ -776,6 +776,12 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
   }
 },
 
+getDominanceDetails: (sessionIds) => {
+    const ids = Array.isArray(sessionIds) ? sessionIds.join(',') : sessionIds;
+    return api.get(`/api/MapView/GetDominanceDetails`, {
+      params: { session_ids: ids }
+    });
+  },
 
 
   getDistanceSession: (session) =>

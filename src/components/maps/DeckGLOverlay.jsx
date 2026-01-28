@@ -167,7 +167,7 @@ const DeckGLOverlay = ({
         id: 'primary-logs-layer',
         data: primaryData,
         getPosition: d => d.position,
-        getFillColor: d => d.computedColor, // ✅ FIX: Use pre-computed color instead of undefined parseColor
+        getFillColor: d => d.computedColor, 
         getRadius: d => d.index === selectedIndex ? radius * 1.5 : radius,
         radiusMinPixels,
         radiusMaxPixels,

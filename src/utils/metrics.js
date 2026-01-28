@@ -271,6 +271,18 @@ export const METRIC_CONFIG = {
     unit: '',
     fields: ['tac', 'TAC'],
   },
+  dominance: {
+    thresholdKey: 'dominance',
+    label: 'Dominance',
+    unit: '',
+    fields: ['dominance'],
+  },
+  coverage_violation: {
+    thresholdKey: 'coverage_violation',
+    label: 'Coverage Violation',
+    unit: '',
+    fields: ['coverage_violation'],
+  },
 };
 
 const METRIC_ALIASES = {

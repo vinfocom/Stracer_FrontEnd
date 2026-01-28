@@ -3,36 +3,54 @@ import React, { useMemo, useState } from "react";
 import { ChevronDown, Layers, X } from "lucide-react";
 import {
   PCI_COLOR_PALETTE,
-  COLOR_SCHEMES,
   getMetricConfig,
   getMetricValueFromLog,
 } from "@/utils/metrics";
-import { normalizeProviderName, normalizeTechName , normalizeBandName} from "@/utils/colorUtils";
+import {
+  normalizeProviderName,
+  normalizeTechName,
+  normalizeBandName,
+  COLOR_SCHEMES,
+  generateColorFromHash
+} from "@/utils/colorUtils";
 
 // Helper to get normalized key for counting
 const getNormalizedKey = (log, colorBy, scheme) => {
   switch (colorBy) {
     case "provider":
-      return normalizeProviderName(log.provider || log.Provider || log.carrier) || "Unknown";
-      
+      return (
+        normalizeProviderName(log.provider || log.Provider || log.carrier) ||
+        "Unknown"
+      );
+
     case "technology":
-      const tech = log.network || log.Network || log.technology || log.networkType;
-      const band = log.band || log.Band || log.neighbourBand || log.neighborBand || log.neighbour_band;
+      const tech =
+        log.network || log.Network || log.technology || log.networkType;
+      const band =
+        log.band ||
+        log.Band ||
+        log.neighbourBand ||
+        log.neighborBand ||
+        log.neighbour_band;
       return normalizeTechName(tech, band);
 
     case "band": {
       const b = String(
-        log.neighbourBand || 
-        log.neighborBand || 
-        log.neighbour_band || 
-        log.band || 
-        log.Band || 
-        ""
+        log.neighbourBand ||
+          log.neighborBand ||
+          log.neighbour_band ||
+          log.band ||
+          log.Band ||
+          "",
       ).trim();
 
       const normalizedBand = normalizeBandName(b);
-      
-      return normalizedBand === "-1" || normalizedBand === "" ? "Unknown" : (scheme[normalizedBand] ? normalizedBand : "Unknown");
+
+      return normalizedBand === "-1" || normalizedBand === ""
+        ? "Unknown"
+        : scheme[normalizedBand]
+          ? normalizedBand
+          : "Unknown";
     }
     default:
       return "Unknown";
@@ -45,7 +63,9 @@ const ColorSchemeLegend = ({ colorBy, logs, activeFilter, onFilterChange }) => {
   if (!scheme) return null;
 
   const { counts, total, usedEntries } = useMemo(() => {
-    const tempCounts = Object.fromEntries(Object.keys(scheme).map(k => [k, 0]));
+    const tempCounts = Object.fromEntries(
+      Object.keys(scheme).map((k) => [k, 0]),
+    );
 
     logs?.forEach((log) => {
       const key = getNormalizedKey(log, colorBy, scheme);
@@ -59,26 +79,32 @@ const ColorSchemeLegend = ({ colorBy, logs, activeFilter, onFilterChange }) => {
     return { counts: tempCounts, total: logs?.length || 0, usedEntries: used };
   }, [logs, colorBy, scheme]);
 
+  
   const handleRowClick = (key) => {
     // Toggle: if already active, clear it.
-    if (activeFilter?.type === 'category' && activeFilter?.value === key) {
+    if (activeFilter?.type === "category" && activeFilter?.value === key) {
       onFilterChange(null);
     } else {
-      onFilterChange({ type: 'category', value: key, key: colorBy });
+      onFilterChange({ type: "category", value: key, key: colorBy });
     }
   };
 
   if (!usedEntries.length) {
-    return <div className="text-xs text-white text-center py-3">No data available</div>;
+    return (
+      <div className="text-xs text-white text-center py-3">
+        No data available
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto max-h-[200px] space-y-0.5 pr-1 custom-scrollbar">
         {usedEntries.map(([key, color]) => {
-          const isActive = activeFilter?.type === 'category' && activeFilter?.value === key;
+          const isActive =
+            activeFilter?.type === "category" && activeFilter?.value === key;
           const isDimmed = activeFilter && !isActive;
-          
+
           return (
             <LegendRow
               key={key}
@@ -98,11 +124,84 @@ const ColorSchemeLegend = ({ colorBy, logs, activeFilter, onFilterChange }) => {
   );
 };
 
+const TacLegend = ({ logs, activeFilter, onFilterChange }) => {
+    const stats = useMemo(() => {
+      const counts = {};
+      let validCount = 0;
+
+      logs?.forEach((log) => {
+        // Handle both uppercase and lowercase
+        const val = log.tac || log.TAC;
+        if (val !== undefined && val !== null && val !== "") {
+          counts[val] = (counts[val] || 0) + 1;
+          validCount++;
+        }
+      });
+
+      const sorted = Object.entries(counts)
+        .map(([label, count]) => ({
+          label,
+          count,
+          color: generateColorFromHash(String(label)), // Dynamic color from palette
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return { sorted, validCount, uniqueCount: sorted.length };
+    }, [logs]);
+
+    const handleRowClick = (val) => {
+      if (activeFilter?.type === "tac" && activeFilter?.value === val) {
+        onFilterChange(null);
+      } else {
+        onFilterChange({ type: "tac", value: val });
+      }
+    };
+
+    if (stats.sorted.length === 0) {
+      return (
+        <div className="text-xs text-gray-500 text-center py-3">
+          No TAC data
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto max-h-[200px] space-y-0.5 pr-1 custom-scrollbar">
+          {stats.sorted.map(({ label, count, color }) => {
+            const isActive =
+              activeFilter?.type === "tac" && activeFilter?.value === label;
+            const isDimmed = activeFilter && !isActive;
+
+            return (
+              <LegendRow
+                key={label}
+                color={color}
+                label={label}
+                count={count}
+                total={stats.validCount}
+                onClick={() => handleRowClick(label)}
+                isActive={isActive}
+                isDimmed={isDimmed}
+              />
+            );
+          })}
+        </div>
+        <LegendFooter
+          total={stats.validCount}
+          uniqueCount={stats.uniqueCount}
+          invalidLabel="No TAC"
+        />
+      </div>
+    );
+  };
+
 // ✅ PCI Legend
 const PciLegend = ({ logs, activeFilter, onFilterChange }) => {
   const pciStats = useMemo(() => {
     const pciMap = new Map();
-    let validCount = 0, invalidCount = 0;
+    let validCount = 0,
+      invalidCount = 0;
 
     logs?.forEach((log) => {
       const pci = getMetricValueFromLog(log, "pci");
@@ -126,22 +225,27 @@ const PciLegend = ({ logs, activeFilter, onFilterChange }) => {
     PCI_COLOR_PALETTE[Math.abs(Math.floor(pci)) % PCI_COLOR_PALETTE.length];
 
   const handleRowClick = (pci) => {
-    if (activeFilter?.type === 'pci' && activeFilter?.value === pci) {
+    if (activeFilter?.type === "pci" && activeFilter?.value === pci) {
       onFilterChange(null);
     } else {
-      onFilterChange({ type: 'pci', value: pci });
+      onFilterChange({ type: "pci", value: pci });
     }
   };
 
   if (!pciStats.allPcis.length) {
-    return <div className="text-xs text-gray-500 text-center py-3">No PCI data available</div>;
+    return (
+      <div className="text-xs text-gray-500 text-center py-3">
+        No PCI data available
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto max-h-[200px] space-y-0.5 pr-1 custom-scrollbar">
         {pciStats.allPcis.map(([pci, count]) => {
-          const isActive = activeFilter?.type === 'pci' && activeFilter?.value === pci;
+          const isActive =
+            activeFilter?.type === "pci" && activeFilter?.value === pci;
           const isDimmed = activeFilter && !isActive;
 
           return (
@@ -168,7 +272,13 @@ const PciLegend = ({ logs, activeFilter, onFilterChange }) => {
 };
 
 // ✅ Metric Threshold Legend
-const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter, onFilterChange }) => {
+const MetricThresholdLegend = ({
+  thresholds,
+  selectedMetric,
+  logs,
+  activeFilter,
+  onFilterChange,
+}) => {
   const config = getMetricConfig(selectedMetric);
   const list = thresholds?.[config.thresholdKey] || [];
 
@@ -178,7 +288,8 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter,
     }
 
     const tempCounts = new Array(list.length).fill(0);
-    let valid = 0, invalid = 0;
+    let valid = 0,
+      invalid = 0;
 
     logs.forEach((log) => {
       const val = getMetricValueFromLog(log, selectedMetric);
@@ -190,9 +301,16 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter,
 
       valid++;
       // Exact range match
+      // Modified: using val < max to align with standard exclusive upper bound logic
       const idx = list.findIndex((t) => {
-        const min = parseFloat(t.min), max = parseFloat(t.max);
-        return Number.isFinite(min) && Number.isFinite(max) && val >= min && val <= max;
+        const min = parseFloat(t.min),
+          max = parseFloat(t.max);
+        return (
+          Number.isFinite(min) &&
+          Number.isFinite(max) &&
+          val >= min &&
+          val < max
+        );
       });
 
       if (idx !== -1) {
@@ -201,13 +319,18 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter,
         // Handle edge cases (catch-all for values outside defined ranges)
         const mins = list.map((t) => parseFloat(t.min)).filter(Number.isFinite);
         const maxs = list.map((t) => parseFloat(t.max)).filter(Number.isFinite);
-        
+
         if (mins.length && maxs.length) {
-          if (val < Math.min(...mins)) {
-            const i = list.findIndex((t) => parseFloat(t.min) === Math.min(...mins));
+          const globalMin = Math.min(...mins);
+          const globalMax = Math.max(...maxs);
+
+          if (val < globalMin) {
+            const i = list.findIndex((t) => parseFloat(t.min) === globalMin);
             if (i !== -1) tempCounts[i]++;
-          } else if (val > Math.max(...maxs)) {
-            const i = list.findIndex((t) => parseFloat(t.max) === Math.max(...maxs));
+          } else if (val >= globalMax) {
+            // Modified: using >= to catch the max value itself (which was excluded in findIndex)
+            // and any value larger than the max
+            const i = list.findIndex((t) => parseFloat(t.max) === globalMax);
             if (i !== -1) tempCounts[i]++;
           }
         }
@@ -228,22 +351,30 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter,
     if (activeFilter?.id === id) {
       onFilterChange(null);
     } else {
-      onFilterChange({ 
-        type: 'metric', 
-        id, 
-        min: parseFloat(threshold.min), 
+      onFilterChange({
+        type: "metric",
+        id,
+        min: parseFloat(threshold.min),
         max: parseFloat(threshold.max),
-        metric: selectedMetric
+        metric: selectedMetric,
       });
     }
   };
 
   if (!list.length) {
-    return <div className="text-xs text-gray-500 text-center py-3">No thresholds configured</div>;
+    return (
+      <div className="text-xs text-gray-500 text-center py-3">
+        No thresholds configured
+      </div>
+    );
   }
 
   if (!usedThresholds.length) {
-    return <div className="text-xs text-gray-500 text-center py-3">No data available</div>;
+    return (
+      <div className="text-xs text-gray-500 text-center py-3">
+        No data available
+      </div>
+    );
   }
 
   return (
@@ -268,19 +399,31 @@ const MetricThresholdLegend = ({ thresholds, selectedMetric, logs, activeFilter,
           );
         })}
       </div>
-      <LegendFooter total={validCount} invalidCount={invalidCount} invalidLabel="No value" />
+      <LegendFooter
+        total={validCount}
+        invalidCount={invalidCount}
+        invalidLabel="No value"
+      />
     </div>
   );
 };
 
 // ✅ Reusable Legend Row Component
-const LegendRow = ({ color, label, count, total, onClick, isActive, isDimmed }) => {
+const LegendRow = ({
+  color,
+  label,
+  count,
+  total,
+  onClick,
+  isActive,
+  isDimmed,
+}) => {
   return (
-    <div 
+    <div
       onClick={onClick}
       className={`flex items-center gap-3 py-1.5 px-1 rounded transition-all cursor-pointer border border-transparent
-        ${isActive ? 'bg-white/10 border-white/20' : 'hover:bg-white/5'}
-        ${isDimmed ? 'opacity-30 hover:opacity-50' : 'opacity-100'}
+        ${isActive ? "bg-white/10 border-white/20" : "hover:bg-white/5"}
+        ${isDimmed ? "opacity-30 hover:opacity-50" : "opacity-100"}
       `}
     >
       <div
@@ -296,22 +439,33 @@ const LegendRow = ({ color, label, count, total, onClick, isActive, isDimmed }) 
 };
 
 // ✅ Reusable Legend Footer Component
-const LegendFooter = ({ total, uniqueCount, invalidCount, invalidLabel = "No PCI" }) => (
+const LegendFooter = ({
+  total,
+  uniqueCount,
+  invalidCount,
+  invalidLabel = "No PCI",
+}) => (
   <div className="pt-2 mt-2 border-t border-gray-700/50 space-y-1 px-1">
     {uniqueCount !== undefined && (
       <div className="flex justify-between">
         <span className="text-[10px] text-gray-500">Unique</span>
-        <span className="text-[10px] tabular-nums text-gray-400">{uniqueCount}</span>
+        <span className="text-[10px] tabular-nums text-gray-400">
+          {uniqueCount}
+        </span>
       </div>
     )}
     <div className="flex justify-between">
       <span className="text-[10px] text-gray-500">Total</span>
-      <span className="text-[10px] tabular-nums text-gray-400">{total.toLocaleString()}</span>
+      <span className="text-[10px] tabular-nums text-gray-400">
+        {total.toLocaleString()}
+      </span>
     </div>
     {invalidCount > 0 && (
       <div className="flex justify-between">
         <span className="text-[10px] text-gray-500">{invalidLabel}</span>
-        <span className="text-[10px] tabular-nums text-amber-400/80">{invalidCount.toLocaleString()}</span>
+        <span className="text-[10px] tabular-nums text-amber-400/80">
+          {invalidCount.toLocaleString()}
+        </span>
       </div>
     )}
   </div>
@@ -337,13 +491,42 @@ export default function MapLegend({
   const { content, title } = useMemo(() => {
     if (colorBy) {
       return {
-        content: <ColorSchemeLegend colorBy={colorBy} logs={logs} activeFilter={activeFilter} onFilterChange={onFilterChange} />,
+        content: (
+          <ColorSchemeLegend
+            colorBy={colorBy}
+            logs={logs}
+            activeFilter={activeFilter}
+            onFilterChange={onFilterChange}
+          />
+        ),
         title: colorBy.charAt(0).toUpperCase() + colorBy.slice(1),
       };
     }
-    
+
     if (selectedMetric?.toLowerCase() === "pci") {
-      return { content: <PciLegend logs={logs} activeFilter={activeFilter} onFilterChange={onFilterChange} />, title: "PCI" };
+      return {
+        content: (
+          <PciLegend
+            logs={logs}
+            activeFilter={activeFilter}
+            onFilterChange={onFilterChange}
+          />
+        ),
+        title: "PCI",
+      };
+    }
+
+    if (selectedMetric?.toLowerCase() === "tac") {
+      return {
+        content: (
+          <TacLegend
+            logs={logs}
+            activeFilter={activeFilter}
+            onFilterChange={onFilterChange}
+          />
+        ),
+        title: "TAC",
+      };
     }
 
     const config = getMetricConfig(selectedMetric);
@@ -389,10 +572,10 @@ export default function MapLegend({
                 <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse ml-1" />
               )}
             </div>
-            
+
             <div className="flex items-center gap-1">
               {activeFilter && (
-                <div 
+                <div
                   onClick={clearFilter}
                   className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white mr-1"
                   title="Clear filter"

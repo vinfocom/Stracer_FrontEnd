@@ -1,4 +1,4 @@
-// src/hooks/useSiteData.js
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mapViewApi } from '@/api/apiEndpoints';
 
@@ -64,20 +64,23 @@ export const useSiteData = ({
       const rawData = response?.data?.Data || response?.data?.data || response?.Data || response?.data || [];
       
       const normalizedData = Array.isArray(rawData) 
-        ? rawData.map((item, index) => ({
-            site: item.site || item.site_id || item.siteId || `site_${index}`,
-            site_name: item.site_name || item.siteName || item.name,
-            cell_id: item.cell_id || item.cellId || item.id || `cell_${index}`,
-            lat: parseFloat(item.lat || item.latitude || 0),
-            lng: parseFloat(item.lng || item.lon || item.longitude || 0),
-            azimuth: parseFloat(item.azimuth || 0),
-            beamwidth: parseFloat(item.beamwidth || item.beam_width || 65),
-            range: parseFloat(item.range || item.radius || 220),
-            operator: item.operator || item.operator_name,
-            tech: item.tech || item.technology,
-            band: item.band || item.frequency_band,
-            _raw: item
-          }))
+  ? rawData.map((item, index) => ({
+      site: item.site || item.site_id || item.siteId || `site_${index}`,
+      site_name: item.site_name || item.siteName || item.name,
+      cell_id: item.cell_id_representative || item.cell_id || item.id || `cell_${index}`,
+      // ✅ Handle ML-specific coordinate keys
+      lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
+      lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
+      // ✅ Handle ML-specific azimuth and beamwidth
+      azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth || 0),
+      beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
+      range: parseFloat(item.range || item.radius || 220),
+      // ✅ Fix: Capture 'network' as the operator
+      operator: item.network || item.Network || item.operator || item.operator_name || "Unknown",
+      tech: item.tech || item.technology,
+      band: item.band || item.frequency_band,
+      _raw: item
+    }))
           .filter(item => 
             !isNaN(item.lat) && 
             !isNaN(item.lng) && 

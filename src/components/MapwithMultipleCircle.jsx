@@ -7,7 +7,7 @@ import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
 import TechHandoverMarkers from "./unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
 import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
-import { normalizeProviderName, normalizeTechName, getLogColor } from "@/utils/colorUtils";
+import { normalizeProviderName, normalizeTechName, getLogColor, generateColorFromHash } from "@/utils/colorUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 
@@ -141,6 +141,13 @@ class PolygonChecker {
   }
 }
 
+const hexToRgb = (hex) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
+    : [168, 166, 162]; // Default gray if invalid
+};
+
 // ============== Aggregation Methods ==============
 const AGGREGATION_METHODS = {
   median: (values) => {
@@ -185,10 +192,7 @@ const parseWKTToPolygons = (wkt) => {
       
       let lat, lng;
 
-      // ✅ IMPROVED HEURISTIC: 
-      // In India, Latitude is ~28 and Longitude is ~77.
-      // If the first value is > 40 AND the second is < 40, it's definitely [LNG, LAT].
-      // Otherwise, we default to the backend's expected [LAT, LNG] swap.
+     
       if (Math.abs(val1) > 40 && Math.abs(val2) < 40) {
         lng = val1;
         lat = val2;

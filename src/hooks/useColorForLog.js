@@ -50,6 +50,8 @@ function useColorForLog() {
                     latency: safeParse(data.latency),
                     packet_loss: safeParse(data.packet_loss),
                     tac: safeParse(data.tac),
+                    dominance: safeParse(data.dominance),
+                    coverage_violation: safeParse(data.coverage_violation),
 
                 };
                 
@@ -112,7 +114,9 @@ function useColorForLog() {
             'jitter': 'jitter',
             'latency': 'latency',
             'packet_loss': 'packet_loss',
-            'tac': 'tac'
+            'tac': 'tac',
+            'dominance': 'dominance',
+            'coverage_violation': 'coverage_violation'
         };
 
         const key = metricKeyMap[lowerMetric] || lowerMetric;
@@ -208,7 +212,9 @@ function useColorForLog() {
             'jitter': 'jitter',
             'latency': 'latency',
             'packet_loss': 'packet_loss',
-            'tac': 'tac'
+            'tac': 'tac',
+            'dominance': 'dominance',
+            'coverage_violation': 'coverage_violation'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();
@@ -275,7 +281,9 @@ function useColorForLog() {
             'jitter': 'jitter',
             'latency': 'latency',
             'packet_loss': 'packet_loss',
-            'tac': 'tac'
+            'tac': 'tac',
+            'dominance': 'dominance',
+            'coverage_violation': 'coverage_violation'
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();

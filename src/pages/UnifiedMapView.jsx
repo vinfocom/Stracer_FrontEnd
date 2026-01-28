@@ -98,13 +98,42 @@ const METRIC_CONFIG = {
     min: 0,
     max: 100,
   },
-  num_cells: { higherIsBetter: false, unit: "", label: "Pilot Pollution", min: 1, max: 20 },
-  level: { higherIsBetter: true, unit: "dB", label: "SSI", min: -120, max: -30 },
-  jitter: { higherIsBetter: false, unit: "ms", label: "Jitter", min: 0, max: 100 },
-  latency: { higherIsBetter: false, unit: "ms", label: "Latency", min: 0, max: 500 },
-  packet_loss: { higherIsBetter: false, unit: "%", label: "Packet Loss", min: 0, max: 100 },
-  tac: { higherIsBetter: true, unit: "", label: "TAC", min: 0, max: 65535 },
-
+  num_cells: {
+    higherIsBetter: false,
+    unit: "",
+    label: "Pilot Pollution",
+    min: 1,
+    max: 20,
+  },
+  level: {
+    higherIsBetter: true,
+    unit: "dB",
+    label: "SSI",
+    min: -120,
+    max: -30,
+  },
+  jitter: {
+    higherIsBetter: false,
+    unit: "ms",
+    label: "Jitter",
+    min: 0,
+    max: 100,
+  },
+  latency: {
+    higherIsBetter: false,
+    unit: "ms",
+    label: "Latency",
+    min: 0,
+    max: 500,
+  },
+  packet_loss: {
+    higherIsBetter: false,
+    unit: "%",
+    label: "Packet Loss",
+    min: 0,
+    max: 100,
+  },
+  
 };
 
 const COLOR_GRADIENT = [
@@ -522,7 +551,7 @@ const UnifiedMapView = () => {
   const [enableDataToggle, setEnableDataToggle] = useState(true);
   const [dataToggle, setDataToggle] = useState("sample");
   const [enableSiteToggle, setEnableSiteToggle] = useState(false);
-  const [siteToggle, setSiteToggle] = useState("NoML");
+  const [siteToggle, setSiteToggle] = useState("Cell");
   const [showSiteMarkers, setShowSiteMarkers] = useState(true);
   const [showSiteSectors, setShowSiteSectors] = useState(true);
   const [showNeighbors, setShowNeighbors] = useState(false);
@@ -535,6 +564,7 @@ const UnifiedMapView = () => {
   const [hoveredPolygon, setHoveredPolygon] = useState(null);
   const [hoverPosition, setHoverPosition] = useState(null);
   const [mapVisibleLocations, setMapVisibleLocations] = useState([]);
+  const [dominanceThreshold, setDominanceThreshold] = useState(null);
 
   const [ui, setUi] = useState({
     basemapStyle: "roadmap",
@@ -580,14 +610,21 @@ const UnifiedMapView = () => {
   const [logArea, setLogArea] = useState(null);
   const [project, setProject] = useState(null);
   const [pciDistData, setPciDistData] = useState(null);
-const [pciThreshold, setPciThreshold] = useState(0);
-const [dominanceData, setDominanceData] = useState([]);
-const [dominanceSettings, setDominanceSettings] = useState({
-  enabled: false,
-  threshold: 6,
-  showOverlap: false,
-  showCoverageViolation: false,
-});
+  const [pciThreshold, setPciThreshold] = useState(0);
+  const [dominanceData, setDominanceData] = useState([]);
+  const [manualSiteData, setManualSiteData] = useState([]);
+const [manualSiteLoading, setManualSiteLoading] = useState(false);
+
+const handleSitesLoaded = useCallback((data, isLoading) => {
+  setManualSiteData(data);
+  setManualSiteLoading(isLoading);
+}, []);
+  const [dominanceSettings, setDominanceSettings] = useState({
+    enabled: false,
+    threshold: 6,
+    showOverlap: false,
+    showCoverageViolation: false,
+  });
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
@@ -609,7 +646,7 @@ const [dominanceSettings, setDominanceSettings] = useState({
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
   const { thresholds: baseThresholds, refetch: refetchColors } =
     useColorForLog();
-     const {
+  const {
     polygons,
     loading: polygonLoading,
     refetch: refetchPolygons,
@@ -622,10 +659,13 @@ const [dominanceSettings, setDominanceSettings] = useState({
     refetch: refetchAreaPolygons,
   } = useAreaPolygons(projectId, areaEnabled);
 
-    const rawFilteringPolygons = useMemo(() => [
-  ...(showPolygons && polygons ? polygons : []),
-  ...(areaEnabled && areaData ? areaData : [])
-], [showPolygons, polygons, areaEnabled, areaData]);
+  const rawFilteringPolygons = useMemo(
+    () => [
+      ...(showPolygons && polygons ? polygons : []),
+      ...(areaEnabled && areaData ? areaData : []),
+    ],
+    [showPolygons, polygons, areaEnabled, areaData],
+  );
 
   // ✅ 1. Use Network Samples Hook (replaces local useSampleData)
   const {
@@ -642,7 +682,7 @@ const [dominanceSettings, setDominanceSettings] = useState({
     sessionIds,
     enableDataToggle && dataToggle === "sample",
     onlyInsidePolygons,
-   rawFilteringPolygons
+    rawFilteringPolygons,
   );
 
   // ✅ 2. Use Prediction Data Hook
@@ -666,10 +706,14 @@ const [dominanceSettings, setDominanceSettings] = useState({
     loading: sessionNeighborLoading,
     error: sessionNeighborError,
     refetch: refetchSessionNeighbors,
-  } = useSessionNeighbors(sessionIds, showSessionNeighbors, onlyInsidePolygons, rawFilteringPolygons);
+  } = useSessionNeighbors(
+    sessionIds,
+    showSessionNeighbors,
+    onlyInsidePolygons,
+    rawFilteringPolygons,
+  );
 
   // ✅ 4. Use Project Polygons Hook
- 
 
   // ✅ 6. Use Site Data (Existing)
   const {
@@ -760,39 +804,63 @@ const [dominanceSettings, setDominanceSettings] = useState({
     ioAnalysis();
   }, [sessionIds]);
 
- useEffect(() => {
-  if (sessionIds.length > 0) {
-    const fetchDist = async () => {
-      try {
-        const data = await mapViewApi.getPciDistribution(sessionIds);
-        if (data && data.success) {
-          // Store only the primary_yes data as requested
-          setPciDistData(data.primary_yes);
+  useEffect(() => {
+    if (sessionIds.length > 0) {
+      const fetchDist = async () => {
+        try {
+          const data = await mapViewApi.getPciDistribution(sessionIds);
+          if (data && data.success) {
+            // Store only the primary_yes data as requested
+            setPciDistData(data.primary_yes);
+          }
+        } catch (error) {
+          console.error("Failed to fetch PCI distribution", error);
         }
-      } catch (error) {
-        console.error("Failed to fetch PCI distribution", error);
+      };
+      fetchDist();
+    }
+  }, [sessionIds]);
+
+  useEffect(() => {
+    const fetchDominance = async () => {
+      if (sessionIds.length > 0) {
+        try {
+          const res = await mapViewApi.getDominanceDetails(sessionIds);
+          if (res?.success && res.data) {
+            setDominanceData(res.data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch dominance details", err);
+        }
       }
     };
-    fetchDist();
+    fetchDominance();
+  }, [sessionIds]);
+
+
+  const pciRange = useMemo(() => {
+  if (!pciDistData || Object.keys(pciDistData).length === 0) {
+    return { min: 0, max: 100 };
   }
-}, [sessionIds]);
 
-useEffect(() => {
-  const fetchDominance = async () => {
-    if (sessionIds.length > 0) {
-      try {
-        const res = await mapViewApi.getDominanceDetails(sessionIds);
-        if (res?.success && res.data) {
-          setDominanceData(res.data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch dominance details", err);
-      }
-    }
+  // Calculate the total percentage for each PCI entry in the distribution data
+  const percentages = Object.values(pciDistData).map((pciGroup) => {
+    const totalWeight = Object.values(pciGroup).reduce(
+      (sum, value) => sum + (parseFloat(value) || 0),
+      0
+    );
+    return totalWeight * 100;
+  });
+
+  const min = Math.min(...percentages);
+  const max = Math.max(...percentages);
+
+  // Fallback to 0-100 if calculations result in Infinity (empty arrays)
+  return {
+    min: isFinite(min) ? Math.floor(min) : 0,
+    max: isFinite(max) ? Math.ceil(max) : 100,
   };
-  fetchDominance();
-}, [sessionIds]);
-
+}, [pciDistData]);
   // --- Derived State & Computations ---
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
@@ -878,6 +946,35 @@ useEffect(() => {
     };
   }, [locations, sessionNeighborData]);
 
+ const problematicLogIds = useMemo(() => {
+  if (dominanceThreshold === null || !dominanceData || !Array.isArray(dominanceData)) {
+    return null;
+  }
+
+  const idMap = new Map();
+  const limit = Math.abs(dominanceThreshold);
+
+  dominanceData.forEach((item) => {
+    const logId = String(item.LogId || item.log_id);
+    const values = item.dominance || [];
+    
+    // Count how many neighbor values fall within the range [-limit, limit]
+    const countInRange = values.filter(val => {
+      const num = parseFloat(val);
+      return num >= -limit && num <= limit;
+    }).length;
+
+    // Only include logs that have at least one interfering signal
+    if (countInRange > 0) {
+      idMap.set(logId, countInRange);
+    }
+  });
+  
+  return idMap; // LogId -> Count
+}, [dominanceData, dominanceThreshold]);
+
+
+
   const filteredLocations = useMemo(() => {
     let result = [...(locations || [])];
 
@@ -913,41 +1010,52 @@ useEffect(() => {
     }
 
     if (pciDistData && pciThreshold > 0) {
-    result = result.filter((loc) => {
-      // Get the log's PCI identifier
-      const logPci = String(loc.pci || loc.PCI || "");
-      if (!logPci) return true; // Show logs without a valid PCI
+      result = result.filter((loc) => {
+        const logPci = String(loc.pci || loc.PCI || "");
+        if (!logPci) return true; // Show logs without a valid PCI
 
-      // In your data, logPci (e.g., "79") is the top-level key in primary_yes
-      const pciGroup = pciDistData[logPci];
+        const pciGroup = pciDistData[logPci];
 
-      if (pciGroup) {
-        /**
-         * The object looks like: "79": { "1": 0.004, "2": 0.0546, ... }
-         * We sum all values inside this object to get the total appearance weight.
-         */
-        const totalWeight = Object.values(pciGroup).reduce(
-          (sum, value) => sum + (parseFloat(value) || 0), 
-          0
-        );
+        if (pciGroup) {
+          
+          const totalWeight = Object.values(pciGroup).reduce(
+            (sum, value) => sum + (parseFloat(value) || 0),
+            0,
+          );
 
-        // Convert the sum (e.g., 0.0546) to a percentage (e.g., 5.46%)
-        const totalPercentage = totalWeight * 100;
+          const totalPercentage = totalWeight * 100;
 
-        // Only show the log if its total appearance is above the threshold
-        return totalPercentage >= pciThreshold;
-      }
+          return totalPercentage >= pciThreshold;
+        }
 
-      /**
-       * If no distribution data exists for this specific PCI, 
-       * we return true to show it by default.
-       */
-      return true;
-    });
+        
+        return true;
+      });
+    }
+
+    if (dominanceThreshold !== null && problematicLogIds) {
+    result = result
+      .filter((loc) => {
+        const logId = String(loc.id || loc.LogId || "");
+        return problematicLogIds.has(logId);
+      })
+      .map(loc => ({
+        ...loc,
+        // We attach this so 'useColorForLog' can find it when selectedMetric is 'dominance'
+        dominance: problematicLogIds.get(String(loc.id || loc.LogId || ""))
+      }));
   }
 
     return result;
-  }, [locations, coverageHoleFilters, dataFilters,pciDistData, pciThreshold]);
+  }, [
+    locations,
+    coverageHoleFilters,
+    dataFilters,
+    pciDistData,
+    pciThreshold,
+    problematicLogIds,
+    dominanceThreshold,
+  ]);
 
   const finalDisplayLocations = useMemo(() => {
     if (drawnPoints !== null) {
@@ -1198,8 +1306,12 @@ useEffect(() => {
 
   const showDataCircles =
     enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
-  const shouldShowLegend =
-    enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
+  const shouldShowLegend = useMemo(() => {
+  return (
+    enableDataToggle || 
+    (enableSiteToggle && ["Cell", "NoML", "ML"].includes(siteToggle))
+  );
+}, [enableDataToggle, enableSiteToggle, siteToggle]);
 
   const locationsToDisplay = useMemo(() => {
     // if (onlyInsidePolygons) return [];
@@ -1484,7 +1596,9 @@ useEffect(() => {
 
       <UnifiedMapSidebar
         open={isSideOpen}
-        pciThreshold={pciThreshold}       // Pass threshold state
+        pciThreshold={pciThreshold}
+        dominanceThreshold={dominanceThreshold}
+        setDominanceThreshold={setDominanceThreshold}
         setPciThreshold={setPciThreshold}
         onOpenChange={setIsSideOpen}
         enableDataToggle={enableDataToggle}
@@ -1514,6 +1628,7 @@ useEffect(() => {
         colorBy={colorBy}
         setColorBy={setColorBy}
         ui={ui}
+        pciRange={pciRange}
         onUIChange={handleUIChange}
         showPolygons={showPolygons}
         setShowPolygons={setShowPolygons}
@@ -1563,23 +1678,28 @@ useEffect(() => {
           loading={sampleLoading && enableDataToggle && dataToggle === "sample"}
         />
 
-        {shouldShowLegend && !bestNetworkEnabled && !isLoading && (
-          <MapLegend
-            thresholds={effectiveThresholds}
-            selectedMetric={selectedMetric}
-            colorBy={colorBy}
-            showOperators={colorBy === "provider"}
-            showBands={colorBy === "band"}
-            showTechnologies={colorBy === "technology"}
-            showSignalQuality={!colorBy || colorBy === "metric"}
-            availableFilterOptions={availableFilterOptions}
-            logs={[...mapVisibleLocations, ...mapVisibleNeighbors]}
-            activeFilter={legendFilter}
-            onFilterChange={setLegendFilter}
-          />
-        )}
+        {shouldShowLegend && !bestNetworkEnabled && (
+  <MapLegend
+    thresholds={effectiveThresholds}
+    selectedMetric={selectedMetric}
+    colorBy={colorBy}
+    showOperators={colorBy === "provider"}
+    showBands={colorBy === "band"}
+    showTechnologies={colorBy === "technology"}
+    showSignalQuality={!colorBy || colorBy === "metric"}
+    availableFilterOptions={availableFilterOptions}
+    // We pass filteredLocations instead of viewport-visible ones to keep legend populated
+    logs={finalDisplayLocations} 
+    activeFilter={legendFilter}
+    onFilterChange={setLegendFilter}
+  />
+)}
 
-        <SiteLegend enabled={enableSiteToggle && showSiteSectors} />
+        <SiteLegend 
+  enabled={enableSiteToggle} 
+  sites={manualSiteData} 
+  isLoading={manualSiteLoading}
+/>
 
         <BestNetworkLegend
           stats={bestNetworkStats}
@@ -1709,16 +1829,15 @@ useEffect(() => {
               )}
 
               {enableSiteToggle && showSiteSectors && (
-                <NetworkPlannerMap
-                  defaultRadius={10}
-                  scale={0.2}
-                  showSectors={showSiteSectors}
-                  viewport={viewport}
-                  options={{ zIndex: 1000 }}
-                  projectId={projectId}
-                  minSectors={3}
-                />
-              )}
+  <NetworkPlannerMap
+    projectId={projectId}
+    siteToggle={siteToggle}
+    onDataLoaded={handleSitesLoaded} // Connect the data flow
+    viewport={viewport}
+    scale={0.2}
+    options={{ zIndex: 1000 }}
+  />
+)}
             </MapWithMultipleCircles>
           )}
         </div>

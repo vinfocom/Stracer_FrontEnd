@@ -1,58 +1,70 @@
-import React, { useState } from "react";
-import { ChevronDown, TowerControl } from "lucide-react";
+// src/components/unifiedMap/SiteLegend.jsx
 
-// Colors matching src/components/unifiedMap/NetworkPlannerMap.jsx
-const SITE_COLORS = [
-  { label: 'Jio', color: '#3B82F6' },
-  { label: 'Airtel', color: '#EF4444' },
-  { label: 'Vi India', color: '#22C55E' },
-  { label: 'Far Eastone', color: '#00b4d8ff' }, // Added
-  { label: 'TW Mobile', color: '#f77f00ff' },   // Added
-  { label: 'Yas', color: "#7d1b49" },
-  { label: '(466001)IR', color: '#6b705c' }, // Added
+import React, { useState, useMemo } from "react";
+import { ChevronDown, TowerControl, Loader2 } from "lucide-react"; // Added Loader2
+import { getProviderColor, normalizeProviderName } from "@/utils/colorUtils";
 
-  { label: 'Unknown', color: '#8B5CF6' },
-];
-
-export default function SiteLegend({ enabled }) {
+export default function SiteLegend({ enabled, sites = [], isLoading = false }) {
   const [collapsed, setCollapsed] = useState(false);
 
+  const availableOperators = useMemo(() => {
+  if (!sites || sites.length === 0) return [];
+
+  const operatorMap = new Map();
+  sites.forEach(site => {
+    // Check all possible operator fields from the API
+    const rawName = site.network || site.Network || site.operator || "Unknown";
+    const normalized = normalizeProviderName(rawName) || "Unknown"; 
+    
+    if (!operatorMap.has(normalized)) {
+      operatorMap.set(normalized, {
+        label: normalized,
+        color: getProviderColor(normalized)
+      });
+    }
+  });
+  return Array.from(operatorMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+}, [sites]);
+
+  
   if (!enabled) return null;
 
   return (
-    <div className="absolute bottom-38 right-4 z-10">
-      <div className="bg-gray-900/95 backdrop-blur-lg border border-gray-700/40 rounded-lg shadow-xl min-w-[160px] max-w-[200px]">
-        {/* Header */}
+    <div className="absolute bottom-38 right-4 z-[20]"> {/* Increased z-index */}
+      <div className="bg-gray-900/95 backdrop-blur-lg border border-gray-700/40 rounded-lg shadow-xl min-w-[180px]">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="w-full px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-white/5 rounded-t-lg transition-colors"
         >
           <div className="flex items-center gap-2">
             <TowerControl className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-bold text-gray-100">Cell Sectors</span>
+            <span className="text-xs font-bold text-gray-100">
+              Cell Sectors {availableOperators.length > 0 ? `(${availableOperators.length})` : ''}
+            </span>
           </div>
-          <ChevronDown
-            className={`w-3 h-3 text-gray-500 transition-transform duration-200 ${
-              collapsed ? "" : "rotate-180"
-            }`}
-          />
+          
+          {!isLoading && <ChevronDown className={`w-3 h-3 text-gray-500 transition-transform ${collapsed ? "" : "rotate-180"}`} />}
         </button>
 
-        {/* Content */}
         {!collapsed && (
-          <div className="px-3 pb-3 pt-1 space-y-2">
-            {SITE_COLORS.map((item) => (
-              <div key={item.label} className="flex items-center gap-2.5">
-                {/* Sector Icon representation */}
-                <div className="flex items-center justify-center w-4">
-                   <div
-                    className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent"
-                    style={{ borderBottomColor: item.color }}
-                  />
+          <div className="px-3 pb-3 pt-1 space-y-2 max-h-[250px] overflow-y-auto custom-scrollbar">
+            {availableOperators.length > 0 ? (
+              availableOperators.map((item) => (
+                <div key={item.label} className="flex items-center gap-2.5">
+                  <div className="flex items-center justify-center w-4">
+                    <div
+                      className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent"
+                      style={{ borderBottomColor: item.color }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-300 font-medium">{item.label}</span>
                 </div>
-                <span className="text-xs text-gray-300 font-medium">{item.label}</span>
+              ))
+            ) : (
+              <div className="py-2 text-[10px] text-gray-500 italic text-center">
+                {isLoading ? "Fetching site data..." : "No sites in view"}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>

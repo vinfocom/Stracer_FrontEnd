@@ -846,7 +846,7 @@ function SessionMapDebug() {
 
       {/* Analysis Panel */}
       {analysis && (
-        <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[320px] border border-gray-200">
+        <div className="absolute bottom-4  z-30 bg-white rounded-lg shadow-lg w-[320px] border border-gray-200">
           <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
             <h3 className="font-semibold text-white text-sm">
               Selection Analysis

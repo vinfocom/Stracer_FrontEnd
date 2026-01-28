@@ -16,7 +16,8 @@ import {
     ChevronRight,
     FileText
 } from 'lucide-react';
-import vinfocomvinfocom from '../assets/vinfocom.png';
+// import vinfocomvinfocom from '../assets/vinfocom.png';
+import vinfocomvinfocom from '../../public/favicon.png';
 
 const SideBar = ({ collapsed }) => {
     const location = useLocation();
@@ -141,7 +142,7 @@ const SideBar = ({ collapsed }) => {
             {/* vinfocom */}
             <div className="p-4 flex items-center justify-center   h-16 flex-shrink-0">
                 <img src={vinfocomvinfocom} alt="vinfocom" className="h-8 sm:h-10 object-contain" />
-                {!collapsed && <span className="ml-2 font-bold text-lg whitespace-nowrap">Vinfocom</span>}
+                {!collapsed && <span className="ml-2 font-bold text-lg whitespace-nowrap">STracer</span>}
             </div>
 
             {/* Navigation */}

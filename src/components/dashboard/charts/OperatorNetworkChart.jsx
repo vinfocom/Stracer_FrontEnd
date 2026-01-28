@@ -10,14 +10,8 @@ import {
   Legend,
   Cell,
 } from "recharts";
-import {
-  Settings,
-  Download,
-  Filter,
-  Activity,
-  X,
-  BarChart3,
-} from "lucide-react";
+import { Settings, Activity, BarChart3 } from "lucide-react";
+import ChartCard from "../ChartCard";
 import {
   useOperatorMetrics,
   useOperatorsAndNetworks,
@@ -144,20 +138,23 @@ const METRICS = {
   },
 };
 
-const OperatorNetworkChart = () => {
+const OperatorNetworkChart = ({ chartFilters, onChartFiltersChange }) => {
   const {
     operators: apiOperators,
     networks: apiNetworks,
     isLoading: metaLoading,
   } = useOperatorsAndNetworks();
+   console.log("OperatorNetworkChart - selectedMetric:", apiOperators,apiNetworks);
 
   const [selectedMetric, setSelectedMetric] = useState("samples");
-  const [showSettings, setShowSettings] = useState(false);
-  const [selectedOperators, setSelectedOperators] = useState([]);
-  const [selectedTechnologies, setSelectedTechnologies] = useState([]);
 
   const { data: allData, isLoading } = useOperatorMetrics(selectedMetric, {});
 
+  console.log("OperatorNetworkChart - allData:", allData);
+  console.log("OperatorNetworkChart - chartFilters:", chartFilters);
+ 
+
+  // 
   const availableTechnologies = useMemo(() => {
     if (!apiNetworks || !Array.isArray(apiNetworks)) return [];
     return apiNetworks.filter((tech) => {
@@ -167,12 +164,12 @@ const OperatorNetworkChart = () => {
     });
   }, [apiNetworks]);
 
+  // Extract available operators from API
   const availableOperators = useMemo(() => {
     if (!apiOperators || !Array.isArray(apiOperators)) return [];
 
-    // Only filter by valid name, no operator restriction
     const validOperators = apiOperators.filter((operator) =>
-      isValidName(operator)
+      isValidName(operator),
     );
 
     const uniqueBrands = new Map();
@@ -187,15 +184,16 @@ const OperatorNetworkChart = () => {
       }
     });
 
-    return Array.from(uniqueBrands.values());
+    return Array.from(uniqueBrands.values()).map((op) => op.brand);
   }, [apiOperators]);
 
+  // Apply chart filters to data
   const filteredData = useMemo(() => {
     if (!allData || allData.length === 0) return [];
 
-    // Only filter by valid name, no operator restriction
     let filtered = allData.filter((item) => isValidName(item.name));
 
+    // Group by brand
     const groupedByBrand = new Map();
 
     filtered.forEach((item) => {
@@ -240,7 +238,7 @@ const OperatorNetworkChart = () => {
 
           brandItem.techCounts[normalizedTech] = currentCount + 1;
           brandItem.techData[normalizedTech] =
-            (currentSum + value) / brandItem.techCounts[normalizedTech];
+            (currentSum + value) / (currentCount + 1);
         } else {
           brandItem.techData[normalizedTech] = value;
           brandItem.techCounts[normalizedTech] = 1;
@@ -255,13 +253,15 @@ const OperatorNetworkChart = () => {
       ...item.techData,
     }));
 
-    if (selectedOperators.length > 0) {
+    // Apply operator filters from chartFilters
+    if (chartFilters?.operators && chartFilters.operators.length > 0) {
       filtered = filtered.filter((item) =>
-        selectedOperators.includes(item.displayName)
+        chartFilters.operators.includes(item.displayName),
       );
     }
 
-    if (selectedTechnologies.length > 0) {
+    // Apply network/technology filters from chartFilters
+    if (chartFilters?.networks && chartFilters.networks.length > 0) {
       filtered = filtered
         .map((item) => {
           const newItem = {
@@ -269,7 +269,7 @@ const OperatorNetworkChart = () => {
             displayName: item.displayName,
             operatorColor: item.operatorColor,
           };
-          selectedTechnologies.forEach((tech) => {
+          chartFilters.networks.forEach((tech) => {
             if (hasValidValue(item[tech])) {
               newItem[tech] = item[tech];
             }
@@ -278,16 +278,17 @@ const OperatorNetworkChart = () => {
         })
         .filter((item) => {
           const techKeys = Object.keys(item).filter(
-            (k) => !["name", "displayName", "operatorColor"].includes(k)
+            (k) => !["name", "displayName", "operatorColor"].includes(k),
           );
           return techKeys.length > 0;
         });
     }
 
+    // Calculate totals
     filtered = filtered
       .map((item) => {
         const techs = Object.keys(item).filter(
-          (k) => !["name", "total", "displayName", "operatorColor"].includes(k)
+          (k) => !["name", "total", "displayName", "operatorColor"].includes(k),
         );
         const validValues = techs.filter((tech) => hasValidValue(item[tech]));
 
@@ -301,14 +302,15 @@ const OperatorNetworkChart = () => {
       })
       .filter((item) => {
         const techs = Object.keys(item).filter(
-          (k) => !["name", "total", "displayName", "operatorColor"].includes(k)
+          (k) => !["name", "total", "displayName", "operatorColor"].includes(k),
         );
         return techs.some((tech) => hasValidValue(item[tech]));
       });
 
     return filtered;
-  }, [allData, selectedOperators, selectedTechnologies, selectedMetric]);
+  }, [allData, chartFilters, selectedMetric]);
 
+  // Get technology types from filtered data
   const technologyTypes = useMemo(() => {
     if (!filteredData?.length) return [];
     const techs = new Set();
@@ -325,63 +327,28 @@ const OperatorNetworkChart = () => {
     return [...techs];
   }, [filteredData]);
 
-  const handleMetricChange = (value) => {
-    setSelectedMetric(value);
-    setShowSettings(false);
-  };
-
-  const toggleOperator = (brandName) => {
-    setSelectedOperators((prev) =>
-      prev.includes(brandName)
-        ? prev.filter((op) => op !== brandName)
-        : [...prev, brandName]
-    );
-  };
-
-  const toggleTechnology = (tech) => {
-    setSelectedTechnologies((prev) =>
-      prev.includes(tech) ? prev.filter((t) => t !== tech) : [...prev, tech]
-    );
-  };
-
-  const clearAllFilters = () => {
-    setSelectedOperators([]);
-    setSelectedTechnologies([]);
-    setSelectedMetric("samples");
-  };
-
-  const hasActiveFilters =
-    selectedOperators.length > 0 ||
-    selectedTechnologies.length > 0 ||
-    selectedMetric !== "samples";
-
-  const handleExport = () => {
-    if (!filteredData || filteredData.length === 0) return;
+  // Prepare export dataset
+  const exportDataset = useMemo(() => {
+    if (!filteredData || filteredData.length === 0) return [];
 
     const metricConfig = METRICS[selectedMetric];
-    const headers = [
-      "Operator",
-      ...technologyTypes,
-      `Average ${metricConfig.label}`,
-    ];
-    const rows = filteredData.map((item) => [
-      item.displayName || item.name,
-      ...technologyTypes.map((tech) => item[tech] ?? ""),
-      item.total ?? "",
-    ]);
 
-    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
-      "\n"
-    );
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `operator_${selectedMetric}_${
-      new Date().toISOString().split("T")[0]
-    }.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
+    return filteredData.map((item) => {
+      const row = {
+        Operator: item.displayName || item.name,
+      };
+
+      technologyTypes.forEach((tech) => {
+        if (hasValidValue(item[tech])) {
+          row[tech] = item[tech];
+        }
+      });
+
+      row[`Average_${metricConfig.label}`] = item.total;
+
+      return row;
+    });
+  }, [filteredData, technologyTypes, selectedMetric]);
 
   const formatYAxis = (value) => {
     if (selectedMetric === "samples") return formatNumber(value);
@@ -396,7 +363,7 @@ const OperatorNetworkChart = () => {
     if (validPayload.length === 0) return null;
 
     const currentOperator = filteredData.find(
-      (item) => item.name === label || item.displayName === label
+      (item) => item.name === label || item.displayName === label,
     );
     const operatorColor =
       currentOperator?.operatorColor || COLOR_SCHEMES.provider.Unknown;
@@ -483,264 +450,152 @@ const OperatorNetworkChart = () => {
     );
   };
 
+  // Metric settings component
+  const MetricSettings = () => (
+    <div className="space-y-2">
+      <label className="text-sm font-semibold text-gray-700 mb-2 block">
+        Select Metric
+      </label>
+      {Object.entries(METRICS).map(([key, config]) => (
+        <label
+          key={key}
+          className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-gray-50"
+        >
+          <input
+            type="radio"
+            name="metric"
+            value={key}
+            checked={selectedMetric === key}
+            onChange={(e) => setSelectedMetric(e.target.value)}
+            className="w-4 h-4"
+          />
+          <span className="text-sm text-gray-700 flex-1">{config.label}</span>
+          <span className="text-xs text-gray-500">{config.unit}</span>
+        </label>
+      ))}
+    </div>
+  );
+
   const currentMetric = METRICS[selectedMetric];
   const isReversedAxis = currentMetric?.reversed || false;
 
-  return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-      <div className="bg-gray-50 p-5 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600 rounded-lg">
-              <BarChart3 className="text-white" size={22} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Operator Comparison
-              </h3>
-              <p className="text-sm text-gray-500 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
-                {currentMetric?.label}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleExport}
-              disabled={!filteredData || filteredData.length === 0}
-              className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all disabled:opacity-50"
-              title="Export CSV"
-            >
-              <Download size={20} />
-            </button>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className={`p-2 rounded-lg transition-all ${
-                showSettings
-                  ? "text-blue-600 bg-blue-50"
-                  : "text-gray-500 hover:text-blue-600 hover:bg-blue-50"
-              }`}
-              title="Settings"
-            >
-              <Settings size={20} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-5">
-        {showSettings && (
-          <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                <Filter size={16} className="text-blue-600" />
-                Filters
-              </h4>
-              {hasActiveFilters && (
-                <button
-                  onClick={clearAllFilters}
-                  className="text-xs text-red-600 hover:text-red-700 font-semibold"
-                >
-                  Clear All
-                </button>
-              )}
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Metric
-              </label>
-              <select
-                value={selectedMetric}
-                onChange={(e) => handleMetricChange(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
-              >
-                {Object.entries(METRICS).map(([key, config]) => (
-                  <option key={key} value={key}>
-                    {config.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Operators
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {metaLoading ? (
-                  <Spinner />
-                ) : availableOperators.length > 0 ? (
-                  availableOperators.map((operatorData, index) => {
-                    const isSelected =
-                      selectedOperators.length === 0 ||
-                      selectedOperators.includes(operatorData.brand);
-
-                    return (
-                      <button
-                        key={`${operatorData.brand}-${index}`}
-                        onClick={() => toggleOperator(operatorData.brand)}
-                        className="px-4 py-2 text-sm font-bold rounded-lg transition-all"
-                        style={
-                          isSelected
-                            ? {
-                                backgroundColor: operatorData.color,
-                                color: "#fff",
-                              }
-                            : { backgroundColor: "#E5E7EB", color: "#6B7280" }
-                        }
-                      >
-                        {operatorData.brand}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <span className="text-sm text-gray-500">No operators</span>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Technology
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {metaLoading ? (
-                  <Spinner />
-                ) : availableTechnologies.length > 0 ? (
-                  availableTechnologies.map((tech, index) => {
-                    const techColor = getChartTechColor(tech, index);
-                    const isSelected =
-                      selectedTechnologies.length === 0 ||
-                      selectedTechnologies.includes(tech);
-
-                    return (
-                      <button
-                        key={`${tech}-${index}`}
-                        onClick={() => toggleTechnology(tech)}
-                        className="px-3 py-1.5 text-sm font-semibold rounded-lg transition-all"
-                        style={
-                          isSelected
-                            ? { backgroundColor: techColor, color: "#fff" }
-                            : { backgroundColor: "#E5E7EB", color: "#6B7280" }
-                        }
-                      >
-                        {tech}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <span className="text-sm text-gray-500">No technologies</span>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isLoading && (
-          <div className="h-[400px] flex items-center justify-center bg-gray-50 rounded-xl">
+  const chartContent = (
+    <div className="h-full flex flex-col">
+      
+      {/* Chart */}
+      <div className="flex-1 min-h-0">
+        {isLoading || metaLoading ? (
+          <div className="h-full flex items-center justify-center bg-gray-50 rounded-xl">
             <div className="text-center">
               <Spinner />
-              <p className="text-sm text-gray-500 mt-3">Loading...</p>
+              <p className="text-sm text-gray-500 mt-3">
+                Loading chart data...
+              </p>
             </div>
           </div>
-        )}
-
-        {!isLoading &&
-          filteredData &&
+        ) : filteredData &&
           filteredData.length > 0 &&
-          technologyTypes.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-4">
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart
-                  data={filteredData}
-                  margin={{ top: 20, right: 30, left: 50, bottom: 60 }}
-                  barGap={2}
-                  barCategoryGap="25%"
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#E5E7EB"
-                  />
-                  <XAxis
-                    dataKey="displayName"
-                    tick={{ fill: "#111827", fontSize: 14, fontWeight: 700 }}
-                    axisLine={{ stroke: "#D1D5DB" }}
-                    tickLine={{ stroke: "#D1D5DB" }}
-                  />
-                  <YAxis
-                    reversed={isReversedAxis}
-                    tick={{ fill: "#6B7280", fontSize: 12, fontWeight: 500 }}
-                    tickFormatter={formatYAxis}
-                    axisLine={{ stroke: "#D1D5DB" }}
-                    tickLine={{ stroke: "#D1D5DB" }}
-                    label={{
-                      value: currentMetric?.yAxisLabel,
-                      angle: -90,
-                      position: "insideLeft",
-                      style: { fill: "#374151", fontSize: 12, fontWeight: 600 },
-                      offset: 0,
-                    }}
-                  />
-                  <Tooltip
-                    content={<CustomTooltip />}
-                    cursor={{ fill: "rgba(59, 130, 246, 0.1)" }}
-                    wrapperStyle={{ zIndex: 99999 }}
-                  />
-                  <Legend content={<CustomLegend />} />
-                  {technologyTypes.map((tech, idx) => (
-                    <Bar
-                      key={tech}
-                      dataKey={tech}
-                      name={tech}
-                      fill={getChartTechColor(tech, idx)}
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={50}
-                    >
-                      {filteredData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={
-                            hasValidValue(entry[tech])
-                              ? getChartTechColor(tech, idx)
-                              : "transparent"
-                          }
-                        />
-                      ))}
-                    </Bar>
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-        {!isLoading &&
-          (!filteredData ||
-            filteredData.length === 0 ||
-            technologyTypes.length === 0) && (
-            <div className="h-[400px] flex flex-col items-center justify-center text-gray-500 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-              <Filter size={40} className="text-gray-400 mb-3" />
-              <p className="text-lg font-bold text-gray-700">
-                No data available
-              </p>
-              <p className="text-sm text-gray-500 mt-1">
-                Selected metric: {currentMetric?.label}
-              </p>
-
-              {hasActiveFilters && (
-                <button
-                  onClick={clearAllFilters}
-                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold flex items-center gap-2"
-                >
-                  <X size={16} />
-                  Clear Filters
-                </button>
-              )}
-            </div>
-          )}
+          technologyTypes.length > 0 ? (
+          <div className="bg-gray-50 rounded-xl p-4 h-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={filteredData}
+                margin={{ top: 20, right: 30, left: 50, bottom: 60 }}
+                barGap={2}
+                barCategoryGap="25%"
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="#E5E7EB"
+                />
+                <XAxis
+                  dataKey="displayName"
+                  tick={{ fill: "#111827", fontSize: 14, fontWeight: 700 }}
+                  axisLine={{ stroke: "#D1D5DB" }}
+                  tickLine={{ stroke: "#D1D5DB" }}
+                />
+                <YAxis
+                  reversed={isReversedAxis}
+                  tick={{ fill: "#6B7280", fontSize: 12, fontWeight: 500 }}
+                  tickFormatter={formatYAxis}
+                  axisLine={{ stroke: "#D1D5DB" }}
+                  tickLine={{ stroke: "#D1D5DB" }}
+                  label={{
+                    value: currentMetric?.yAxisLabel,
+                    angle: -90,
+                    position: "insideLeft",
+                    style: { fill: "#374151", fontSize: 12, fontWeight: 600 },
+                    offset: 0,
+                  }}
+                />
+                <Tooltip
+                  content={<CustomTooltip />}
+                  cursor={{ fill: "rgba(59, 130, 246, 0.1)" }}
+                  wrapperStyle={{ zIndex: 99999 }}
+                />
+                <Legend content={<CustomLegend />} />
+                {technologyTypes.map((tech, idx) => (
+                  <Bar
+                    key={tech}
+                    dataKey={tech}
+                    name={tech}
+                    fill={getChartTechColor(tech, idx)}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={50}
+                  >
+                    {filteredData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={
+                          hasValidValue(entry[tech])
+                            ? getChartTechColor(tech, idx)
+                            : "transparent"
+                        }
+                      />
+                    ))}
+                  </Bar>
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+
+  return (
+    <ChartCard
+      title="Operator Network Comparison"
+      dataset={exportDataset}
+      exportFileName={`operator-network-${selectedMetric}`}
+      isLoading={isLoading || metaLoading}
+      chartFilters={chartFilters}
+      onChartFiltersChange={onChartFiltersChange}
+      operators={availableOperators}
+      networks={availableTechnologies}
+      showChartFilters={true}
+      settings={{
+        title: "Metric Settings",
+        render: <MetricSettings />,
+        onApply: () => {
+          // Metric is applied in real-time
+        },
+      }}
+      headerActions={
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          <span className="font-medium">
+            {filteredData?.length || 0} operators
+          </span>
+          <span>•</span>
+          <span className="font-medium">
+            {technologyTypes?.length || 0} networks
+          </span>
+        </div>
+      }
+    >
+      {chartContent}
+    </ChartCard>
   );
 };
 

@@ -295,7 +295,9 @@ InfoBadge.displayName = "InfoBadge";
 const UnifiedMapSidebar = ({
   open,
   onOpenChange,
-  pciThreshold,    // New Prop
+  pciThreshold,
+  dominanceThreshold,
+  setDominanceThreshold,
   setPciThreshold,
   showNumCells,
   setShowNumCells,
@@ -322,6 +324,7 @@ const UnifiedMapSidebar = ({
   ui,
   onUIChange,
   techHandOver,
+  pciRange = { min: 0, max: 100 },
   technologyTransitions,
   showPolygons,
   setShowPolygons,
@@ -364,9 +367,9 @@ const UnifiedMapSidebar = ({
       { value: "pci", label: "PCI" },
       { value: "num_cells", label: "Pilot pollution" },
       { value: "level", label: "SSI" },
-      {value: "jitter", label: "Jitter"},
-      {value: "latency", label: "Latency"},
-      {value: "packet_loss", label: "Packet Loss"},
+      { value: "jitter", label: "Jitter" },
+      { value: "latency", label: "Latency" },
+      { value: "packet_loss", label: "Packet Loss" },
       { value: "tac", label: "TAC" },
     ],
     [],
@@ -638,32 +641,6 @@ const UnifiedMapSidebar = ({
             )}
           </CollapsibleSection>
 
-          {/* Heatmap Layer */}
-          <CollapsibleSection title="Heatmap" icon={Thermometer}>
-            <ToggleRow
-              label="Neighbor Heatmap"
-              description="Display neighbor cell data"
-              checked={showNeighbors}
-              onChange={setShowNeighbors}
-              useSwitch={true}
-            />
-
-            {showNeighbors && neighborStats?.total > 0 && (
-              <div className="bg-slate-800/50 rounded p-2 space-y-1">
-                <InfoBadge
-                  label="Total Neighbors"
-                  value={neighborStats.total}
-                />
-                <InfoBadge
-                  label="Unique PCIs"
-                  value={neighborStats.uniquePCIs}
-                  color="green"
-                />
-              </div>
-            )}
-          </CollapsibleSection>
-
-          {/* Metric & Filters */}
           {shouldShowMetricSelector && (
             <CollapsibleSection
               title="Metric & Filters"
@@ -769,30 +746,37 @@ const UnifiedMapSidebar = ({
                 </div>
 
                 <div className="border-t border-slate-700/50 pt-3 mt-2">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-slate-400">PCI Appearance Filter</span>
-          <span className="text-xs font-mono text-blue-400">{pciThreshold}%</span>
-        </div>
-        
-        <div className="px-1">
-          <input
-            type="range"
-            min="0"
-            max="20" // Usually distribution > 10% covers main cells
-            step="0.1"
-            value={pciThreshold}
-            onChange={(e) => setPciThreshold(parseFloat(e.target.value))}
-            className="w-full h-1.5 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
-          />
-          <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-            <span>Show All</span>
-            <span>Common Only</span>
-          </div>
-        </div>
-        <p className="text-[10px] text-slate-500 mt-2 italic">
-          Hides PCIs that appear less than {pciThreshold}% of the time in this session.
-        </p>
-      </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-slate-400">
+                      PCI Appearance Filter
+                    </span>
+                    <span className="text-xs font-mono text-blue-400">
+                      {pciThreshold}%
+                    </span>
+                  </div>
+
+                  <div className="px-1">
+                    <input
+                      type="range"
+                      min={pciRange.min} // Updated to use dynamic min
+                      max={pciRange.max} // Updated to use dynamic max
+                      step="0.1"
+                      value={pciThreshold}
+                      onChange={(e) =>
+                        setPciThreshold(parseFloat(e.target.value))
+                      }
+                      className="w-full h-1.5 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                      <span>{pciRange.min}%</span>
+                      <span>{pciRange.max}%</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-2 italic">
+                    Hides PCIs that appear less than {pciThreshold}% of the time
+                    in this session.
+                  </p>
+                </div>
 
                 {activeDataFiltersCount > 0 && (
                   <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/50 rounded text-xs text-blue-300">
@@ -804,7 +788,72 @@ const UnifiedMapSidebar = ({
             </CollapsibleSection>
           )}
 
-          {/* Tech Handover */}
+          {/* Heatmap Layer */}
+          <CollapsibleSection title="Heatmap" icon={Thermometer}>
+            <ToggleRow
+              label="Neighbor Heatmap"
+              description="Display neighbor cell data"
+              checked={showNeighbors}
+              onChange={setShowNeighbors}
+              useSwitch={true}
+            />
+
+            {showNeighbors && neighborStats?.total > 0 && (
+              <div className="bg-slate-800/50 rounded p-2 space-y-1">
+                <InfoBadge
+                  label="Total Neighbors"
+                  value={neighborStats.total}
+                />
+                <InfoBadge
+                  label="Unique PCIs"
+                  value={neighborStats.uniquePCIs}
+                  color="green"
+                />
+              </div>
+            )}
+          </CollapsibleSection>
+
+          {/* Metric & Filters */}
+
+          <CollapsibleSection title="Dominance Analysis" icon={AlertTriangle}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-300">Dominance Filter</span>
+                <ToggleSwitch
+        checked={dominanceThreshold !== null}
+        onChange={(checked) => {
+          const newVal = checked ? 6 : null;
+          setDominanceThreshold(newVal);
+          // Auto-switch metric to dominance to see colors immediately
+          if (checked) setMetric("dominance"); 
+        }}
+      />
+              </div>
+
+              {dominanceThreshold !== null && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-400">
+                    Range Mask (±dB)
+                  </Label>
+                  <Input
+                    type="number"
+                    value={dominanceThreshold}
+                    min={0}
+                    onChange={(e) =>
+                      setDominanceThreshold(parseInt(e.target.value))
+                    }
+                    className="bg-slate-800 border-slate-600 text-white h-8 text-sm"
+                  />
+                  <p className="text-[10px] text-slate-500 italic">
+                    Showing logs with neighbors within{" "}
+                    {-Math.abs(dominanceThreshold)} to{" "}
+                    {Math.abs(dominanceThreshold)} dB. Colors reflect the count
+                    of overlapping signals.
+                  </p>
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
           <CollapsibleSection
             title="Tech Handover"
             icon={ArrowLeftRight}

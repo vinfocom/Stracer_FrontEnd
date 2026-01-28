@@ -59,7 +59,7 @@ const hashString = (str) => {
   return Math.abs(hash);
 };
 
-const generateColorFromHash = (str) => {
+export const generateColorFromHash = (str) => {
   const hash = hashString(str);
   const index = hash % DYNAMIC_COLOR_PALETTE.length;
   return DYNAMIC_COLOR_PALETTE[index];
@@ -175,7 +175,7 @@ export const normalizeTechName = (tech, band = null) => {
     return "5G";
   }
   
-  if (t.includes("LTE") || t.includes("4G")) {
+  if (t.includes("LTE") || t.includes("4G") ||t.includes("4G+")) {
     return "4G";
   }
   

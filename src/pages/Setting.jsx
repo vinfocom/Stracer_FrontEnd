@@ -23,6 +23,8 @@ const PARAMETERS = {
     latency: "Latency",
     packet_loss: "Packet Loss",
     tac: "TAC",
+    dominance: "Dominance",
+    coverage_violation: "Coverage Violation"
 };
 
 const SPECIAL_FIELDS = {
@@ -541,7 +543,7 @@ const parseThresholdData = (data) => {
     Object.keys(PARAMETERS).forEach(key => {
         if (key === "coveragehole") {
             parsedData[key] = parseNumber(data.coveragehole_json || data.coveragehole) || DEFAULT_COVERAGE_HOLE;
-        } else if (key === "num_cells" || key === "level" || key === "jitter" || key === "latency" || key === "packet_loss" || key === "tac") {
+        } else if (key === "num_cells" || key === "level" || key === "jitter" || key === "latency" || key === "packet_loss" || key === "tac" || key === "dominance" || key === "coverage_violation" ) {
       
             const jsonString = data[key]; // Read directly from num_cells and level
             let parsed = [];
@@ -632,6 +634,8 @@ const buildSavePayload = (thresholds, userId) => {
         latency: JSON.stringify(normalizeArray(thresholds.latency)),
         packet_loss: JSON.stringify(normalizeArray(thresholds.packet_loss)),
         tac: JSON.stringify(normalizeArray(thresholds.tac)),
+        dominance: JSON.stringify(normalizeArray(thresholds.dominance)),
+        coverage_violation: JSON.stringify(normalizeArray(thresholds.coverage_violation)),
     };
 
     return payload;

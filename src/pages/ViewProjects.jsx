@@ -112,6 +112,11 @@ const ViewProjectsPage = () => {
               <table className="w-full border-collapse">
                 <thead className="sticky top-0 bg-gray-100">
                   <tr>
+                     <th className="text-left p-3 font-semibold text-gray-700 border-b">
+                      <div className="flex items-center gap-2">
+                        Id
+                      </div>
+                    </th>
                     <th className="text-left p-3 font-semibold text-gray-700 border-b">
                       <div className="flex items-center gap-2">
                         <Map className="h-4 w-4" />
@@ -143,12 +148,15 @@ const ViewProjectsPage = () => {
                     >
                       <td className="p-3">
                         <span className="font-medium text-gray-900">
+                          {project.id}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className="font-medium text-gray-900">
                           {project.project_name}
                         </span>
                       </td>
-                      {/* <td className="p-3 text-gray-600">
-                        {project.provider || "N/A"}
-                      </td> */}
+                      
                       <td className="p-3 text-gray-600">
                         {formatDate(project.created_on)}
                       </td>
