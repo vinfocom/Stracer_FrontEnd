@@ -166,19 +166,8 @@ const AGGREGATION_METHODS = {
   max: (values) => values.length ? Math.max(...values) : null,
 };
 
-// ============== WKT Parser ==============
-// src/components/MapwithMultipleCircle.jsx
-
-// src/components/MapwithMultipleCircle.jsx
-
-// src/components/MapwithMultipleCircle.jsx
-
 const parseWKTToPolygons = (wkt) => {
   if (!wkt?.trim()) return [];
-  
-  // 🔍 Add this log to verify the order in your console
-  console.log("📥 PARSING WKT:", wkt);
-
   try {
     const match = wkt.trim().match(/POLYGON\s*\(\(([^)]+)\)\)/i);
     if (!match) return [];
@@ -192,7 +181,6 @@ const parseWKTToPolygons = (wkt) => {
       
       let lat, lng;
 
-     
       if (Math.abs(val1) > 40 && Math.abs(val2) < 40) {
         lng = val1;
         lat = val2;
@@ -203,7 +191,6 @@ const parseWKTToPolygons = (wkt) => {
         lng = val1;
         lat = val2;
       } else {
-        // Fallback to the order you defined in SessionMapDebug (LAT LNG)
         lat = val1;
         lng = val2;
       }
@@ -237,19 +224,16 @@ const getColorFromThresholds = (value, metricThresholds) => {
   if (value == null || isNaN(value)) return "#808080";
   if (!metricThresholds?.length) return "#808080";
 
-  // Sort thresholds by min value
   const sorted = [...metricThresholds].sort((a, b) => parseFloat(a.min) - parseFloat(b.min));
 
   for (const t of sorted) {
     const min = parseFloat(t.min);
     const max = parseFloat(t.max);
-    // Check range [min, max) or [min, max] for the last one
     if (value >= min && value <= max) {
       return t.color;
     }
   }
   
-  // Handle out of bounds - clamp to nearest
   if (value < parseFloat(sorted[0].min)) return sorted[0].color;
   if (value > parseFloat(sorted[sorted.length - 1].max)) return sorted[sorted.length - 1].color;
 
@@ -361,184 +345,66 @@ const generateGridCellsOptimized = (
   return cells;
 };
 
-// ============== Neighbor InfoWindow Component ==============
+// ============== InfoWindows ==============
 const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor, selectedMetric }) => {
   if (!neighbor) return null;
-
-  // Determine which metric is currently selected to highlight in the header
   const isRsrp = selectedMetric === 'rsrp';
   const isRsrq = selectedMetric === 'rsrq';
   const isSinr = selectedMetric === 'sinr';
-
-  // Base colors for the header icon
   const displayColor = neighbor.displayColor || resolveColor(neighbor.rsrp, 'rsrp');
 
   return (
     <InfoWindow
       position={{ lat: neighbor.lat, lng: neighbor.lng }}
       onCloseClick={onClose}
-      options={{
-        pixelOffset: new window.google.maps.Size(0, -15),
-        maxWidth: 320,
-        disableAutoPan: false,
-      }}
+      options={{ pixelOffset: new window.google.maps.Size(0, -15), maxWidth: 320, disableAutoPan: false }}
     >
       <div className="p-2 min-w-[280px] font-sans text-gray-800">
-        {/* Header */}
         <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <Square 
-              className="w-4 h-4"
-              style={{ color: displayColor }}
-              fill={displayColor}
-            />
-            <span className="font-bold text-sm">
-              PCI: {neighbor.pci ?? 'N/A'}
-            </span>
+            <Square className="w-4 h-4" style={{ color: displayColor }} fill={displayColor} />
+            <span className="font-bold text-sm">PCI: {neighbor.pci ?? 'N/A'}</span>
           </div>
-          <span 
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-            style={{ 
-              backgroundColor: `${displayColor}20`,
-              color: displayColor,
-              border: `1px solid ${displayColor}40`
-            }}
-          >
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${displayColor}20`, color: displayColor, border: `1px solid ${displayColor}40` }}>
             {neighbor.quality || 'Unknown'}
           </span>
         </div>
         
-        {/* Primary Cell Info */}
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">
-            📡 Primary Cell
-          </div>
-          
+          <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">📡 Primary Cell</div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            {neighbor.band && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Band</span>
-                <span className="font-semibold text-blue-600">{neighbor.band}</span>
-              </div>
-            )}
-            {neighbor.pci && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">PCI</span>
-                <span className="font-medium">{neighbor.pci}</span>
-              </div>
-            )}
+            {neighbor.band && <div className="flex justify-between text-xs"><span className="text-gray-500">Band</span><span className="font-semibold text-blue-600">{neighbor.band}</span></div>}
+            {neighbor.pci && <div className="flex justify-between text-xs"><span className="text-gray-500">PCI</span><span className="font-medium">{neighbor.pci}</span></div>}
           </div>
-
-          {neighbor.rsrp !== null && (
-            <div className="flex justify-between text-xs items-center">
-              <span className={`text-gray-500 ${isRsrp ? 'font-bold text-gray-700' : ''}`}>RSRP</span>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.rsrp, 'rsrp') }} />
-                <span className="font-semibold" style={{ color: resolveColor(neighbor.rsrp, 'rsrp') }}>
-                  {neighbor.rsrp?.toFixed?.(1)} dBm
-                </span>
-              </div>
-            </div>
-          )}
-          
-          {neighbor.rsrq !== null && (
-            <div className="flex justify-between text-xs items-center">
-              <span className={`text-gray-500 ${isRsrq ? 'font-bold text-gray-700' : ''}`}>RSRQ</span>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.rsrq, 'rsrq') }} />
-                <span className="font-medium">{neighbor.rsrq?.toFixed?.(1)} dB</span>
-              </div>
-            </div>
-          )}
-          
-          {neighbor.sinr !== null && (
-            <div className="flex justify-between text-xs items-center">
-              <span className={`text-gray-500 ${isSinr ? 'font-bold text-gray-700' : ''}`}>SINR</span>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.sinr, 'sinr') }} />
-                <span className="font-medium">{neighbor.sinr?.toFixed?.(1)} dB</span>
-              </div>
-            </div>
-          )}
+          {neighbor.rsrp !== null && <div className="flex justify-between text-xs items-center"><span className={`text-gray-500 ${isRsrp ? 'font-bold text-gray-700' : ''}`}>RSRP</span><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.rsrp, 'rsrp') }} /><span className="font-semibold" style={{ color: resolveColor(neighbor.rsrp, 'rsrp') }}>{neighbor.rsrp?.toFixed?.(1)} dBm</span></div></div>}
+          {neighbor.rsrq !== null && <div className="flex justify-between text-xs items-center"><span className={`text-gray-500 ${isRsrq ? 'font-bold text-gray-700' : ''}`}>RSRQ</span><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.rsrq, 'rsrq') }} /><span className="font-medium">{neighbor.rsrq?.toFixed?.(1)} dB</span></div></div>}
+          {neighbor.sinr !== null && <div className="flex justify-between text-xs items-center"><span className={`text-gray-500 ${isSinr ? 'font-bold text-gray-700' : ''}`}>SINR</span><div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: resolveColor(neighbor.sinr, 'sinr') }} /><span className="font-medium">{neighbor.sinr?.toFixed?.(1)} dB</span></div></div>}
         </div>
 
-        {/* Neighbour Cell Info */}
         {(neighbor.neighbourRsrp !== null || neighbor.neighbourBand) && (
           <div className="space-y-1.5 mt-3 pt-2 border-t border-gray-100">
-            <div className="text-[10px] font-semibold text-purple-600 uppercase tracking-wide">
-              📶 Neighbour Cell
-            </div>
-            
+            <div className="text-[10px] font-semibold text-purple-600 uppercase tracking-wide">📶 Neighbour Cell</div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {neighbor.neighbourBand && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Band</span>
-                  <span className="font-semibold text-purple-600">{neighbor.neighbourBand}</span>
-                </div>
-              )}
-              {neighbor.neighbourPci && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">PCI</span>
-                  <span className="font-medium">{neighbor.neighbourPci}</span>
-                </div>
-              )}
+              {neighbor.neighbourBand && <div className="flex justify-between text-xs"><span className="text-gray-500">Band</span><span className="font-semibold text-purple-600">{neighbor.neighbourBand}</span></div>}
+              {neighbor.neighbourPci && <div className="flex justify-between text-xs"><span className="text-gray-500">PCI</span><span className="font-medium">{neighbor.neighbourPci}</span></div>}
             </div>
-            
-            {/* Neighbor RSRP */}
-            {neighbor.neighbourRsrp !== null && (
-              <div className="flex justify-between text-xs items-center">
-                <span className={`text-gray-500 ${isRsrp ? 'font-bold text-gray-700' : ''}`}>RSRP</span>
-                <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrp, 'rsrp') }}>
-                  {neighbor.neighbourRsrp?.toFixed?.(1)} dBm
-                </span>
-              </div>
-            )}
-
-            {/* ✅ ADDED: Neighbor RSRQ */}
-            {neighbor.neighbourRsrq !== null && (
-              <div className="flex justify-between text-xs items-center">
-                <span className={`text-gray-500 ${isRsrq ? 'font-bold text-gray-700' : ''}`}>RSRQ</span>
-                <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrq, 'rsrq') }}>
-                  {neighbor.neighbourRsrq?.toFixed?.(1)} dB
-                </span>
-              </div>
-            )}
-
-            {/* ✅ ADDED: Neighbor SINR */}
-            {neighbor.neighbourSinr !== null && (
-              <div className="flex justify-between text-xs items-center">
-                <span className={`text-gray-500 ${isSinr ? 'font-bold text-gray-700' : ''}`}>SINR</span>
-                <span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourSinr, 'sinr') }}>
-                  {neighbor.neighbourSinr?.toFixed?.(1)} dB
-                </span>
-              </div>
-            )}
+            {neighbor.neighbourRsrp !== null && <div className="flex justify-between text-xs items-center"><span className={`text-gray-500 ${isRsrp ? 'font-bold text-gray-700' : ''}`}>RSRP</span><span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrp, 'rsrp') }}>{neighbor.neighbourRsrp?.toFixed?.(1)} dBm</span></div>}
+            {neighbor.neighbourRsrq !== null && <div className="flex justify-between text-xs items-center"><span className={`text-gray-500 ${isRsrq ? 'font-bold text-gray-700' : ''}`}>RSRQ</span><span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourRsrq, 'rsrq') }}>{neighbor.neighbourRsrq?.toFixed?.(1)} dB</span></div>}
+            {neighbor.neighbourSinr !== null && <div className="flex justify-between text-xs items-center"><span className={`text-gray-500 ${isSinr ? 'font-bold text-gray-700' : ''}`}>SINR</span><span className="font-semibold" style={{ color: resolveColor(neighbor.neighbourSinr, 'sinr') }}>{neighbor.neighbourSinr?.toFixed?.(1)} dB</span></div>}
           </div>
         )}
-
-        {/* Session & Coordinates */}
         <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-          {neighbor.sessionId && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Session</span>
-              <span className="font-medium">{neighbor.sessionId}</span>
-            </div>
-          )}
-          <div className="text-[10px] text-gray-400 font-mono text-center">
-            📍 {neighbor.lat.toFixed(6)}, {neighbor.lng.toFixed(6)}
-          </div>
+          {neighbor.sessionId && <div className="flex justify-between text-xs"><span className="text-gray-500">Session</span><span className="font-medium">{neighbor.sessionId}</span></div>}
+          <div className="text-[10px] text-gray-400 font-mono text-center">📍 {neighbor.lat.toFixed(6)}, {neighbor.lng.toFixed(6)}</div>
         </div>
       </div>
     </InfoWindow>
   );
 });
-
 NeighborInfoWindow.displayName = 'NeighborInfoWindow';
 
-// ============== Primary Log InfoWindow ==============
 const PrimaryLogInfoWindow = React.memo(({ log, onClose, resolveColor, selectedMetric }) => {
   if (!log) return null;
-
   const metricValue = log[selectedMetric];
   const metricColor = resolveColor(metricValue, selectedMetric);
 
@@ -546,93 +412,28 @@ const PrimaryLogInfoWindow = React.memo(({ log, onClose, resolveColor, selectedM
     <InfoWindow
       position={{ lat: log.lat, lng: log.lng }}
       onCloseClick={onClose}
-      options={{
-        pixelOffset: new window.google.maps.Size(0, -15),
-        maxWidth: 320,
-      }}
+      options={{ pixelOffset: new window.google.maps.Size(0, -15), maxWidth: 320 }}
     >
       <div className="p-2 min-w-[260px] font-sans text-gray-800">
         <div className="flex items-center gap-2 pb-2 mb-2 border-b border-gray-200">
-          <Circle 
-            className="w-4 h-4"
-            style={{ color: metricColor }}
-            fill={metricColor}
-          />
+          <Circle className="w-4 h-4" style={{ color: metricColor }} fill={metricColor} />
           <span className="font-bold text-sm">Primary Log</span>
         </div>
-
         <div className="space-y-1.5">
-          {log.provider && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Provider</span>
-              <span className="font-medium">{log.provider}</span>
-            </div>
-          )}
-          {log.technology && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Technology</span>
-              <span className="font-medium">{log.technology}</span>
-            </div>
-          )}
-          {log.band && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Band</span>
-              <span className="font-semibold text-blue-600">{log.band}</span>
-            </div>
-          )}
-          
-          {log.rsrp !== null && log.rsrp !== undefined && (
-            <div className="flex justify-between text-xs items-center">
-              <span className="text-gray-500">RSRP</span>
-              <span className="font-semibold" style={{ color: resolveColor(log.rsrp, 'rsrp') }}>
-                {log.rsrp?.toFixed?.(1)} dBm
-              </span>
-            </div>
-          )}
-          
-          {log.rsrq !== null && log.rsrq !== undefined && (
-            <div className="flex justify-between text-xs items-center">
-              <span className="text-gray-500">RSRQ</span>
-              <span className="font-medium" style={{ color: resolveColor(log.rsrq, 'rsrq') }}>
-                {log.rsrq?.toFixed?.(1)} dB
-              </span>
-            </div>
-          )}
-          
-          {log.sinr !== null && log.sinr !== undefined && (
-            <div className="flex justify-between text-xs items-center">
-              <span className="text-gray-500">SINR</span>
-              <span className="font-medium" style={{ color: resolveColor(log.sinr, 'sinr') }}>
-                {log.sinr?.toFixed?.(1)} dB
-              </span>
-            </div>
-          )}
-
-          {log.dl_tpt !== null && log.dl_tpt !== undefined && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">DL Throughput</span>
-              <span className="font-medium">{log.dl_tpt?.toFixed?.(2)} Mbps</span>
-            </div>
-          )}
-
-          {log.ul_tpt !== null && log.ul_tpt !== undefined && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">UL Throughput</span>
-              <span className="font-medium">{log.ul_tpt?.toFixed?.(2)} Mbps</span>
-            </div>
-          )}
+          {log.provider && <div className="flex justify-between text-xs"><span className="text-gray-500">Provider</span><span className="font-medium">{log.provider}</span></div>}
+          {log.technology && <div className="flex justify-between text-xs"><span className="text-gray-500">Technology</span><span className="font-medium">{log.technology}</span></div>}
+          {log.band && <div className="flex justify-between text-xs"><span className="text-gray-500">Band</span><span className="font-semibold text-blue-600">{log.band}</span></div>}
+          {log.rsrp !== null && log.rsrp !== undefined && <div className="flex justify-between text-xs items-center"><span className="text-gray-500">RSRP</span><span className="font-semibold" style={{ color: resolveColor(log.rsrp, 'rsrp') }}>{log.rsrp?.toFixed?.(1)} dBm</span></div>}
+          {log.rsrq !== null && log.rsrq !== undefined && <div className="flex justify-between text-xs items-center"><span className="text-gray-500">RSRQ</span><span className="font-medium" style={{ color: resolveColor(log.rsrq, 'rsrq') }}>{log.rsrq?.toFixed?.(1)} dB</span></div>}
+          {log.sinr !== null && log.sinr !== undefined && <div className="flex justify-between text-xs items-center"><span className="text-gray-500">SINR</span><span className="font-medium" style={{ color: resolveColor(log.sinr, 'sinr') }}>{log.sinr?.toFixed?.(1)} dB</span></div>}
+          {log.dl_tpt !== null && log.dl_tpt !== undefined && <div className="flex justify-between text-xs"><span className="text-gray-500">DL Throughput</span><span className="font-medium">{log.dl_tpt?.toFixed?.(2)} Mbps</span></div>}
+          {log.ul_tpt !== null && log.ul_tpt !== undefined && <div className="flex justify-between text-xs"><span className="text-gray-500">UL Throughput</span><span className="font-medium">{log.ul_tpt?.toFixed?.(2)} Mbps</span></div>}
         </div>
-
-        <div className="mt-2 pt-2 border-t border-gray-100">
-          <div className="text-[10px] text-gray-400 font-mono text-center">
-            📍 {log.lat.toFixed(6)}, {log.lng.toFixed(6)}
-          </div>
-        </div>
+        <div className="mt-2 pt-2 border-t border-gray-100"><div className="text-[10px] text-gray-400 font-mono text-center">📍 {log.lat.toFixed(6)}, {log.lng.toFixed(6)}</div></div>
       </div>
     </InfoWindow>
   );
 });
-
 PrimaryLogInfoWindow.displayName = 'PrimaryLogInfoWindow';
 
 // ============== Main Component ==============
@@ -670,9 +471,7 @@ const MapWithMultipleCircles = ({
   onFilteredLocationsChange,
   opacity = 1,
   showPoints: showPointsProp = true,
-  
-  thresholds = {}, // ✅ ACCEPT THRESHOLDS PROP
-  
+  thresholds = {},
   neighborData = [],
   showNeighbors = false,
   neighborSquareSize = 10,
@@ -682,7 +481,6 @@ const MapWithMultipleCircles = ({
   debugMode = false,
   legendFilter = null,
 }) => {
-  // Use the color hook fallback
   const { 
     getMetricColor: getMetricColorFromHook, 
     getThresholdInfo, 
@@ -703,40 +501,31 @@ const MapWithMultipleCircles = ({
   const onFilteredNeighborsChangeRef = useRef(onFilteredNeighborsChange);
   const polygonCheckerRef = useRef(null);
   const spatialIndexRef = useRef(null);
-
-  // ✅ FIX: Use Refs for click handlers to prevent re-creating functions on parent re-renders
   const onMarkerClickRef = useRef(onMarkerClick);
   const onNeighborClickRef = useRef(onNeighborClick);
 
-  useEffect(() => {
-    onMarkerClickRef.current = onMarkerClick;
-  }, [onMarkerClick]);
+  useEffect(() => { onMarkerClickRef.current = onMarkerClick; }, [onMarkerClick]);
+  useEffect(() => { onNeighborClickRef.current = onNeighborClick; }, [onNeighborClick]);
+  useEffect(() => { onFilteredLocationsChangeRef.current = onFilteredLocationsChange; }, [onFilteredLocationsChange]);
+  useEffect(() => { onFilteredNeighborsChangeRef.current = onFilteredNeighborsChange; }, [onFilteredNeighborsChange]);
 
-  useEffect(() => {
-    onNeighborClickRef.current = onNeighborClick;
-  }, [onNeighborClick]);
-
-  useEffect(() => {
-    onFilteredLocationsChangeRef.current = onFilteredLocationsChange;
-  }, [onFilteredLocationsChange]);
-
-  useEffect(() => {
-    onFilteredNeighborsChangeRef.current = onFilteredNeighborsChange;
-  }, [onFilteredNeighborsChange]);
-
-  // ✅ Unified Color Resolver
+  // ✅ Unified Color Resolver - UPDATED TO SUPPORT TAC
   const resolveColor = useCallback((value, metricOrType) => {
     if (!metricOrType) return "#808080";
 
     const typeKey = metricOrType.toLowerCase();
     
-    // Categorical Coloring
+    // ✅ 1. Explicitly handle TAC (Tracking Area Code) to use dynamic hashing
+    if (typeKey === 'tac') {
+      return generateColorFromHash(String(value));
+    }
+    
+    // ✅ 2. Categorical Coloring
     if (['provider', 'technology', 'band', 'operator'].includes(typeKey)) {
         return getLogColor(typeKey, value);
     }
     
-    // Threshold-based Coloring
-    // 1. Try passed thresholds prop
+    // ✅ 3. Threshold-based Coloring
     const metricKey = typeKey === 'dl_tpt' ? 'dl_thpt' : 
                       typeKey === 'ul_tpt' ? 'ul_thpt' : typeKey;
 
@@ -744,7 +533,7 @@ const MapWithMultipleCircles = ({
       return getColorFromThresholds(value, thresholds[metricKey]);
     }
     
-    // 2. Fallback to hook if ready
+    // 4. Fallback to hook if ready
     if (thresholdsReady) {
       return getMetricColorFromHook(value, metricOrType);
     }
@@ -797,7 +586,7 @@ const MapWithMultipleCircles = ({
     fetchPolygons();
   }, [projectId, polygonSource, enablePolygonFilter]);
 
-  // Filter primary locations by polygon
+  // Filter primary locations by polygon & Legend
   const locationsToRender = useMemo(() => {
     if (!locations?.length) return [];
     
@@ -820,6 +609,11 @@ const MapWithMultipleCircles = ({
         if (legendFilter.type === 'pci') {
           const val = getMetricValueFromLog(log, 'pci');
           return Math.floor(val) === legendFilter.value;
+        }
+
+        if (legendFilter.type === 'tac') {
+            const val = log.tac || log.TAC;
+            return String(val) === String(legendFilter.value);
         }
 
         if (legendFilter.type === 'category') {
@@ -873,9 +667,8 @@ const MapWithMultipleCircles = ({
         const neighbourBand = n.neighbourBand ?? n.neighbour_band;
         const neighbourSinr = n.neighbourSinr ?? n.neighbour_sinr;
 
-        // ✅ FIX: Dynamic Metric Selection for Neighbors
         let metricValue = null;
-        let metricType = 'rsrp'; // Default type is RSRP
+        let metricType = 'rsrp';
 
         const targetMetric = selectedMetric?.toLowerCase();
 
@@ -886,13 +679,10 @@ const MapWithMultipleCircles = ({
             metricValue = neighbourSinr !== null ? parseFloat(neighbourSinr) : null;
             metricType = 'sinr';
         } else {
-            // Default to RSRP for 'rsrp' or any other metric (like throughput)
-            // Neighbors typically don't have throughput, so we show Signal Strength (RSRP) context
             metricValue = neighbourRsrp !== null ? parseFloat(neighbourRsrp) : null;
             metricType = 'rsrp';
         }
 
-        // Get quality label from threshold info based on primary metric if available, else neighbor
         const thresholdInfo = getThresholdInfo?.(rsrp, 'rsrp'); 
         const quality = thresholdInfo?.label || 'Unknown';
         
@@ -911,39 +701,30 @@ const MapWithMultipleCircles = ({
           neighbourSinr: neighbourSinr !== null ? parseFloat(neighbourSinr) : null,
           neighbourPci,
           neighbourBand,
-          metricValue, // The actual value to be colored
-          metricType,  // The type of metric (e.g. 'rsrp', 'sinr') to look up thresholds
+          metricValue,
+          metricType,
           quality,
         };
       });
 
-    // A. Apply Polygon Filter
     if (enablePolygonFilter && polygonsFetched && polygonData.length > 0) {
       const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
       parsed = checker.filterLocations(parsed);
     }
 
-    // B. Apply Legend Filter (Highlight for Neighbors)
     if (legendFilter) {
       parsed = parsed.filter(n => {
-        // Metric Filter
         if (legendFilter.type === 'metric') {
-          // Use neighbor metric for filtering if available
           const val = n.metricValue;
           return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
         }
-
-        // PCI Filter
         if (legendFilter.type === 'pci') {
-          const val = n.neighbourPci || n.pci; // Filter by neighbor PCI if present
+          const val = n.neighbourPci || n.pci;
           return Math.floor(val) === legendFilter.value;
         }
-
-        // Category Filter
         if (legendFilter.type === 'category') {
            const scheme = COLOR_SCHEMES[legendFilter.key];
            let key = "Unknown";
-           
            if (legendFilter.key === 'provider') {
              key = normalizeProviderName(n.provider) || "Unknown";
            } else if (legendFilter.key === 'technology') {
@@ -952,10 +733,8 @@ const MapWithMultipleCircles = ({
              const b = String(n.neighbourBand || n.neighborBand || n.band || "").trim();
              key = (b === "-1" || b === "") ? "Unknown" : (scheme?.[b] ? b : "Unknown");
            }
-           
            return key === legendFilter.value;
         }
-        
         return true;
       });
     }
@@ -963,7 +742,6 @@ const MapWithMultipleCircles = ({
     return parsed;
   }, [neighborData, showNeighbors, enablePolygonFilter, polygonsFetched, polygonData, selectedMetric, getThresholdInfo, legendFilter]);
 
-  // Build spatial index
   useEffect(() => {
     if (locationsToRender.length > 1000) {
       const index = new SpatialHashGrid(0.001);
@@ -974,19 +752,16 @@ const MapWithMultipleCircles = ({
     }
   }, [locationsToRender]);
 
-  // Notify parent of filtered locations
   useEffect(() => {
     const callback = onFilteredLocationsChangeRef.current;
     if (callback) callback(locationsToRender);
   }, [locationsToRender]);
 
-  // Notify parent of filtered neighbors
   useEffect(() => {
     const callback = onFilteredNeighborsChangeRef.current;
     if (callback) callback(processedNeighbors);
   }, [processedNeighbors]);
 
-  // Grid cells with hook-based coloring
   const gridCells = useMemo(() => {
     if (!enableGrid || !polygonData.length || !locationsToRender.length) return [];
     
@@ -995,91 +770,66 @@ const MapWithMultipleCircles = ({
       gridSizeMeters, 
       locationsToRender, 
       selectedMetric, 
-      resolveColor, // Use unified resolver
+      resolveColor, 
       gridAggregationMethod,
       spatialIndexRef.current
     );
   }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, resolveColor]);
 
-  // Color getter for primary locations to respect colorBy
   const getPrimaryColor = useCallback((loc) => {
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
         const value = loc?.[key];
         return resolveColor(value, colorBy);
     }
-    
     const value = loc?.[selectedMetric];
     return resolveColor(value, selectedMetric);
   }, [selectedMetric, colorBy, resolveColor]);
 
-  // ✅ FIXED: Color getter for neighbors to respect colorBy and normalize TECH correctly
   const getNeighborColor = useCallback((neighbor) => {
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
         let value;
-
         if (key === 'technology') {
-             // 1. Map 'technology' to 'networkType' (common in neighbor data)
              const rawTech = neighbor?.technology || neighbor?.networkType;
-             // 2. Identify the best band to distinguish 5G (Neighbor Band > Band)
              const bandForTech = neighbor?.neighbourBand || neighbor?.neighborBand || neighbor?.band;
-             // 3. Normalize explicitly to ensure 5G detection works
              value = normalizeTechName(rawTech, bandForTech);
-        } 
-        else if (key === 'band') {
-             // Prefer neighbor band
+        } else if (key === 'band') {
              value = neighbor?.neighbourBand || neighbor?.neighborBand || neighbor?.band;
-        } 
-        else {
-             // Default (Provider, etc.)
+        } else {
              value = neighbor?.[key];
         }
-
         return resolveColor(value, colorBy);
     }
-    
-    // Fallback to metric value (already calculated in processedNeighbors)
     const value = neighbor?.metricValue;
-    // ✅ CRITICAL FIX: Use the neighbor's specific metric TYPE (e.g. 'rsrp') to resolve the color.
     const type = neighbor?.metricType || selectedMetric; 
-    
     return resolveColor(value, type);
   }, [selectedMetric, colorBy, resolveColor]);
 
-  // Compute center
   const computedCenter = useMemo(() => {
     const allPoints = [...locationsToRender, ...processedNeighbors];
     const locs = allPoints.length > 0 ? allPoints : 
                  locations.length > 0 ? locations : null;
-    
     if (!locs?.length) return center;
-    
     const sampleSize = Math.min(locs.length, 1000);
     const step = Math.max(1, Math.floor(locs.length / sampleSize));
-    
     let sumLat = 0, sumLng = 0, count = 0;
     for (let i = 0; i < locs.length; i += step) {
       sumLat += locs[i].lat;
       sumLng += locs[i].lng;
       count++;
     }
-    
     return { lat: sumLat / count, lng: sumLng / count };
   }, [locationsToRender, processedNeighbors, locations, center]);
 
-  // Map load handler
   const handleMapLoad = useCallback((mapInstance) => {
     setMap(mapInstance);
-    
     const allPoints = [...locationsToRender, ...processedNeighbors];
     const locs = allPoints.length > 0 ? allPoints : locations;
-    
     if (fitToLocations && locs?.length && window.google) {
       const bounds = new window.google.maps.LatLngBounds();
       const sampleSize = Math.min(locs.length, 500);
       const step = Math.max(1, Math.floor(locs.length / sampleSize));
-      
       for (let i = 0; i < locs.length; i += step) {
         bounds.extend({ lat: locs[i].lat, lng: locs[i].lng });
       }
@@ -1088,11 +838,9 @@ const MapWithMultipleCircles = ({
       mapInstance.setCenter(computedCenter);
       mapInstance.setZoom(defaultZoom);
     }
-    
     onLoadProp?.(mapInstance);
   }, [locationsToRender, processedNeighbors, locations, fitToLocations, computedCenter, defaultZoom, onLoadProp]);
 
-  // ✅ Click handlers: STABILIZED with Refs
   const handlePrimaryClick = useCallback((index, loc) => {
     setSelectedLog(loc);
     setSelectedNeighbor(null);
@@ -1105,18 +853,10 @@ const MapWithMultipleCircles = ({
     onNeighborClickRef.current?.(neighbor);
   }, []);
 
-  if (loadError) {
-    return (
-      <div className="flex items-center justify-center w-full h-full text-red-500">
-        Failed to load Google Maps
-      </div>
-    );
-  }
-  
+  if (loadError) return <div className="flex items-center justify-center w-full h-full text-red-500">Failed to load Google Maps</div>;
   if (!isLoaded) return null;
 
   const showPoints = showPointsProp && !enableGrid && !areaEnabled;
-  // const showPoints = showPointsProp;
   const isLoadingPolygons = enablePolygonFilter && !polygonsFetched && projectId;
 
   return (
@@ -1124,69 +864,39 @@ const MapWithMultipleCircles = ({
       <GoogleMap
         mapContainerStyle={containerStyle}
         onLoad={handleMapLoad}
-        options={{
-          ...options,
-          gestureHandling: 'greedy',
-          disableDefaultUI: false,
-          // maxZoom: 20,
-        }}
+        options={{ ...options, gestureHandling: 'greedy', disableDefaultUI: false }}
         defaultCenter={computedCenter}
         zoom={defaultZoom}
       >
-        {/* Polygon boundaries */}
         {showPolygonBoundary && polygonData.map(({ path }, idx) => (
           <PolygonF
             key={`polygon-${idx}`}
             paths={path}
-            options={{
-              fillColor: "transparent",
-              fillOpacity: 0,
-              strokeColor: "#2563eb",
-              strokeWeight: 2,
-              strokeOpacity: 0.8,
-              zIndex: 1,
-            }}
+            options={{ fillColor: "transparent", fillOpacity: 0, strokeColor: "#2563eb", strokeWeight: 2, strokeOpacity: 0.8, zIndex: 1 }}
           />
         ))}
-
 
         {areaEnabled && areaData.map((zone) => (
          <PolygonF
            key={zone.uid}
-           paths={zone.paths} // This is the array of points from your hook
-           options={{
-             fillColor: "#3b82f6",
-             fillOpacity: 0.2,
-             strokeColor: "#2563eb",
-             strokeWeight: 2,
-             zIndex: 5
-           }}
+           paths={zone.paths}
+           options={{ fillColor: "#3b82f6", fillOpacity: 0.2, strokeColor: "#2563eb", strokeWeight: 2, zIndex: 5 }}
          />
        ))}
        
-        {/* Grid cells */}
         {enableGrid && gridCells.map((cell) => (
           <RectangleF
             key={`grid-${cell.id}`}
             bounds={cell.bounds}
-            options={{
-              fillColor: cell.fillColor,
-              fillOpacity: cell.count > 0 ? 0.7 : 0.2,
-              strokeColor: "transparent",
-              strokeWeight: 0,
-              zIndex: 2,
-              clickable: true,
-            }}
+            options={{ fillColor: cell.fillColor, fillOpacity: cell.count > 0 ? 0.7 : 0.2, strokeColor: "transparent", strokeWeight: 0, zIndex: 2, clickable: true }}
             onMouseOver={() => setHoveredCell(cell)}
             onMouseOut={() => setHoveredCell(null)}
           />
         ))}
 
-        {/* WebGL Layer for BOTH primary logs (circles) and neighbors (squares) */}
         {map && (
           <DeckGLOverlay
             map={map}
-            // Primary logs (circles)
             locations={showPoints ? locationsToRender : []}
             getColor={getPrimaryColor}
             radius={pointRadius}
@@ -1206,27 +916,9 @@ const MapWithMultipleCircles = ({
           />
         )}
 
-        {/* Neighbor InfoWindow */}
-        {selectedNeighbor && (
-          <NeighborInfoWindow
-            neighbor={selectedNeighbor}
-            onClose={() => setSelectedNeighbor(null)}
-            resolveColor={resolveColor}
-            selectedMetric={selectedMetric}
-          />
-        )}
+        {selectedNeighbor && <NeighborInfoWindow neighbor={selectedNeighbor} onClose={() => setSelectedNeighbor(null)} resolveColor={resolveColor} selectedMetric={selectedMetric} />}
+        {selectedLog && <PrimaryLogInfoWindow log={selectedLog} onClose={() => setSelectedLog(null)} resolveColor={resolveColor} selectedMetric={selectedMetric} />}
 
-        {/* Primary Log InfoWindow */}
-        {selectedLog && (
-          <PrimaryLogInfoWindow
-            log={selectedLog}
-            onClose={() => setSelectedLog(null)}
-            resolveColor={resolveColor}
-            selectedMetric={selectedMetric}
-          />
-        )}
-
-        {/* Tech handover markers */}
         <TechHandoverMarkers
           transitions={technologyTransitions}
           show={techHandOver}
@@ -1238,35 +930,22 @@ const MapWithMultipleCircles = ({
         {children}
       </GoogleMap>
 
-      {/* Loading indicators */}
       {(isLoadingPolygons || thresholdsLoading) && (
         <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-20 text-sm">
-          <span className="animate-pulse">
-            {thresholdsLoading ? 'Loading color thresholds...' : 'Loading polygon boundaries...'}
-          </span>
+          <span className="animate-pulse">{thresholdsLoading ? 'Loading color thresholds...' : 'Loading polygon boundaries...'}</span>
         </div>
       )}
 
-      {/* Grid cell hover info */}
       {enableGrid && hoveredCell && (
         <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[160px] text-xs">
           <div className="font-semibold text-gray-800 mb-2">Grid Cell</div>
           <div className="space-y-1">
-            <div className="flex justify-between text-blue-600">
-              <span>Logs:</span>
-              <span className="font-bold">{hoveredCell.count}</span>
-            </div>
-            {hoveredCell.aggregatedValue !== null && (
-              <div className="flex justify-between text-gray-600">
-                <span>{gridAggregationMethod.charAt(0).toUpperCase() + gridAggregationMethod.slice(1)} {selectedMetric.toUpperCase()}:</span>
-                <span className="font-medium">{hoveredCell.aggregatedValue.toFixed(1)}</span>
-              </div>
-            )}
+            <div className="flex justify-between text-blue-600"><span>Logs:</span><span className="font-bold">{hoveredCell.count}</span></div>
+            {hoveredCell.aggregatedValue !== null && (<div className="flex justify-between text-gray-600"><span>{gridAggregationMethod.charAt(0).toUpperCase() + gridAggregationMethod.slice(1)} {selectedMetric.toUpperCase()}:</span><span className="font-medium">{hoveredCell.aggregatedValue.toFixed(1)}</span></div>)}
           </div>
         </div>
       )}
 
-      {/* Stats panel */}
       {showStats && (
         <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg text-xs text-gray-600 z-10">
           {isLoadingPolygons || thresholdsLoading ? (
@@ -1275,38 +954,21 @@ const MapWithMultipleCircles = ({
             <span>{gridCells.filter(c => c.count > 0).length} cells with data</span>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {/* Primary points */}
               <div className="flex items-center gap-2">
                 <Circle className="w-3 h-3 text-green-500" fill="#22C55E" />
-                <span className="font-medium text-green-600">
-                  {locationsToRender.length.toLocaleString()} primary logs
-                </span>
+                <span className="font-medium text-green-600">{locationsToRender.length.toLocaleString()} primary logs</span>
               </div>
-              
-              {/* Neighbor points */}
               {showNeighbors && processedNeighbors.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Square className="w-3 h-3 text-purple-500" fill="#8B5CF6" />
-                  <span className="font-medium text-purple-600">
-                    {processedNeighbors.length.toLocaleString()} neighbor logs
-                  </span>
+                  <span className="font-medium text-purple-600">{processedNeighbors.length.toLocaleString()} neighbor logs</span>
                 </div>
               )}
-              
-              <div className="flex items-center gap-1 text-[10px] text-blue-500">
-                <Layers className="h-3 w-3" />
-                <span>WebGL Accelerated</span>
-              </div>
-              
-              {/* Filtered counts */}
+              <div className="flex items-center gap-1 text-[10px] text-blue-500"><Layers className="h-3 w-3" /><span>WebGL Accelerated</span></div>
               {enablePolygonFilter && polygonData.length > 0 && (
                 <div className="text-[10px] text-gray-400 space-y-0.5">
-                  {locations.length !== locationsToRender.length && (
-                    <div>({(locations.length - locationsToRender.length).toLocaleString()} primary outside)</div>
-                  )}
-                  {showNeighbors && neighborData.length !== processedNeighbors.length && (
-                    <div>({(neighborData.length - processedNeighbors.length).toLocaleString()} neighbors outside)</div>
-                  )}
+                  {locations.length !== locationsToRender.length && (<div>({(locations.length - locationsToRender.length).toLocaleString()} primary outside)</div>)}
+                  {showNeighbors && neighborData.length !== processedNeighbors.length && (<div>({(neighborData.length - processedNeighbors.length).toLocaleString()} neighbors outside)</div>)}
                 </div>
               )}
             </div>
@@ -1314,7 +976,6 @@ const MapWithMultipleCircles = ({
         </div>
       )} 
 
-      {/* Tech handover panel */}
       {techHandOver && technologyTransitions.length > 0 && (
         <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[180px]">
           <div className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">

@@ -224,7 +224,8 @@ const getThresholdKey = (metric) => {
     jitter: "jitter",
     latency: "latency",
     packet_loss: "packet_loss",
-    tac: "tac",
+    coverage_violation: "coverage_violation",
+    dominance: "dominance",
   };
   return mapping[metric?.toLowerCase()] || metric;
 };
@@ -560,6 +561,7 @@ const UnifiedMapView = () => {
   const [polygonSource, setPolygonSource] = useState("map");
   const [onlyInsidePolygons, setOnlyInsidePolygons] = useState(false);
   const [areaEnabled, setAreaEnabled] = useState(false);
+  const [coverageViolationThreshold, setCoverageViolationThreshold] = useState(null);
 
   const [hoveredPolygon, setHoveredPolygon] = useState(null);
   const [hoverPosition, setHoverPosition] = useState(null);
@@ -973,6 +975,31 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
   return idMap; // LogId -> Count
 }, [dominanceData, dominanceThreshold]);
 
+const coverageViolationLogIds = useMemo(() => {
+  if (coverageViolationThreshold === null || !dominanceData || !Array.isArray(dominanceData)) {
+    return null;
+  }
+
+  const idMap = new Map();
+  
+  dominanceData.forEach((item) => {
+    const logId = String(item.LogId || item.log_id);
+    const values = item.dominance || [];
+    
+    // Count neighbors between threshold (e.g., -10) and 0
+    const countInRange = values.filter(val => {
+      const num = parseFloat(val);
+      return num >= coverageViolationThreshold && num <= 0;
+    }).length;
+
+    if (countInRange > 0) {
+      idMap.set(logId, countInRange);
+    }
+  });
+  
+  return idMap; // Returns Map<LogId, Count>
+}, [dominanceData, coverageViolationThreshold]);
+
 
 
   const filteredLocations = useMemo(() => {
@@ -1046,6 +1073,20 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
       }));
   }
 
+
+  if (coverageViolationThreshold !== null && coverageViolationLogIds) {
+      result = result
+        .filter((loc) => {
+          const logId = String(loc.id || loc.LogId || "");
+          return coverageViolationLogIds.has(logId);
+        })
+        .map(loc => ({
+          ...loc,
+          // Attach count to the specific metric key so colors work
+          coverage_violation: coverageViolationLogIds.get(String(loc.id || loc.LogId || ""))
+        }));
+    }
+
     return result;
   }, [
     locations,
@@ -1055,6 +1096,8 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
     pciThreshold,
     problematicLogIds,
     dominanceThreshold,
+    coverageViolationLogIds,
+    coverageViolationThreshold
   ]);
 
   const finalDisplayLocations = useMemo(() => {
@@ -1659,6 +1702,8 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
         bestNetworkOptions={bestNetworkOptions}
         setBestNetworkOptions={setBestNetworkOptions}
         bestNetworkStats={bestNetworkStats}
+        coverageViolationThreshold={coverageViolationThreshold}
+  setCoverageViolationThreshold={setCoverageViolationThreshold}
       />
 
       <div className="flex-grow relative overflow-hidden">

@@ -4,6 +4,7 @@ import {
   X,
   RefreshCw,
   AlertTriangle,
+  ShieldAlert,
   Layers,
   Filter,
   Minus,
@@ -348,6 +349,8 @@ const UnifiedMapSidebar = ({
   setEnableGrid,
   gridSizeMeters,
   setGridSizeMeters,
+  coverageViolationThreshold,
+  setCoverageViolationThreshold,
 }) => {
   const sideClasses = useMemo(() => {
     const base =
@@ -820,14 +823,17 @@ const UnifiedMapSidebar = ({
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-300">Dominance Filter</span>
                 <ToggleSwitch
-        checked={dominanceThreshold !== null}
-        onChange={(checked) => {
-          const newVal = checked ? 6 : null;
-          setDominanceThreshold(newVal);
-          // Auto-switch metric to dominance to see colors immediately
-          if (checked) setMetric("dominance"); 
-        }}
-      />
+                  checked={dominanceThreshold !== null}
+                  onChange={(checked) => {
+                    const newVal = checked ? 6 : null;
+                    setDominanceThreshold(newVal);
+
+                    if (checked) 
+                      setMetric("dominance") 
+                      else 
+                        setMetric("rsrp");
+                  }}
+                />
               </div>
 
               {dominanceThreshold !== null && (
@@ -854,6 +860,53 @@ const UnifiedMapSidebar = ({
               )}
             </div>
           </CollapsibleSection>
+          <CollapsibleSection title="Coverage Violation" icon={ShieldAlert}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-300">Enable Violation</span>
+                <ToggleSwitch
+                  checked={coverageViolationThreshold !== null}
+                  onChange={(checked) => {
+                    // FIX: Ensure it defaults to a negative number and updates the metric
+                    const newVal = checked ? -10 : null;
+                    setCoverageViolationThreshold?.(newVal);
+
+                    if (checked) {
+                      setDominanceThreshold?.(null); // Mutually exclusive
+                      setMetric("coverage_violation"); // This triggers the layer update
+                    } else {
+                      // If disabling, reset metric to default
+                      setMetric("rsrp");
+                    }
+
+                  }}
+                />
+              </div>
+
+              {coverageViolationThreshold !== null && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-400">
+                    Range Start (Negative dB)
+                  </Label>
+                  <Input
+                    type="number"
+                    value={coverageViolationThreshold}
+                    max={0} // Ensure user doesn't go positive
+                    onChange={(e) =>
+                      setCoverageViolationThreshold?.(parseInt(e.target.value))
+                    }
+                    className="bg-slate-800 border-slate-600 text-white h-8 text-sm"
+                  />
+                  <p className="text-[10px] text-slate-500 italic">
+                    Showing logs with neighbors between{" "}
+                    {coverageViolationThreshold} dB and 0 dB relative to
+                    primary. Colors reflect count of signals.
+                  </p>
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
+
           <CollapsibleSection
             title="Tech Handover"
             icon={ArrowLeftRight}

@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 // Basic styles as optional (can be removed if raw HTML is preferred)
 const basicOverlayStyle = {
@@ -39,7 +40,7 @@ function DialogOverlay(props) {
   return <DialogPrimitive.Overlay style={basicOverlayStyle} {...props} />;
 }
 
-function DialogContent({ children, showCloseButton = true, ...props }) {
+function DialogContent({ children,title,  showCloseButton = true, ...props }) {
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -48,6 +49,9 @@ function DialogContent({ children, showCloseButton = true, ...props }) {
         aria-describedby={props['aria-describedby'] === undefined ? undefined : props['aria-describedby']}
         {...props}
       >
+         <VisuallyHidden>
+          <DialogTitle>{title}</DialogTitle>
+        </VisuallyHidden>
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close

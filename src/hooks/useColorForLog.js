@@ -283,7 +283,7 @@ function useColorForLog() {
             'packet_loss': 'packet_loss',
             'tac': 'tac',
             'dominance': 'dominance',
-            'coverage_violation': 'coverage_violation'
+            'coverage_violation': 'coverage_violation',
         };
 
         const key = metricKeyMap[metric?.toLowerCase()] || metric?.toLowerCase();

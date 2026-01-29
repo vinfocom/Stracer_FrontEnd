@@ -8,15 +8,12 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
-  Cell,
 } from 'recharts';
 import { Activity, AlertTriangle, Building2, TreePine } from 'lucide-react';
 import ChartCard from '../ChartCard';
 import { useIndOut } from '@/hooks/useDashboardData';
-import { COLOR_SCHEMES } from '@/utils/colorUtils';
+import { COLOR_SCHEMES, normalizeTechName, normalizeProviderName } from '@/utils/colorUtils';
 
-// Metric configuration
 const METRIC_CONFIG = {
   rsrp: { 
     key: 'avgRsrp', 
@@ -44,7 +41,6 @@ const METRIC_CONFIG = {
   },
 };
 
-// Metric Toggle Component
 const MetricToggle = React.memo(({ selected, onChange }) => (
   <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
     {Object.entries(METRIC_CONFIG).map(([key, config]) => (
@@ -63,18 +59,19 @@ const MetricToggle = React.memo(({ selected, onChange }) => (
 
 MetricToggle.displayName = 'MetricToggle';
 
-// Custom Tooltip
 const CustomTooltip = React.memo(({ active, payload, label, metricConfig }) => {
   if (!active || !payload?.length) return null;
+
+  const normalizedLabel = normalizeProviderName(label);
 
   return (
     <div className="bg-white p-3 border border-gray-200 shadow-xl rounded-lg min-w-[200px]">
       <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
         <div
           className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: COLOR_SCHEMES.provider[label] || '#6B7280' }}
+          style={{ backgroundColor: COLOR_SCHEMES.provider[normalizedLabel] || '#6B7280' }}
         />
-        <span className="text-sm font-bold text-gray-900">{label}</span>
+        <span className="text-sm font-bold text-gray-900">{normalizedLabel}</span>
       </div>
 
       <div className="space-y-1.5 text-xs">
@@ -117,7 +114,6 @@ const CustomTooltip = React.memo(({ active, payload, label, metricConfig }) => {
 
 CustomTooltip.displayName = 'CustomTooltip';
 
-// Custom Legend
 const CustomLegend = React.memo(() => (
   <div className="flex justify-center items-center gap-6 mt-2">
     <div className="flex items-center gap-2">
@@ -135,35 +131,30 @@ const CustomLegend = React.memo(() => (
 
 CustomLegend.displayName = 'CustomLegend';
 
-// Main Component
 const IndoorOutdoorProviderChart = () => {
   const { data, isLoading, error } = useIndOut();
   const [selectedMetric, setSelectedMetric] = useState('rsrp');
 
   const metricConfig = METRIC_CONFIG[selectedMetric];
 
-  // Process chart data - group by provider, separate indoor/outdoor
   const { chartData, stats } = useMemo(() => {
     if (!data?.length) {
       return { chartData: [], stats: null };
     }
 
-    // Group by provider
     const providerMap = new Map();
 
     data.forEach((item) => {
-      // Filter out invalid providers
       if (!item.provider || item.provider === 'Unknown') return;
 
-      const provider = item.provider;
+      const normalizedProvider = normalizeProviderName(item.provider);
       const metricValue = item[metricConfig.key];
 
-      // Skip if no valid metric value
       if (metricValue === null || metricValue === undefined || metricValue === 0) return;
 
-      if (!providerMap.has(provider)) {
-        providerMap.set(provider, {
-          provider,
+      if (!providerMap.has(normalizedProvider)) {
+        providerMap.set(normalizedProvider, {
+          provider: normalizedProvider,
           indoor: null,
           outdoor: null,
           indoorSamples: 0,
@@ -171,7 +162,7 @@ const IndoorOutdoorProviderChart = () => {
         });
       }
 
-      const entry = providerMap.get(provider);
+      const entry = providerMap.get(normalizedProvider);
       const locationType = (item.location || '').toLowerCase();
 
       if (locationType === 'indoor' || locationType === 'in') {
@@ -183,22 +174,14 @@ const IndoorOutdoorProviderChart = () => {
       }
     });
 
-    // Convert to array and filter out providers with no data
     const processed = Array.from(providerMap.values())
       .filter((item) => item.indoor !== null || item.outdoor !== null)
       .sort((a, b) => {
-        // Sort by average of indoor/outdoor values
         const avgA = ((a.indoor || 0) + (a.outdoor || 0)) / (a.indoor && a.outdoor ? 2 : 1);
         const avgB = ((b.indoor || 0) + (b.outdoor || 0)) / (b.indoor && b.outdoor ? 2 : 1);
-        
-        // For negative metrics (RSRP, RSRQ), higher (less negative) is better
-        if (selectedMetric === 'rsrp' || selectedMetric === 'rsrq') {
-          return avgB - avgA;
-        }
         return avgB - avgA;
       });
 
-    // Calculate stats
     let totalIndoor = 0, totalOutdoor = 0;
     let indoorCount = 0, outdoorCount = 0;
     let totalSamples = 0;
@@ -228,7 +211,6 @@ const IndoorOutdoorProviderChart = () => {
     };
   }, [data, metricConfig.key, selectedMetric]);
 
-  // Export data
   const exportData = useMemo(() => {
     return chartData.flatMap((item) => [
       {
@@ -260,7 +242,6 @@ const IndoorOutdoorProviderChart = () => {
       headerActions={
         <div className="flex items-center gap-3 mr-2">
           <MetricToggle selected={selectedMetric} onChange={handleMetricChange} />
-          
         </div>
       }
     >
@@ -272,9 +253,6 @@ const IndoorOutdoorProviderChart = () => {
         </div>
       ) : chartData.length > 0 ? (
         <div className="h-full flex flex-col">
-          
-
-         
           <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
@@ -302,7 +280,7 @@ const IndoorOutdoorProviderChart = () => {
                   tick={{ fontSize: 10, fill: '#6b7280' }}
                   tickLine={{ stroke: '#d1d5db' }}
                   axisLine={{ stroke: '#d1d5db' }}
-                  reversed 
+                  reversed
                   label={{
                     value: `${metricConfig.label} (${metricConfig.unit})`,
                     angle: -90,
@@ -317,8 +295,6 @@ const IndoorOutdoorProviderChart = () => {
                   content={<CustomTooltip metricConfig={metricConfig} />}
                   cursor={{ fill: 'rgba(0, 0, 0, 0.05)' }}
                 />
-                
-                {/* Indoor Bar */}
                 <Bar
                   dataKey="indoor"
                   name="Indoor"
@@ -326,8 +302,6 @@ const IndoorOutdoorProviderChart = () => {
                   radius={[4, 4, 0, 0]}
                   maxBarSize={40}
                 />
-                
-                {/* Outdoor Bar */}
                 <Bar
                   dataKey="outdoor"
                   name="Outdoor"
@@ -339,16 +313,17 @@ const IndoorOutdoorProviderChart = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Custom Legend */}
           <CustomLegend />
 
-          {/* Provider Legend */}
           <div className="flex flex-wrap justify-center gap-4 mt-2 pt-3 border-t border-gray-100">
             {chartData.map((item) => (
               <div key={item.provider} className="flex items-center gap-1.5 text-xs">
                 <div
                   className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: COLOR_SCHEMES.provider[item.provider] || '#6B7280' }}
+                  style={{
+                    backgroundColor:
+                      COLOR_SCHEMES.provider[item.provider] || '#6B7280',
+                  }}
                 />
                 <span className="font-medium text-gray-700">{item.provider}</span>
                 <span className="text-gray-400">

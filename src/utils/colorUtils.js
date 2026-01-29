@@ -68,7 +68,7 @@ export const generateColorFromHash = (str) => {
 export const normalizeProviderName = (rawName) => {
   if (!rawName) return null;
 
-  const invalidValues = ["000 000", " 000 000 ", "404440", "404011"];
+  const invalidValues = ["000 000", "000000", " 000 000 ", "404440", "404011"];
   const s = String(rawName).trim();
 
   if (/^\/+$/.test(s)) return null;

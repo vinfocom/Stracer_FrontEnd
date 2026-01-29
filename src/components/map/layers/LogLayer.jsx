@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Circle } from "@react-google-maps/api";
 import { toast } from "react-toastify";
 import { mapViewApi } from "@/api/apiEndpoints";
+// 1. Import the color generator
+import { generateColorFromHash } from "@/utils/colorUtils";
 
 // Local date formatter to avoid UTC off-by-one
 const toYmdLocal = (d) => {
@@ -32,7 +34,19 @@ const resolveMetricConfig = (key) => {
   return map[key?.toLowerCase()] || map.rsrp;
 };
 
+// 2. Update logic to use Hash for TAC
 const getColorForMetric = (metric, value, thresholds) => {
+  const normalizedMetric = metric?.toLowerCase();
+
+  // Special handling for TAC to match MapLegend's dynamic coloring
+  if (normalizedMetric === "tac") {
+    // If value is missing, return default, otherwise generate hash color
+    return value !== undefined && value !== null 
+      ? generateColorFromHash(String(value)) 
+      : "#808080";
+  }
+
+  // Standard logic for other metrics (RSRP, SINR, etc.)
   const { thresholdKey } = resolveMetricConfig(metric);
   const metricThresholds = thresholds[thresholdKey] || [];
   const numValue = parseFloat(value);
