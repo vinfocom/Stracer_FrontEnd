@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
-import MapwithMultipleCircle from "../MapwithMultipleCircle";
+import MapwithMultipleCircle from "../unifiedMap/MapwithMultipleCircle";
 import MapLegend from "@/components/map/MapLegend";
 
 const MapChild = ({

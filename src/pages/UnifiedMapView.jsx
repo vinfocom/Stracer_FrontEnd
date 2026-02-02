@@ -14,7 +14,7 @@ import { mapViewApi } from "../api/apiEndpoints";
 
 // Components
 import Spinner from "../components/common/Spinner";
-import MapWithMultipleCircles from "../components/MapwithMultipleCircle";
+import MapWithMultipleCircles from "@/components/unifiedMap/MapwithMultipleCircle";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import UnifiedMapSidebar from "@/components/unifiedMap/UnifiedMapSideBar.jsx";
 import SiteMarkers from "@/components/unifiedMap/SiteMarkers";

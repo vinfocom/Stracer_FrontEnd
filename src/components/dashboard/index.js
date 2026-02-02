@@ -10,9 +10,7 @@ export { default as ChartCardSkeleton } from './skeletons/ChartCardSkeleton';
 // Charts
 export { default as MonthlySamplesChart } from './charts/MonthlySamplesChart';
 export { default as OperatorNetworkChart } from './charts/OperatorNetworkChart';
-export { default as NetworkDistributionChart } from './charts/NetworkDistributionChart';
 export { default as MetricChart } from './charts/BoxPlotChartSimple';
 export { default as BandDistributionChart } from './charts/BandDistributionChart';
 export { default as HandsetPerformanceChart } from './charts/HandsetPerformanceChart';
-export { default as CoverageRankingChart } from './charts/CoverageRankingChart';
 export { default as QualityRankingChart } from './charts/QualityRankingChart';

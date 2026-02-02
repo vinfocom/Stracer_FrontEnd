@@ -7,7 +7,7 @@ import { Filter } from "lucide-react";
 
 import { mapViewApi, settingApi } from "../api/apiEndpoints";
 import Spinner from "../components/common/Spinner";
-import MapWithMultipleCircles from "../components/MapwithMultipleCircle";
+import MapWithMultipleCircles from "../components/unifiedMap/MapwithMultipleCircle";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import MapViewSide from "@/components/MapView/MapViewSide";
 import NetworkPlannerMap from "@/components/unifiedMap/NetworkPlannerMap";

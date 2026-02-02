@@ -1,10 +1,10 @@
 // src/components/MapWithMultipleCircles.jsx
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { GoogleMap, PolygonF, RectangleF, InfoWindow } from "@react-google-maps/api";
-import { mapViewApi } from "../api/apiEndpoints";
-import DeckGLOverlay from "./maps/DeckGLOverlay";
+import { mapViewApi } from "@/api/apiEndpoints";
+import DeckGLOverlay from "@/components/maps/DeckGLOverlay";
 import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
-import TechHandoverMarkers from "./unifiedMap/TechHandoverMarkers";
+import TechHandoverMarkers from "../unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
 import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
 import { normalizeProviderName, normalizeTechName, getLogColor, generateColorFromHash } from "@/utils/colorUtils";

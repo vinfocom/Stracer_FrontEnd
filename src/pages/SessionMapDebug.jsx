@@ -32,7 +32,7 @@ import { format } from "date-fns";
 import useColorForLog from "@/hooks/useColorForLog.js";
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
 import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
-import MapWithMultipleCircles from "@/components/MapwithMultipleCircle";
+import MapWithMultipleCircles from "@/components/unifiedMap/MapwithMultipleCircle";
 
 // ============================================
 // CONSTANTS & HELPERS
