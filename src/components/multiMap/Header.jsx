@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { LogOut, Plus } from "lucide-react";
-import { useLocation, Link, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
 
 export default function Header({
@@ -11,23 +11,24 @@ export default function Header({
   project, 
   sessionIds,
   addMap,
+  locations,
+  neighborData,
+  thresholds
 }) {
   const { logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const effectiveProjectId =
     projectId || searchParams.get("project_id") || searchParams.get("project");
-
  
   const [fetchedProject, setFetchedProject] = useState(null);
 
-  // 3. Logic: Use the passed prop if available, otherwise use the locally fetched one
   const displayProject = project || fetchedProject;
 
   useEffect(() => {
     const fetchProject = async () => {
-      // Optimization: If project is already passed via props, don't fetch again
       if (project) return; 
 
       if (!effectiveProjectId) return;
@@ -49,29 +50,41 @@ export default function Header({
     fetchProject();
   }, [effectiveProjectId, project]);
 
+  const handleUnifiedNavigation = () => {
+    navigate(`/unified-map?${searchParams.toString()}`, {
+        state: {
+            locations,
+            neighborData,
+            thresholds,
+            project: displayProject
+        }
+    });
+  };
+
   return (
     <header className="h-14 bg-slate-800 border-b flex items-center justify-between px-4 shadow-sm z-10 flex-shrink-0">
       <div className="flex items-center gap-4">
         <h1 className="font-bold text-lg text-white">
-          {/* 4. FIX: Handle both 'project_name' (used in UnifiedHeader) and 'name' */}
           {displayProject ? `${displayProject.project_name || displayProject.name}` : ""}
         </h1>
       </div>
 
       <div className="flex items-center gap-3">
         {/* Navigation Buttons */}
-        <Button  size="sm" className="bg-blue-600 text-white" asChild>
-          <Link to="/dashboard">Dashboard</Link>
+        <Button size="sm" className="bg-blue-600 text-white" onClick={() => navigate("/dashboard")}>
+          Dashboard
         </Button>
-        <Button size="sm" className="bg-blue-600 text-white" asChild>
-          <Link to={`/unified-map?${searchParams.toString()}`}>
+        
+        {/* Updated Unified Map Button */}
+        <Button 
+            size="sm" 
+            className="bg-blue-600 text-white" 
+            onClick={handleUnifiedNavigation}
+        >
             Unified Map
-          </Link>
         </Button>
 
         <div className="h-6 w-px bg-gray-300 mx-1" />
-
-        
 
         <button
           onClick={addMap}

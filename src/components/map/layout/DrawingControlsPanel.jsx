@@ -1,13 +1,42 @@
-import React, { useEffect, useRef, useState, useCallback, memo, useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { PenTool, XCircle, Download, ChevronDown, ChevronUp, Search, Map as MapIcon } from "lucide-react";
-import { Label } from "@/components/ui/label";
+import React, { useState, useCallback, memo, useMemo, useEffect } from "react";
+import { 
+  MousePointer2, 
+  Hexagon, 
+  Square, 
+  Circle, 
+  Ruler, 
+  Settings2, 
+  Download, 
+  Trash2, 
+  Search,
+  PenTool, 
+  X
+} from "lucide-react";
 import { useMapContext } from "@/context/MapContext";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+const ToolButton = ({ icon: Icon, active, onClick, title, variant = "ghost" }) => (
+  <button
+    onClick={(e) => { e.stopPropagation(); onClick(e); }}
+    title={title}
+    className={`
+      p-2 rounded-full transition-all duration-200 flex items-center justify-center flex-shrink-0
+      ${active 
+        ? "bg-blue-100 text-blue-700 shadow-sm ring-1 ring-blue-200" 
+        : variant === "destructive" 
+          ? "hover:bg-red-50 text-gray-600 hover:text-red-600" 
+          : "hover:bg-slate-100 text-gray-700"
+      }
+    `}
+  >
+    <Icon size={18} strokeWidth={active ? 2.5 : 2} />
+  </button>
+);
 
 const DrawingControlsPanel = memo(function DrawingControlsPanel({
   ui: propUi,
   onUIChange: propOnUIChange,
-  hasLogs: propHasLogs,
   polygonStats: propPolygonStats,
   onDownloadStatsCsv: propOnDownloadStatsCsv,
   onDownloadRawCsv: propOnDownloadRawCsv,
@@ -15,23 +44,20 @@ const DrawingControlsPanel = memo(function DrawingControlsPanel({
   position = "top-right",
 }) {
   const context = useMapContext();
-
   const ui = propUi || context?.ui || {};
   const onUIChange = propOnUIChange || context?.updateUI;
-  const hasLogs = propHasLogs ?? context?.hasLogsRef?.current ?? false;
   const polygonStats = propPolygonStats || context?.polygonStatsRef?.current;
   const downloadHandlers = context?.downloadHandlersRef?.current || {};
+
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleDownloadStatsCsv = propOnDownloadStatsCsv || downloadHandlers.onDownloadStatsCsv;
   const handleDownloadRawCsv = propOnDownloadRawCsv || downloadHandlers.onDownloadRawCsv;
   const handleFetchLogs = propOnFetchLogs || downloadHandlers.onFetchLogs;
 
-  const [dropOpen, setDropOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
   const safeUi = useMemo(() => ({
     drawEnabled: false,
-    shapeMode: "polygon",
+    shapeMode: null, 
     drawPixelateRect: false,
     drawCellSizeMeters: 100,
     drawClearSignal: 0,
@@ -40,240 +66,241 @@ const DrawingControlsPanel = memo(function DrawingControlsPanel({
   }), [ui]);
 
   useEffect(() => {
-    const onOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setDropOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
-  }, []);
+    if (safeUi.drawEnabled) {
+      setIsExpanded(true);
+    }
+  }, [safeUi.drawEnabled]);
 
-  const toggleDropdown = useCallback(() => setDropOpen(p => !p), []);
+  const activateTool = useCallback((mode) => {
+    onUIChange?.({ 
+      drawEnabled: true, 
+      shapeMode: mode 
+    });
+  }, [onUIChange]);
 
-  const startDrawPolygon = useCallback(() => {
-    onUIChange?.({ drawEnabled: true, shapeMode: "polygon" });
-    setDropOpen(false);
+  const deactivateTool = useCallback(() => {
+    onUIChange?.({ 
+      drawEnabled: false, 
+      shapeMode: null 
+    });
   }, [onUIChange]);
 
   const clearDrawings = useCallback(() => {
-    onUIChange?.({ drawClearSignal: (safeUi.drawClearSignal || 0) + 1 });
+    onUIChange?.({ 
+      drawClearSignal: (safeUi.drawClearSignal || 0) + 1,
+      drawEnabled: false, 
+      shapeMode: null
+    });
   }, [onUIChange, safeUi.drawClearSignal]);
 
-  const handleEnableChange = useCallback((e) => {
-    onUIChange?.({ drawEnabled: e.target.checked });
+  const updateSetting = useCallback((key, value) => {
+    onUIChange?.({ [key]: value });
   }, [onUIChange]);
-
-  const handleShapeModeChange = useCallback((e) => {
-    onUIChange?.({ shapeMode: e.target.value });
-  }, [onUIChange]);
-
-  const handlePixelateChange = useCallback((e) => {
-    onUIChange?.({ drawPixelateRect: e.target.checked });
-  }, [onUIChange]);
-
-  const handleColorizeChange = useCallback((e) => {
-    onUIChange?.({ colorizeCells: e.target.checked });
-  }, [onUIChange]);
-
-  const handleCellSizeChange = useCallback((e) => {
-    onUIChange?.({ drawCellSizeMeters: Math.max(1, Number(e.target.value || 20)) });
-  }, [onUIChange]);
-
-  const handleFetchClick = useCallback(() => {
-    setDropOpen(false);
-    handleFetchLogs?.();
-  }, [handleFetchLogs]);
 
   const positionClasses = {
-    "top-right": "absolute top-20 right-4",
-    "top-left": "absolute top-20 left-4",
-    "bottom-right": "absolute bottom-4 right-4",
-    "bottom-left": "absolute bottom-4 left-4",
-    "relative": "relative",
+    "top-right": "absolute top-3 right-16",
+    "top-left": "absolute top-4 left-4",
+    "bottom-right": "absolute bottom-8 right-4",
+    "bottom-left": "absolute bottom-8 left-4",
+    "relative": "relative inline-block",
+    
   };
 
-  const hasShape = polygonStats && (polygonStats.area > 0 || polygonStats.geometry);
+  const hasShape = polygonStats && (polygonStats.area > 0 || polygonStats.length > 0);
   const sessionCount = polygonStats?.intersectingSessions?.length || 0;
 
   return (
-    <div
-      className={`${positionClasses[position] || positionClasses["top-right"]} ${position === 'relative' ? 'inline-block' : 'z-40'}`}
-      ref={dropdownRef}
-    >
-      <button
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all shadow-md ${
-          dropOpen
-            ? "bg-blue-600 text-white shadow-lg"
-            : "bg-slate-800 text-white hover:bg-slate-700 border border-slate-600"
-        }`}
-        onClick={toggleDropdown}
+    <div className={`${positionClasses[position]} z-40 flex flex-col gap-3 items-end`}>
+      
+      <div
+        className={`
+          relative backdrop-blur-md shadow-xl border border-white/20 ring-1 ring-black/5
+          transition-all duration-500 ease-out
+          flex items-center overflow-hidden rounded-full
+          ${isExpanded 
+            ? "bg-white/95 p-1.5" 
+            : "bg-slate-700/95 w-11 h-11 cursor-pointer hover:bg-slate-600/95"
+          }
+        `}
+        onClick={!isExpanded ? () => setIsExpanded(true) : undefined}
       >
-        <PenTool className={`w-4 h-4 ${safeUi.drawEnabled ? 'text-green-400' : ''}`} />
-        <span>Drawing Tools</span>
-        {safeUi.drawEnabled && <span className="w-2 h-2 bg-green-400 rounded-full" />}
-        {dropOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-      </button>
+        
+        {/* PEN ICON (Visible when minimized) */}
+        <div 
+          className={`
+            absolute inset-0 flex items-center justify-center transition-all duration-300
+            ${isExpanded 
+              ? "opacity-0 scale-50 pointer-events-none" 
+              : "opacity-100 scale-100"
+            }
+          `}
+        >
+          <PenTool size={20} className="text-white" />
+        </div>
 
-      {dropOpen && (
-        <div className={`bg-white text-gray-900 rounded-lg shadow-2xl ring-1 ring-gray-200 p-4 w-80 ${
-          position === 'relative'
-            ? 'absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50'
-            : 'absolute top-full right-0 mt-2 z-50'
-        }`}>
-          <label className="flex items-center gap-2 font-medium text-sm mb-3 cursor-pointer hover:text-blue-600">
-            <input
-              type="checkbox"
-              checked={!!safeUi.drawEnabled}
-              onChange={handleEnableChange}
-              className="w-4 h-4 accent-blue-600"
+        {/* TOOLBAR CONTENT (Visible when expanded) */}
+        <div 
+          className={`
+            flex items-center gap-1 transition-all duration-300 whitespace-nowrap
+            ${isExpanded 
+              ? "opacity-100 translate-x-0" 
+              : "opacity-0 translate-x-10 pointer-events-none"
+            }
+          `}
+        >
+            <div className="w-px h-5 bg-gray-300 mx-1 flex-shrink-0" />
+
+            {/* Cursor / Select */}
+            <ToolButton 
+              icon={MousePointer2} 
+              title="Cursor / Pan (Escape Drawing)"
+              active={!safeUi.drawEnabled}
+              onClick={deactivateTool}
             />
-            Enable Drawing Tools
-          </label>
+            
+            <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
 
-          <div className="mb-4">
-            <Button
-              size="sm"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium"
-              onClick={startDrawPolygon}
-              disabled={!safeUi.drawEnabled}
+            {/* Drawing Tools */}
+            <ToolButton 
+              icon={Hexagon} 
+              title="Draw Polygon"
+              active={safeUi.drawEnabled && safeUi.shapeMode === "polygon"}
+              onClick={() => activateTool("polygon")}
+            />
+            <ToolButton 
+              icon={Square} 
+              title="Draw Rectangle"
+              active={safeUi.drawEnabled && safeUi.shapeMode === "rectangle"}
+              onClick={() => activateTool("rectangle")}
+            />
+            <ToolButton 
+              icon={Circle} 
+              title="Draw Circle"
+              active={safeUi.drawEnabled && safeUi.shapeMode === "circle"}
+              onClick={() => activateTool("circle")}
+            />
+            <ToolButton 
+              icon={Ruler} 
+              title="Measure Distance"
+              active={safeUi.drawEnabled && safeUi.shapeMode === "polyline"}
+              onClick={() => activateTool("polyline")}
+            />
+
+            <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
+
+            {/* Settings Popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button 
+                  onClick={(e) => e.stopPropagation()}
+                  className={`
+                    p-2 rounded-full hover:bg-slate-100 transition-colors flex-shrink-0
+                    ${safeUi.drawPixelateRect ? 'text-blue-600' : 'text-gray-700'}
+                  `}
+                >
+                  <Settings2 size={18} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3" align="end">
+                <div className="space-y-3">
+                    <h4 className="font-medium text-sm text-gray-900 border-b pb-2">Analysis Settings</h4>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={safeUi.drawPixelateRect}
+                        onChange={(e) => updateSetting('drawPixelateRect', e.target.checked)}
+                        disabled={safeUi.shapeMode === "polyline"}
+                        className="rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Pixelate Grid Analysis</span>
+                    </label>
+
+                    {safeUi.drawPixelateRect && (
+                      <div className="pl-6 space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={safeUi.colorizeCells}
+                            onChange={(e) => updateSetting('colorizeCells', e.target.checked)}
+                            className="rounded text-blue-600"
+                          />
+                          <span className="text-xs text-gray-600">Colorize by Metric</span>
+                        </label>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-12">Cell Size:</span>
+                          <input
+                            type="number"
+                            min={10}
+                            step={10}
+                            value={safeUi.drawCellSizeMeters}
+                            onChange={(e) => updateSetting('drawCellSizeMeters', Number(e.target.value))}
+                            className="flex-1 border rounded px-2 py-1 text-xs"
+                          />
+                          <span className="text-xs text-gray-500">m</span>
+                        </div>
+                      </div>
+                    )}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Export Popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button 
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-2 rounded-full hover:bg-slate-100 text-gray-700 transition-colors flex-shrink-0" 
+                  title="Export Data"
+                >
+                    <Download size={18} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="end">
+                <div className="flex flex-col gap-1">
+                    <Button variant="ghost" size="sm" className="justify-start h-8" onClick={handleDownloadStatsCsv} disabled={!hasShape}>
+                      Stats CSV
+                    </Button>
+                    <Button variant="ghost" size="sm" className="justify-start h-8" onClick={handleDownloadRawCsv} disabled={!hasShape}>
+                      Raw Logs CSV
+                    </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
+
+            {/* Clear Button */}
+            <ToolButton 
+              icon={Trash2} 
+              title="Clear All Drawings"
+              variant="destructive"
+              onClick={clearDrawings}
+            />
+            
+            {/* Close Button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
+              className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors flex-shrink-0"
+              title="Close Toolbar"
             >
-              <PenTool className="h-4 w-4 mr-2" />
-              Start Drawing Polygon
-            </Button>
-          </div>
+              <X size={18} />
+            </button>
+        </div>
+      </div>
 
-          {!hasLogs && hasShape && (
-            <div className="mb-4 p-3 bg-indigo-50 border border-indigo-100 rounded-md">
-              <div className="text-xs text-indigo-700 mb-2 font-medium flex items-center gap-2">
-                <MapIcon className="w-4 h-4" />
-                {sessionCount > 0
-                  ? `Found ${sessionCount} session${sessionCount > 1 ? 's' : ''}.`
-                  : "Area defined."}
-              </div>
-              <Button
-                size="sm"
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-                onClick={handleFetchClick}
-                disabled={sessionCount === 0}
-              >
-                <Search className="w-4 h-4 mr-2" />
-                {sessionCount > 0 ? `View ${sessionCount} Sessions` : "Fetch Logs"}
-              </Button>
-            </div>
-          )}
-
-          <div className={`space-y-3 text-sm ${safeUi.drawEnabled ? "" : "opacity-50 pointer-events-none"}`}>
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs text-gray-700 font-medium">Shape Type</Label>
-              <select
-                value={safeUi.shapeMode}
-                onChange={handleShapeModeChange}
-                className="border border-gray-300 rounded px-2 py-1 text-sm outline-none"
-              >
-                <option value="polygon">Polygon</option>
-                <option value="rectangle">Rectangle</option>
-                <option value="circle">Circle</option>
-              </select>
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!safeUi.drawPixelateRect}
-                onChange={handlePixelateChange}
-                className="w-4 h-4 accent-blue-600"
-              />
-              <span className="text-xs">Enable grid pixelation</span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!safeUi.colorizeCells}
-                onChange={handleColorizeChange}
-                disabled={!safeUi.drawPixelateRect}
-                className="w-4 h-4 accent-blue-600 disabled:opacity-50"
-              />
-              <span className="text-xs">Colorize cells by metric</span>
-            </label>
-
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-gray-700">Cell size:</Label>
-              <input
-                type="number"
-                min={1}
-                step={5}
-                value={safeUi.drawCellSizeMeters ?? 100}
-                onChange={handleCellSizeChange}
-                className="w-20 border border-gray-300 rounded px-2 py-1 text-sm outline-none disabled:bg-gray-100"
-                disabled={!safeUi.drawPixelateRect}
-              />
-              <span className="text-xs text-gray-600">meters</span>
-            </div>
-
-            <div className="pt-3 border-t border-gray-200">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full bg-red-50 hover:bg-red-100 text-red-700"
-                onClick={clearDrawings}
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                Clear Drawings
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-gray-200">
-            <div className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
-              <Download className="h-3.5 w-3.5" />
-              Export Data
-            </div>
-            <div className="space-y-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={handleDownloadStatsCsv}
-                disabled={!polygonStats?.stats}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Stats CSV
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={handleDownloadRawCsv}
-                disabled={!polygonStats?.logs?.length}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Raw Logs CSV
-              </Button>
-            </div>
-          </div>
-
-          {hasShape && (
-            <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500 space-y-1">
-              {polygonStats?.area > 0 && (
-                <div className="flex justify-between">
-                  <span>Area:</span>
-                  <span className="font-medium text-gray-700">
-                    {polygonStats.area > 1000000
-                      ? `${(polygonStats.area / 1000000).toFixed(2)} km²`
-                      : `${polygonStats.area.toFixed(0)} m²`}
-                  </span>
-                </div>
-              )}
-              {polygonStats?.count !== undefined && (
-                <div className="flex justify-between">
-                  <span>Logs:</span>
-                  <span className="font-medium text-gray-700">{polygonStats.count}</span>
-                </div>
-              )}
-            </div>
-          )}
+      {/* Contextual Action Button (Fetch Logs) */}
+      {hasShape && !context?.isDrawing && sessionCount > 0 && (
+        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+          <Button 
+            size="sm" 
+            className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg gap-2 rounded-full px-4"
+            onClick={handleFetchLogs}
+          >
+            <Search size={14} />
+            Fetch {sessionCount} Sessions
+          </Button>
         </div>
       )}
     </div>

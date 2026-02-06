@@ -14,7 +14,6 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }  
 
-//-----------------------------------------------------------------------------------------------------------------//
 
 /* Add to your global CSS or as a style tag */
 .overflow-y-auto::-webkit-scrollbar {
@@ -34,7 +33,6 @@ body {
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
   background: #a0aec0;
 }
-//===============================================================================================================//
 /* Hide scrollbar for Chrome, Safari, Edge */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
@@ -45,7 +43,7 @@ body {
   scrollbar-width: none;
 }
 
-//===============================================================================================================//
+
 
 @keyframes float-glow {
   0%, 100% {

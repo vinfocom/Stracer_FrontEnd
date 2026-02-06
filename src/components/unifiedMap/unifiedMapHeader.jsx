@@ -25,6 +25,7 @@ export default function UnifiedHeader({
   setOpacity,
   onUIChange,
   ui,
+  
   onSettingsSaved,
 }) {
   const { user, logout } = useAuth();

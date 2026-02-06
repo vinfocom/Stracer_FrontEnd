@@ -1,6 +1,7 @@
 // src/components/SideBar.jsx
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext'; // Import Auth Context
 import { 
     LayoutDashboard, 
     Upload, 
@@ -11,35 +12,87 @@ import {
     Plus, 
     Users, 
     ReceiptPoundSterling, 
-    BarChartHorizontal,
     ChevronDown,
     ChevronRight,
-    FileText
+    FileText,
+    Building // Icon for Companies
 } from 'lucide-react';
-// import vinfocomvinfocom from '../assets/vinfocom.png';
-import vinfocomvinfocom from '../../public/favicon.png';
+import vinfocomvinfocom from '/favicon.png';
+
+// Define Roles for clarity
+const ROLES = {
+    SUPER_ADMIN: 3,
+    ADMIN: 2,
+    USER: 1
+};
 
 const SideBar = ({ collapsed }) => {
     const location = useLocation();
     const [openDropdowns, setOpenDropdowns] = useState({});
+    const { user } = useAuth(); // Get current user
+
+    // Default to 0 if user is not loaded yet
+    const userRole = user?.m_user_type_id || 0;
 
     const navLinks = [
-        { icon: LayoutDashboard, text: 'Dashboard', path: '/dashboard' },
-        { icon: Upload, text: 'Upload Data', path: '/upload-data' },
-        { icon: History, text: 'Manage Drive Sessions', path: '/drive-test-sessions' },
-        { icon: Map, text: 'Map View', path: '/mapview' },
+        { 
+            icon: LayoutDashboard, 
+            text: 'Dashboard', 
+            path: '/dashboard',
+            // No allowedRoles = Visible to everyone
+        },
+        { 
+            icon: Upload, 
+            text: 'Upload Data', 
+            path: '/upload-data',
+            allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN] 
+        },
+        { 
+            icon: Map, 
+            text: 'Map View', 
+            path: '/mapview' 
+        },
+        { 
+            icon: Building, 
+            text: 'Licenses', 
+            path: '/companies',
+            allowedRoles: [ROLES.SUPER_ADMIN] // ONLY Super Admin
+        },
+        
+        { 
+            icon: History, 
+            text: 'Manage Drive Sessions', 
+            path: '/drive-test-sessions',
+            allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN] 
+        },
         {
             icon: FolderPlus,
             text: 'Projects',
-            hasDropdown: true, // Add this flag to identify dropdown items
+            hasDropdown: true,
+            allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN], 
             children: [
                 { icon: Plus, text: 'Create Project', path: '/create-project' },
                 { icon: FileText, text: 'View Projects', path: '/viewProject' },
             ]
         },
-        { icon: Users, text: 'Manage Users', path: '/manage-users' },
-        { icon: ReceiptPoundSterling, text: 'Get Reports', path: '/getreport' },
-        { icon: Settings, text: 'Settings', path: '/settings' },
+        { 
+            icon: Users, 
+            text: 'Manage Users', 
+            path: '/manage-users',
+            allowedRoles: [ROLES.SUPER_ADMIN] 
+        },
+        { 
+            icon: ReceiptPoundSterling, 
+            text: 'Get Reports', 
+            path: '/getreport',
+            allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN]
+        },
+        { 
+            icon: Settings, 
+            text: 'Settings', 
+            path: '/settings',
+            allowedRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN] // ONLY Super Admin
+        },
     ];
 
     const toggleDropdown = (text) => {
@@ -53,7 +106,16 @@ const SideBar = ({ collapsed }) => {
         return children.some(child => location.pathname === child.path);
     };
 
+    // Helper to check permissions
+    const hasPermission = (item) => {
+        if (!item.allowedRoles) return true; // Public item
+        return item.allowedRoles.includes(userRole);
+    };
+
     const renderNavItem = (link, index) => {
+        // HIDE item if user lacks permission
+        if (!hasPermission(link)) return null;
+
         const isOpen = openDropdowns[link.text];
         const hasChildren = link.hasDropdown && link.children;
         const isActive = link.path ? location.pathname === link.path : false;
@@ -139,8 +201,8 @@ const SideBar = ({ collapsed }) => {
             className={`h-screen bg-slate-950 text-white flex flex-col shadow-lg transition-width duration-300 ease-in-out
                 ${collapsed ? 'w-16' : 'w-60'}`}
         >
-            {/* vinfocom */}
-            <div className="p-4 flex items-center justify-center   h-16 flex-shrink-0">
+            {/* Logo Section */}
+            <div className="p-4 flex items-center justify-center h-16 flex-shrink-0">
                 <img src={vinfocomvinfocom} alt="vinfocom" className="h-8 sm:h-10 object-contain" />
                 {!collapsed && <span className="ml-2 font-bold text-lg whitespace-nowrap">STracer</span>}
             </div>

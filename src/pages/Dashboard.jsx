@@ -64,7 +64,6 @@ const DashboardPage = () => {
   // Check if any KPI data is loading
   const isKPILoading = isTotalsLoading || isOperatorsLoading || isBandCountLoading || isIndoorLoading || isOutdoorLoading;
 
-  // ✅ Memoized stats
   const stats = useMemo(() => {
     const totals = totalsData || {};
     

@@ -300,8 +300,6 @@ const MetricThresholdLegend = ({
       }
 
       valid++;
-      // Exact range match
-      // Modified: using val < max to align with standard exclusive upper bound logic
       const idx = list.findIndex((t) => {
         const min = parseFloat(t.min),
           max = parseFloat(t.max);
@@ -316,7 +314,6 @@ const MetricThresholdLegend = ({
       if (idx !== -1) {
         tempCounts[idx]++;
       } else {
-        // Handle edge cases (catch-all for values outside defined ranges)
         const mins = list.map((t) => parseFloat(t.min)).filter(Number.isFinite);
         const maxs = list.map((t) => parseFloat(t.max)).filter(Number.isFinite);
 
@@ -328,8 +325,6 @@ const MetricThresholdLegend = ({
             const i = list.findIndex((t) => parseFloat(t.min) === globalMin);
             if (i !== -1) tempCounts[i]++;
           } else if (val >= globalMax) {
-            // Modified: using >= to catch the max value itself (which was excluded in findIndex)
-            // and any value larger than the max
             const i = list.findIndex((t) => parseFloat(t.max) === globalMax);
             if (i !== -1) tempCounts[i]++;
           }
@@ -479,6 +474,7 @@ export default function MapLegend({
   logs = [],
   activeFilter = null,
   onFilterChange = () => {},
+  className, // Added className prop
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -555,7 +551,8 @@ export default function MapLegend({
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
       `}</style>
 
-      <div className="absolute top-35 right-4 z-10">
+      {/* Used the className prop or default to absolute if not provided */}
+      <div className={className || "absolute top-35 right-4 z-10"}>
         <div
           className={`bg-gray-900/95 backdrop-blur-lg border border-gray-700/40 rounded-lg shadow-xl shadow-black/20 transition-all duration-200 ${
             collapsed ? "w-auto" : "min-w-[240px] max-w-[280px]"

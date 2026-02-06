@@ -132,7 +132,8 @@ const DriveTestSessionsPage = () => {
         try {
             setLoading(true);
             const data = await adminApi.getSessions();
-            setSessions(Array.isArray(data) ? data : []);
+setSessions(data?.Data || []);          
+   
         } catch (error) {
             toast.error(`Failed to fetch sessions: ${error.message}`);
         } finally {
@@ -144,12 +145,10 @@ const DriveTestSessionsPage = () => {
         fetchSessions();
     }, [fetchSessions]);
 
-    // Reset current page to 1 whenever filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, startDate, endDate, columnFilters]);
 
-    // Toggle single session selection
     const toggleSessionSelection = (sessionId) => {
         setSelectedSessions(prev => 
             prev.includes(sessionId) 
@@ -158,38 +157,32 @@ const DriveTestSessionsPage = () => {
         );
     };
 
-    // Clear date filters
     const clearDateFilters = () => {
         setStartDate("");
         setEndDate("");
     };
 
-    // Clear search filter
     const clearSearch = () => {
         setSearchTerm("");
     };
 
-    // Format date only (without time)
     const formatDateOnly = (dateString) => {
         if (!dateString) return 'N/A';
         const date = new Date(dateString);
         return date.toLocaleDateString();
     };
 
-    // Format time only (without date)
     const formatTimeOnly = (dateString) => {
         if (!dateString) return 'N/A';
         const date = new Date(dateString);
         return date.toLocaleTimeString();
     };
 
-    // Original format function for combined date-time
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
         return new Date(dateString).toLocaleString();
     };
 
-    // Enhanced filter function with column-specific filters
     const filteredSessions = sessions.filter(session => {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         
@@ -410,7 +403,7 @@ const DriveTestSessionsPage = () => {
                                 {selectedSessions.length} selected
                             </span>
                             <Button 
-                                variant="outline" 
+                                variant="outline" S
                                 size="sm"
                                 onClick={clearSelection}
                                 className="h-9"

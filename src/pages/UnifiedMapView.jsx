@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom"; // Added useLocation
 import { useJsApiLoader, Polygon } from "@react-google-maps/api";
 import { toast } from "react-toastify";
 import { LayoutGrid } from "lucide-react";
@@ -24,9 +24,10 @@ import UnifiedDetailLogs from "@/components/unifiedMap/UnifiedDetailLogs";
 import MapLegend from "@/components/map/MapLegend";
 import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
+import DrawingControlsPanel from "@/components/map/layout/DrawingControlsPanel";
 import LoadingProgress from "@/components/LoadingProgress";
 
-// Hooks - Refactored Imports
+// Hooks
 import { useSiteData } from "@/hooks/useSiteData";
 import { useNeighborCollisions } from "@/hooks/useNeighborCollisions";
 import useColorForLog from "@/hooks/useColorForLog";
@@ -35,7 +36,6 @@ import {
   DEFAULT_WEIGHTS,
 } from "@/hooks/useBestNetworkCalculation";
 
-// ✅ NEW HOOK IMPORTS
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
 import { usePredictionData } from "@/hooks/usePredictionData";
 import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
@@ -133,7 +133,6 @@ const METRIC_CONFIG = {
     min: 0,
     max: 100,
   },
-  
 };
 
 const COLOR_GRADIENT = [
@@ -541,6 +540,7 @@ BestNetworkLegend.displayName = "BestNetworkLegend";
 const UnifiedMapView = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [isSideOpen, setIsSideOpen] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -561,7 +561,8 @@ const UnifiedMapView = () => {
   const [polygonSource, setPolygonSource] = useState("map");
   const [onlyInsidePolygons, setOnlyInsidePolygons] = useState(false);
   const [areaEnabled, setAreaEnabled] = useState(false);
-  const [coverageViolationThreshold, setCoverageViolationThreshold] = useState(null);
+  const [coverageViolationThreshold, setCoverageViolationThreshold] =
+    useState(null);
 
   const [hoveredPolygon, setHoveredPolygon] = useState(null);
   const [hoverPosition, setHoverPosition] = useState(null);
@@ -610,17 +611,18 @@ const UnifiedMapView = () => {
   const [outdoor, setOutdoor] = useState([]);
   const [distance, setDistance] = useState(null);
   const [logArea, setLogArea] = useState(null);
-  const [project, setProject] = useState(null);
+  //const [project, setProject] = useState(null);
   const [pciDistData, setPciDistData] = useState(null);
   const [pciThreshold, setPciThreshold] = useState(0);
   const [dominanceData, setDominanceData] = useState([]);
   const [manualSiteData, setManualSiteData] = useState([]);
-const [manualSiteLoading, setManualSiteLoading] = useState(false);
+  const [manualSiteLoading, setManualSiteLoading] = useState(false);
 
-const handleSitesLoaded = useCallback((data, isLoading) => {
-  setManualSiteData(data);
-  setManualSiteLoading(isLoading);
-}, []);
+  const handleSitesLoaded = useCallback((data, isLoading) => {
+    setManualSiteData(data);
+    setManualSiteLoading(isLoading);
+  }, []);
+
   const [dominanceSettings, setDominanceSettings] = useState({
     enabled: false,
     threshold: 6,
@@ -630,6 +632,14 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
+
+  // --- Handling Passed State from MultiView ---
+  const passedState = location.state;
+  const passedLocations = passedState?.locations;
+  const passedNeighbors = passedState?.neighborData;
+  const passedProject = passedState?.project;
+
+  const [project, setProject] = useState(passedProject || null);
 
   const projectId = useMemo(() => {
     const param = searchParams.get("project_id") ?? searchParams.get("project");
@@ -669,9 +679,13 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
     [showPolygons, polygons, areaEnabled, areaData],
   );
 
-  // ✅ 1. Use Network Samples Hook (replaces local useSampleData)
+  // ✅ 1. Use Network Samples Hook
+  // Determine if we should fetch: Only if enabled AND we don't have passed locations
+  const shouldFetchSamples =
+    !passedLocations && enableDataToggle && dataToggle === "sample";
+
   const {
-    locations: sampleLocations,
+    locations: fetchedSamples,
     appSummary,
     inpSummary,
     tptVolume,
@@ -682,10 +696,13 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
     technologyTransitions: technologyTransitions,
   } = useNetworkSamples(
     sessionIds,
-    enableDataToggle && dataToggle === "sample",
+    shouldFetchSamples, // Use our smart flag
     onlyInsidePolygons,
     rawFilteringPolygons,
   );
+
+  // Combine passed data with fetched data
+  const sampleLocations = passedLocations || fetchedSamples;
 
   // ✅ 2. Use Prediction Data Hook
   const {
@@ -702,20 +719,22 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
   );
 
   // ✅ 3. Use Session Neighbors Hook
+  const shouldFetchNeighbors = !passedNeighbors && showSessionNeighbors;
+
   const {
-    neighborData: sessionNeighborData,
+    neighborData: fetchedNeighbors,
     stats: sessionNeighborStats,
     loading: sessionNeighborLoading,
     error: sessionNeighborError,
     refetch: refetchSessionNeighbors,
   } = useSessionNeighbors(
     sessionIds,
-    showSessionNeighbors,
+    shouldFetchNeighbors,
     onlyInsidePolygons,
     rawFilteringPolygons,
   );
 
-  // ✅ 4. Use Project Polygons Hook
+  const sessionNeighborData = passedNeighbors || fetchedNeighbors;
 
   // ✅ 6. Use Site Data (Existing)
   const {
@@ -839,30 +858,29 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
     fetchDominance();
   }, [sessionIds]);
 
-
   const pciRange = useMemo(() => {
-  if (!pciDistData || Object.keys(pciDistData).length === 0) {
-    return { min: 0, max: 100 };
-  }
+    if (!pciDistData || Object.keys(pciDistData).length === 0) {
+      return { min: 0, max: 100 };
+    }
 
-  // Calculate the total percentage for each PCI entry in the distribution data
-  const percentages = Object.values(pciDistData).map((pciGroup) => {
-    const totalWeight = Object.values(pciGroup).reduce(
-      (sum, value) => sum + (parseFloat(value) || 0),
-      0
-    );
-    return totalWeight * 100;
-  });
+    // Calculate the total percentage for each PCI entry in the distribution data
+    const percentages = Object.values(pciDistData).map((pciGroup) => {
+      const totalWeight = Object.values(pciGroup).reduce(
+        (sum, value) => sum + (parseFloat(value) || 0),
+        0,
+      );
+      return totalWeight * 100;
+    });
 
-  const min = Math.min(...percentages);
-  const max = Math.max(...percentages);
+    const min = Math.min(...percentages);
+    const max = Math.max(...percentages);
 
-  // Fallback to 0-100 if calculations result in Infinity (empty arrays)
-  return {
-    min: isFinite(min) ? Math.floor(min) : 0,
-    max: isFinite(max) ? Math.ceil(max) : 100,
-  };
-}, [pciDistData]);
+    // Fallback to 0-100 if calculations result in Infinity (empty arrays)
+    return {
+      min: isFinite(min) ? Math.floor(min) : 0,
+      max: isFinite(max) ? Math.ceil(max) : 100,
+    };
+  }, [pciDistData]);
   // --- Derived State & Computations ---
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
@@ -886,13 +904,13 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
   ]);
 
   const isLoading =
-    sampleLoading ||
+    (shouldFetchSamples && sampleLoading) ||
     predictionLoading ||
     siteLoading ||
     neighborLoading ||
     polygonLoading ||
     areaLoading ||
-    sessionNeighborLoading;
+    (shouldFetchNeighbors && sessionNeighborLoading);
 
   const error = sampleError || predictionError || sessionNeighborError;
 
@@ -948,59 +966,65 @@ const handleSitesLoaded = useCallback((data, isLoading) => {
     };
   }, [locations, sessionNeighborData]);
 
- const problematicLogIds = useMemo(() => {
-  if (dominanceThreshold === null || !dominanceData || !Array.isArray(dominanceData)) {
-    return null;
-  }
-
-  const idMap = new Map();
-  const limit = Math.abs(dominanceThreshold);
-
-  dominanceData.forEach((item) => {
-    const logId = String(item.LogId || item.log_id);
-    const values = item.dominance || [];
-    
-    // Count how many neighbor values fall within the range [-limit, limit]
-    const countInRange = values.filter(val => {
-      const num = parseFloat(val);
-      return num >= -limit && num <= limit;
-    }).length;
-
-    // Only include logs that have at least one interfering signal
-    if (countInRange > 0) {
-      idMap.set(logId, countInRange);
+  const problematicLogIds = useMemo(() => {
+    if (
+      dominanceThreshold === null ||
+      !dominanceData ||
+      !Array.isArray(dominanceData)
+    ) {
+      return null;
     }
-  });
-  
-  return idMap; // LogId -> Count
-}, [dominanceData, dominanceThreshold]);
 
-const coverageViolationLogIds = useMemo(() => {
-  if (coverageViolationThreshold === null || !dominanceData || !Array.isArray(dominanceData)) {
-    return null;
-  }
+    const idMap = new Map();
+    const limit = Math.abs(dominanceThreshold);
 
-  const idMap = new Map();
-  
-  dominanceData.forEach((item) => {
-    const logId = String(item.LogId || item.log_id);
-    const values = item.dominance || [];
-    
-    // Count neighbors between threshold (e.g., -10) and 0
-    const countInRange = values.filter(val => {
-      const num = parseFloat(val);
-      return num >= coverageViolationThreshold && num <= 0;
-    }).length;
+    dominanceData.forEach((item) => {
+      const logId = String(item.LogId || item.log_id);
+      const values = item.dominance || [];
 
-    if (countInRange > 0) {
-      idMap.set(logId, countInRange);
+      // Count how many neighbor values fall within the range [-limit, limit]
+      const countInRange = values.filter((val) => {
+        const num = parseFloat(val);
+        return num >= -limit && num <= limit;
+      }).length;
+
+      // Only include logs that have at least one interfering signal
+      if (countInRange > 0) {
+        idMap.set(logId, countInRange);
+      }
+    });
+
+    return idMap; // LogId -> Count
+  }, [dominanceData, dominanceThreshold]);
+
+  const coverageViolationLogIds = useMemo(() => {
+    if (
+      coverageViolationThreshold === null ||
+      !dominanceData ||
+      !Array.isArray(dominanceData)
+    ) {
+      return null;
     }
-  });
-  
-  return idMap; // Returns Map<LogId, Count>
-}, [dominanceData, coverageViolationThreshold]);
 
+    const idMap = new Map();
 
+    dominanceData.forEach((item) => {
+      const logId = String(item.LogId || item.log_id);
+      const values = item.dominance || [];
+
+      // Count neighbors between threshold (e.g., -10) and 0
+      const countInRange = values.filter((val) => {
+        const num = parseFloat(val);
+        return num >= coverageViolationThreshold && num <= 0;
+      }).length;
+
+      if (countInRange > 0) {
+        idMap.set(logId, countInRange);
+      }
+    });
+
+    return idMap; // Returns Map<LogId, Count>
+  }, [dominanceData, coverageViolationThreshold]);
 
   const filteredLocations = useMemo(() => {
     let result = [...(locations || [])];
@@ -1044,7 +1068,6 @@ const coverageViolationLogIds = useMemo(() => {
         const pciGroup = pciDistData[logPci];
 
         if (pciGroup) {
-          
           const totalWeight = Object.values(pciGroup).reduce(
             (sum, value) => sum + (parseFloat(value) || 0),
             0,
@@ -1055,35 +1078,35 @@ const coverageViolationLogIds = useMemo(() => {
           return totalPercentage >= pciThreshold;
         }
 
-        
         return true;
       });
     }
 
     if (dominanceThreshold !== null && problematicLogIds) {
-    result = result
-      .filter((loc) => {
-        const logId = String(loc.id || loc.LogId || "");
-        return problematicLogIds.has(logId);
-      })
-      .map(loc => ({
-        ...loc,
-        // We attach this so 'useColorForLog' can find it when selectedMetric is 'dominance'
-        dominance: problematicLogIds.get(String(loc.id || loc.LogId || ""))
-      }));
-  }
+      result = result
+        .filter((loc) => {
+          const logId = String(loc.id || loc.LogId || "");
+          return problematicLogIds.has(logId);
+        })
+        .map((loc) => ({
+          ...loc,
+          // We attach this so 'useColorForLog' can find it when selectedMetric is 'dominance'
+          dominance: problematicLogIds.get(String(loc.id || loc.LogId || "")),
+        }));
+    }
 
-
-  if (coverageViolationThreshold !== null && coverageViolationLogIds) {
+    if (coverageViolationThreshold !== null && coverageViolationLogIds) {
       result = result
         .filter((loc) => {
           const logId = String(loc.id || loc.LogId || "");
           return coverageViolationLogIds.has(logId);
         })
-        .map(loc => ({
+        .map((loc) => ({
           ...loc,
           // Attach count to the specific metric key so colors work
-          coverage_violation: coverageViolationLogIds.get(String(loc.id || loc.LogId || ""))
+          coverage_violation: coverageViolationLogIds.get(
+            String(loc.id || loc.LogId || ""),
+          ),
         }));
     }
 
@@ -1097,7 +1120,7 @@ const coverageViolationLogIds = useMemo(() => {
     problematicLogIds,
     dominanceThreshold,
     coverageViolationLogIds,
-    coverageViolationThreshold
+    coverageViolationThreshold,
   ]);
 
   const finalDisplayLocations = useMemo(() => {
@@ -1350,11 +1373,11 @@ const coverageViolationLogIds = useMemo(() => {
   const showDataCircles =
     enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
   const shouldShowLegend = useMemo(() => {
-  return (
-    enableDataToggle || 
-    (enableSiteToggle && ["Cell", "NoML", "ML"].includes(siteToggle))
-  );
-}, [enableDataToggle, enableSiteToggle, siteToggle]);
+    return (
+      enableDataToggle ||
+      (enableSiteToggle && ["Cell", "NoML", "ML"].includes(siteToggle))
+    );
+  }, [enableDataToggle, enableSiteToggle, siteToggle]);
 
   const locationsToDisplay = useMemo(() => {
     // if (onlyInsidePolygons) return [];
@@ -1703,7 +1726,7 @@ const coverageViolationLogIds = useMemo(() => {
         setBestNetworkOptions={setBestNetworkOptions}
         bestNetworkStats={bestNetworkStats}
         coverageViolationThreshold={coverageViolationThreshold}
-  setCoverageViolationThreshold={setCoverageViolationThreshold}
+        setCoverageViolationThreshold={setCoverageViolationThreshold}
       />
 
       <div className="flex-grow relative overflow-hidden">
@@ -1717,34 +1740,34 @@ const coverageViolationLogIds = useMemo(() => {
             <LayoutGrid size={20} />
           </button>
         </div>
-
+        
         <LoadingProgress
           progress={sampleProgress}
           loading={sampleLoading && enableDataToggle && dataToggle === "sample"}
         />
 
         {shouldShowLegend && !bestNetworkEnabled && (
-  <MapLegend
-    thresholds={effectiveThresholds}
-    selectedMetric={selectedMetric}
-    colorBy={colorBy}
-    showOperators={colorBy === "provider"}
-    showBands={colorBy === "band"}
-    showTechnologies={colorBy === "technology"}
-    showSignalQuality={!colorBy || colorBy === "metric"}
-    availableFilterOptions={availableFilterOptions}
-    // We pass filteredLocations instead of viewport-visible ones to keep legend populated
-    logs={finalDisplayLocations} 
-    activeFilter={legendFilter}
-    onFilterChange={setLegendFilter}
-  />
-)}
+          <MapLegend
+            thresholds={effectiveThresholds}
+            selectedMetric={selectedMetric}
+            colorBy={colorBy}
+            showOperators={colorBy === "provider"}
+            showBands={colorBy === "band"}
+            showTechnologies={colorBy === "technology"}
+            showSignalQuality={!colorBy || colorBy === "metric"}
+            availableFilterOptions={availableFilterOptions}
+            // We pass filteredLocations instead of viewport-visible ones to keep legend populated
+            logs={finalDisplayLocations}
+            activeFilter={legendFilter}
+            onFilterChange={setLegendFilter}
+          />
+        )}
 
-        <SiteLegend 
-  enabled={enableSiteToggle} 
-  sites={manualSiteData} 
-  isLoading={manualSiteLoading}
-/>
+        <SiteLegend
+          enabled={enableSiteToggle}
+          sites={manualSiteData}
+          isLoading={manualSiteLoading}
+        />
 
         <BestNetworkLegend
           stats={bestNetworkStats}
@@ -1818,6 +1841,8 @@ const coverageViolationLogIds = useMemo(() => {
                 pixelateRect={ui.drawPixelateRect}
                 cellSizeMeters={ui.drawCellSizeMeters}
                 colorizeCells={ui.colorizeCells}
+                shapeMode={ui.shapeMode}
+                onUIChange={handleUIChange}
                 clearSignal={ui.drawClearSignal}
                 onDrawingsChange={handleDrawingsChange}
               />
@@ -1874,15 +1899,15 @@ const coverageViolationLogIds = useMemo(() => {
               )}
 
               {enableSiteToggle && showSiteSectors && (
-  <NetworkPlannerMap
-    projectId={projectId}
-    siteToggle={siteToggle}
-    onDataLoaded={handleSitesLoaded} // Connect the data flow
-    viewport={viewport}
-    scale={0.2}
-    options={{ zIndex: 1000 }}
-  />
-)}
+                <NetworkPlannerMap
+                  projectId={projectId}
+                  siteToggle={siteToggle}
+                  onDataLoaded={handleSitesLoaded} // Connect the data flow
+                  viewport={viewport}
+                  scale={0.2}
+                  options={{ zIndex: 1000 }}
+                />
+              )}
             </MapWithMultipleCircles>
           )}
         </div>

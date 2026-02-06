@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { adminApi } from '../api/apiEndpoints';
+import { adminApi, companyApi } from '../api/apiEndpoints';
 import { toast } from 'react-toastify';
 import DataTable from '../components/common/DataTable';
 import Spinner from '../components/common/Spinner';
@@ -35,8 +35,8 @@ const ManageUsersPage = () => {
                 Mobile: filters.MobileNo,
                 Email: filters.EmailId,
             };
-            const response = await adminApi.getUsers(apiFilters);
-            const userData = response.Data?.map(item => item.ob_user) || [];
+            const response = await companyApi.licensesDetails();
+            const userData = response.Data || [];
             setUsers(Array.isArray(userData) ? userData : []);
         } catch (error) {
             toast.error(error.message || 'Failed to fetch users.');
@@ -121,7 +121,7 @@ const ManageUsersPage = () => {
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
+        setFilters(prev => ({ ...prev, [user_name]: value }));
     };
 
     const handleReset = () => {
@@ -173,29 +173,37 @@ const ManageUsersPage = () => {
             render: (row, index) => <span className="text-gray-700 font-medium">{indexOfFirstUser + index + 1}</span>
         },
         {
-            header: 'User Name',
-            accessor: 'name',
-            render: (row) => <span className="text-gray-800 font-medium">{row.name || '-'}</span>
+            header: 'License Id',
+            accessor: 'license_id',
+            render: (row) => <span className="text-gray-700">{getUserTypeLabel(row.license_id)}</span>
         },
         {
-            header: 'User Type',
-            accessor: 'm_user_type_id',
-            render: (row) => <span className="text-gray-700">{getUserTypeLabel(row.m_user_type_id)}</span>
+            header: 'User Name',
+            accessor: 'name',
+            render: (row) => <span className="text-gray-800 font-medium">{row.user_name || '-'}</span>
         },
         {
             header: 'Email ID',
             accessor: 'email',
-            render: (row) => <span className="text-gray-700">{row.email || '-'}</span>
+            render: (row) => <span className="text-gray-700">{row.user_email || '-'}</span>
         },
         {
             header: 'Mobile No.',
-            accessor: 'mobile',
-            render: (row) => <span className="text-gray-700">{row.mobile || '-'}</span>
+            accessor: 'user_mobile',
+            render: (row) => <span className="text-gray-700">{row.user_mobile || '-'}</span>
+        },{
+            header: 'Company',
+            accessor: 'company_name',
+            render: (row) => <span className="text-gray-700">{row.company_name || '-'}</span>
+        },{
+            header: 'Created On',
+            accessor: 'created_on',
+            render: (row) => row.created_on ? new Date(row.created_on).toLocaleDateString() : '-'
         },
         {
-            header: 'Status',
-            accessor: 'isactive',
-            render: (row) => getStatusBadge(row.isactive)
+            header: 'Licenses Code',
+            accessor: 'licenses_code',
+            render: (row) => <span className="text-gray-700">{row.license_code || '-'}</span>
         },
         {
             header: 'Action',
@@ -298,12 +306,7 @@ const ManageUsersPage = () => {
                         <span className="text-lg font-semibold text-gray-800">
                             Users List ({users.length} total)
                         </span>
-                        <Button 
-                            onClick={() => handleOpenDialog()}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                            Add New User
-                        </Button>
+                       
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">

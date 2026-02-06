@@ -144,14 +144,11 @@ const OperatorNetworkChart = ({ chartFilters, onChartFiltersChange }) => {
     networks: apiNetworks,
     isLoading: metaLoading,
   } = useOperatorsAndNetworks();
-   console.log("OperatorNetworkChart - selectedMetric:", apiOperators,apiNetworks);
 
   const [selectedMetric, setSelectedMetric] = useState("samples");
 
   const { data: allData, isLoading } = useOperatorMetrics(selectedMetric, {});
 
-  console.log("OperatorNetworkChart - allData:", allData);
-  console.log("OperatorNetworkChart - chartFilters:", chartFilters);
  
 
   // 

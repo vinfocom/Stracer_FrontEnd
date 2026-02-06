@@ -21,6 +21,8 @@ import SessionsLayer from "@/components/map/overlays/SessionsLayer";
 import LogCirclesLayer from "@/components/map/layers/LogCirclesLayer";
 import ProjectPolygonsLayer from "@/components/map/overlays/ProjectPolygonsLayer";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
+import DrawingControlsPanel from "@/components/map/layout/DrawingControlsPanel";
+
 
 import MapLegend from "@/components/map/MapLegend";
 import {
@@ -412,7 +414,7 @@ export default function HighPerfMap() {
     setIsLoading(true);
     try {
       const data = await adminApi.getSessions();
-      const valid = (data || []).filter(
+      const valid = (data?.Data || []).filter(
         (s) => Number.isFinite(parseFloat(s.start_lat)) && Number.isFinite(parseFloat(s.start_lon))
       );
       setAllSessions(valid);
@@ -598,7 +600,10 @@ export default function HighPerfMap() {
   const handleSessionMarkerClick = async (session) => {
     setIsLoading(true);
     try {
-      const response = await mapViewApi.getNetworkLog(session.id);
+      const response = await mapViewApi.getNetworkLog({session_ids: sessionIds,
+            page: currentPage,
+            limit: PAGE_SIZE,
+            signal: abortControllerRef.current.signal,});
       const logs = extractLogsFromResponse(response);
       setSelectedSessionData({ session, logs });
       if (logs.length === 0) toast.warn(`No logs found for session ${session.id}`);
@@ -839,6 +844,7 @@ const rectCoords = [
       />
 
       <div className="relative flex-1">
+        
         <GoogleMap
           mapContainerStyle={MAP_CONTAINER_STYLE}
           center={DEFAULT_CENTER}
@@ -883,23 +889,25 @@ const rectCoords = [
             />
           )}
 
-          {ui.drawEnabled && (
-            <DrawingToolsLayer
-              map={map}
-              enabled={ui.drawEnabled}
-              logs={mapVisibleLogs}
-              selectedMetric={selectedMetric}
-              thresholds={thresholds}
-              sessions={allSessions}
-              pixelateRect={ui.drawPixelateRect}
-              cellSizeMeters={ui.drawCellSizeMeters || 100}
-              onSummary={setAnalysis}
-              clearSignal={ui.drawClearSignal || 0}
-              maxCells={1500}
-              onDrawingsChange={() => {}}
-              colorizeCells={ui.colorizeCells}
-            />
-          )}
+          {map && (
+  <DrawingToolsLayer
+    map={map}
+    enabled={ui.drawEnabled}
+    logs={mapVisibleLogs}
+    selectedMetric={selectedMetric}
+    thresholds={thresholds}
+    sessions={allSessions}
+    pixelateRect={ui.drawPixelateRect}
+    shapeMode={ui.shapeMode} 
+    onUIChange={handleUIChange}
+    cellSizeMeters={ui.drawCellSizeMeters || 100}
+    onSummary={setAnalysis}
+    clearSignal={ui.drawClearSignal || 0}
+    maxCells={1500}
+    onDrawingsChange={() => {}}
+    colorizeCells={ui.colorizeCells}
+  />
+)}
         </GoogleMap>
 
         {activeFilters && (ui.showLogsCircles || ui.showHeatmap) && (

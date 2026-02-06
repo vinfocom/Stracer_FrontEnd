@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
 import MapwithMultipleCircle from "../unifiedMap/MapwithMultipleCircle";
 import MapLegend from "@/components/map/MapLegend";
+import MapChildFooter from "./MapChildFooter";
 
 const MapChild = ({
   id,
@@ -52,7 +53,6 @@ const MapChild = ({
       if (loc.band) bandSet.add(String(loc.band));
     });
 
-    // ✅ CRITICAL FIX: Return the object
     return {
       tech: Array.from(techSet).sort(),
       provs: Array.from(providerSet).sort(),
@@ -152,16 +152,25 @@ const MapChild = ({
           legendFilter={legendFilter}
         />
 
-        <div className="absolute top-2 right-2 z-20 pointer-events-auto">
-            <div className="scale-90 origin-top-right">
-          <MapLegend
-            thresholds={thresholds}
-            selectedMetric={metric}
-            logs={filteredData}
-            activeFilter={legendFilter}
-            onFilterChange={setLegendFilter}
-          />
+        <div className="absolute top-14 right-2 z-20 pointer-events-auto">
+          <div className="scale-90 origin-top-right">
+            <MapLegend
+              thresholds={thresholds}
+              selectedMetric={metric}
+              logs={filteredData}
+              activeFilter={legendFilter}
+              onFilterChange={setLegendFilter}
+              className="relative" // Added to fix positioning
+            />
           </div>
+        </div>
+
+        <div>
+          <MapChildFooter
+            data={filteredData}
+            metric={metric}
+            thresholds={thresholds}
+          />
         </div>
 
         {/* Stats Overlay */}

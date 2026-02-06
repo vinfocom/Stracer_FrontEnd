@@ -82,13 +82,11 @@ export const cellSiteApi = {
 
   checkSiteData: async (projectId) => {
     try {
-      console.log(`🔍 Checking site data for project ${projectId}...`);
       const response = await pythonApi.get(
         `/api/cell-site/site-noml/${projectId}`
       );
 
       const count = response?.count || response?.data?.length || 0;
-      console.log(`✅ Site data check: ${count} records found`);
 
       return {
         exists: count > 0,
@@ -96,11 +94,10 @@ export const cellSiteApi = {
         data: response,
       };
     } catch (error) {
-      // 404 means no data exists
       if (error.response?.status === 404) {
         return { exists: false, count: 0 };
       }
-      console.error("❌ Check site data error:", error);
+      console.error(" Check site data error:", error);
       return { exists: false, count: 0, error: error.message };
     }
   },
@@ -111,7 +108,7 @@ export const cellSiteApi = {
       );
       return response;
     } catch (error) {
-      console.error("❌ Project verification failed:", error);
+      console.error("Project verification failed:", error);
       throw error;
     }
   },
@@ -137,7 +134,7 @@ export const cellSiteApi = {
 
       return response;
     } catch (error) {
-      console.error("❌ Cell Site upload error:", error);
+      console.error(" Cell Site upload error:", error);
 
       if (error.code === "ECONNABORTED") {
         throw new Error("Upload timed out. File may be too large.");
@@ -147,14 +144,10 @@ export const cellSiteApi = {
     }
   },
 
-  /**
-   * Upload sessions
-   */
+  
   uploadSessions: async (payload) => {
     try {
-      console.log("📤 Uploading sessions to Python backend...");
-      console.log("Payload:", JSON.stringify(payload, null, 2));
-
+     
       const response = await pythonApi.post(
         "/api/cell-site/process-session",
         payload,
@@ -163,10 +156,9 @@ export const cellSiteApi = {
         }
       );
 
-      console.log("✅ Session upload response:", response);
       return response;
     } catch (error) {
-      console.error("❌ Session upload error:", error);
+      console.error(" Session upload error:", error);
       throw error;
     }
   },
@@ -176,7 +168,6 @@ export const cellSiteApi = {
    */
   siteNoml: async (projectId, cancelToken = null) => {
     try {
-      console.log(`🔍 Fetching SiteNoMl data for project ${projectId}...`);
 
       const config = {
         timeout: 30000, // 30 seconds
@@ -191,22 +182,19 @@ export const cellSiteApi = {
         config
       );
 
-      console.log(
-        `✅ Retrieved ${response.count || 0} sites for project ${projectId}`
-      );
+      
       return response;
     } catch (error) {
       // Handle cancellation
       if (axios.isCancel(error)) {
-        console.log("Request canceled:", error.message);
         return null;
       }
 
-      console.error("❌ siteNoml error:", error);
+      console.error(" siteNoml error:", error);
 
       // Return empty data for 404
       if (error.response?.status === 404) {
-        console.warn(`⚠️ No site data found for project ${projectId}`);
+        console.warn(` No site data found for project ${projectId}`);
         return {
           success: true,
           project_id: projectId,
@@ -225,7 +213,6 @@ export const cellSiteApi = {
    */
   updateProjectId: async (filename, projectId) => {
     try {
-      console.log(`🔄 Updating project ID for ${filename} to ${projectId}...`);
 
       const response = await pythonApi.post(
         "/api/cell-site/update-project-id",
@@ -235,10 +222,9 @@ export const cellSiteApi = {
         }
       );
 
-      console.log("✅ Project ID updated successfully");
       return response;
     } catch (error) {
-      console.error("❌ Update project ID error:", error);
+      console.error(" Update project ID error:", error);
       throw error;
     }
   },
@@ -248,14 +234,12 @@ export const cellSiteApi = {
    */
   getProjectCellSites: async (projectId) => {
     try {
-      console.log(`🔍 Fetching cell sites for project ${projectId}...`);
       const response = await pythonApi.get(
         `/api/cell-site/project/${projectId}`
       );
-      console.log(`✅ Retrieved cell sites for project ${projectId}`);
       return response;
     } catch (error) {
-      console.error("❌ Get project cell sites error:", error);
+      console.error(" Get project cell sites error:", error);
       throw error;
     }
   },
@@ -267,7 +251,6 @@ export const cellSiteApi = {
     const baseUrl =
       import.meta.env.VITE_PYTHON_API_URL || "http://localhost:8080";
     const url = `${baseUrl}/api/cell-site/download/${outputDir}/${filename}`;
-    console.log("📥 Downloading file:", url);
     window.open(url, "_blank");
   },
 
@@ -276,7 +259,6 @@ export const cellSiteApi = {
    */
   downloadFileBlob: async (outputDir, filename) => {
     try {
-      console.log("📥 Downloading file as blob...");
 
       const response = await pythonApi.get(
         `/api/cell-site/download/${outputDir}/${filename}`,
@@ -296,10 +278,9 @@ export const cellSiteApi = {
       link.remove();
       window.URL.revokeObjectURL(blobUrl);
 
-      console.log("✅ File downloaded successfully");
       return blob;
     } catch (error) {
-      console.error("❌ Download error:", error);
+      console.error("Download error:", error);
       throw error;
     }
   },
@@ -311,7 +292,7 @@ export const cellSiteApi = {
     try {
       return await pythonApi.get(`/api/cell-site/outputs/${outputDir}`);
     } catch (error) {
-      console.error("❌ List outputs error:", error);
+      console.error("List outputs error:", error);
       throw error;
     }
   },
@@ -342,8 +323,7 @@ export const areaBreakdownApi = {
 export const predictionApi = {
   runPrediction: async (params) => {
     try {
-      console.log("🚀 Starting LTE Prediction Pipeline...");
-      console.log("Parameters:", JSON.stringify(params, null, 2));
+
 
       if (!params.Project_id) {
         throw new Error("Project_id is required");
@@ -360,17 +340,16 @@ export const predictionApi = {
         Project_id: params.Project_id,
         Session_ids: params.Session_ids,
         indoor_mode: params.indoor_mode || "heuristic",
-        grid: params.grid || 22.0, // ✅ ADDED grid parameter
+        grid: params.grid || 10.0, 
       };
 
       const response = await pythonApi.post("/api/prediction/run", payload, {
         timeout: 600000, // 10 minutes
       });
 
-      console.log("✅ Prediction completed successfully:", response);
       return response;
     } catch (error) {
-      console.error("❌ Prediction pipeline error:", error);
+      console.error(" Prediction pipeline error:", error);
 
       if (error.code === "ECONNABORTED") {
         throw new Error("Prediction timed out. The dataset may be too large.");
@@ -384,29 +363,22 @@ export const predictionApi = {
     }
   },
 
-  /**
-   * ✅ NEW: Debug database - check tables and data for a project
-   */
+ 
   debugDatabase: async (projectId) => {
     try {
-      console.log(`🔍 Debugging database for project ${projectId}...`);
       const response = await pythonApi.get(
         `/api/prediction/debug-db/${projectId}`
       );
-      console.log("📊 Database debug result:", response);
       return response;
     } catch (error) {
-      console.error("❌ Debug database error:", error);
+      console.error(" Debug database error:", error);
       throw error;
     }
   },
 
-  /**
-   * ✅ NEW: Verify site data exists for a project
-   */
+
   verifySiteData: async (projectId) => {
     try {
-      console.log(`🔍 Verifying site data for project ${projectId}...`);
       const response = await pythonApi.get(
         `/api/prediction/debug-db/${projectId}`
       );
@@ -419,10 +391,9 @@ export const predictionApi = {
         details: response,
       };
 
-      console.log("📊 Site data verification result:", result);
       return result;
     } catch (error) {
-      console.error("❌ Verify site data error:", error);
+      console.error(" Verify site data error:", error);
       return {
         hasData: false,
         count: 0,
@@ -432,26 +403,17 @@ export const predictionApi = {
     }
   },
 
-  /**
-   * ✅ NEW: Wait for site data to be available (with retries)
-   */
+  
   waitForSiteData: async (projectId, maxRetries = 5, delayMs = 2000) => {
-    console.log(
-      `⏳ Waiting for site data (max ${maxRetries} attempts, ${delayMs}ms delay)...`
-    );
+    
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(
-        `📊 Checking site data (attempt ${attempt}/${maxRetries})...`
-      );
-
+      
       try {
         const result = await predictionApi.verifySiteData(projectId);
 
         if (result.hasData && result.count > 0) {
-          console.log(
-            `✅ Found ${result.count} site records after ${attempt} attempt(s)`
-          );
+          
           return {
             success: true,
             count: result.count,
@@ -461,11 +423,10 @@ export const predictionApi = {
         }
 
         if (attempt < maxRetries) {
-          console.log(`⏳ No data yet, waiting ${delayMs}ms before retry...`);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
       } catch (error) {
-        console.error(`❌ Attempt ${attempt} failed:`, error.message);
+        console.error(` Attempt ${attempt} failed:`, error.message);
 
         if (attempt < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -473,7 +434,7 @@ export const predictionApi = {
       }
     }
 
-    console.error("❌ Site data not available after all retries");
+    console.error(" Site data not available after all retries");
     return {
       success: false,
       count: 0,
@@ -529,14 +490,12 @@ export const adminApi = {
     if (!from || !to) throw new Error("Invalid date range");
 
     try {
-      console.log("✅ Fetching network durations...");
       const response = await api.get("/Admin/GetNetworkDurations", {
         params: { fromDate: from, toDate: to },
       });
-      console.log("✅ Network durations response:", response);
       return response;
     } catch (err) {
-      console.error("❌ Network durations error:", err);
+      console.error(" Network durations error:", err);
       throw err;
     }
   },
@@ -605,7 +564,7 @@ export const adminApi = {
 };
 
 export const mapViewApi = {
-  // ==================== User & Session Management ====================
+  
   signup: (user) => api.post("/api/MapView/user_signup", user),
   startSession: (data) => api.post("/api/MapView/start_session", data),
   endSession: (data) => api.post("/api/MapView/end_session", data),
@@ -680,7 +639,7 @@ getPciDistribution: async (sessionIds) => {
 
       return response;
     } catch (error) {
-      console.error("❌ Project creation error:", error);
+      console.error(" Project creation error:", error);
 
       // Enhanced error handling
       if (error.response?.data) {
@@ -712,7 +671,6 @@ getPciDistribution: async (sessionIds) => {
 getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
   const sid = Array.isArray(session_ids) ? session_ids.join(",") : session_ids;
   
-  console.log('📡 Calling API with:', { session_Ids: sid, page, limit });
   
   const response = await api.get("/api/MapView/GetNetworkLog", {
     params: { 
@@ -723,10 +681,7 @@ getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
     signal: signal,
   });
   
-  // DEBUG: Log what the API service returns
-  console.log('📡 API returned:', response);
-  console.log('📡 API returned type:', typeof response);
-  console.log('📡 API returned keys:', response ? Object.keys(response) : 'null');
+  
   
   return response;
 },
@@ -738,7 +693,6 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
   try {
     const idsParam = Array.isArray(sessionIds) ? sessionIds.join(",") : sessionIds;
     
-    console.log("📡 Calling N78 API with session_Ids:", idsParam);
     
     const response = await api.get(
       '/api/MapView/GetN78Neighbours', 
@@ -747,11 +701,10 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
           session_Ids: idsParam
         },
         signal,
-        dedupe: false  // ⬅️ Important: Disable deduplication for cancellable requests
+        dedupe: false  
       }
     );
     
-    console.log("📥 N78 API raw response:", response);
     
     if (response?.data) {
       return response.data;
@@ -761,7 +714,7 @@ getSessionNeighbour: async ({ sessionIds, signal }) => {
       return response;
     }
     
-    console.warn("⚠️ Unexpected response structure:", response);
+    console.warn(" Unexpected response structure:", response);
     return response;
     
   } catch (error) {
@@ -790,7 +743,7 @@ getDominanceDetails: (sessionIds) => {
     }),
 
   getLogsByDateRange: (filters) =>
-    api.get("/api/MapView/GetLogsByDateRange", { params: filters }),
+    api.get("/api/MapView/GetLogsByDateRange",  { withCredentials: true, params: filters }),
 
   logNetwork: (data) => api.post("/api/MapView/log_networkAsync", data),
 
@@ -861,7 +814,7 @@ export const settingApi = {
   checkSession: async () => {
     try {
       const response = await api.get("/api/Setting/CheckSession");
-      return response; // Already extracted by interceptor
+      return response; 
     } catch (error) {
       console.error("CheckSession error:", error);
       throw error;
@@ -871,7 +824,6 @@ export const settingApi = {
   getThresholdSettings: async () => {
     try {
       const response = await api.get("/api/Setting/GetThresholdSettings");
-      console.log("📥 getThresholdSettings response:", response);
       return response;
     } catch (error) {
       console.error("GetThresholdSettings error:", error);
@@ -881,12 +833,8 @@ export const settingApi = {
 
   saveThreshold: async (payload) => {
     try {
-      console.log(
-        "📤 saveThreshold payload:",
-        JSON.stringify(payload, null, 2)
-      );
+      
       const response = await api.post("/api/Setting/SaveThreshold", payload);
-      console.log("📥 saveThreshold response:", response);
       return response;
     } catch (error) {
       console.error("SaveThreshold error:", error);
@@ -904,13 +852,11 @@ export const excelApi = {
           const percentCompleted = Math.round(
             (progressEvent.loaded * 100) / progressEvent.total
           );
-          console.log(`Upload Progress: ${percentCompleted}%`);
         }),
     }),
 
   downloadTemplate: (fileType) => {
     const url = `https://api.stracer.vinfocom.co.in/ExcelUpload/DownloadExcel?fileType=${fileType}`;
-    console.log("📥 Downloading template:", url);
     window.open(url, "_blank");
     return Promise.resolve({ success: true });
   },
@@ -929,11 +875,6 @@ export const excelApi = {
     }),
 };
 
-/**
- * ============================================
- * UTILITY FUNCTIONS
- * ============================================
- */
 
 export const checkAllServices = async () => {
   try {
@@ -963,9 +904,7 @@ export const checkAllServices = async () => {
   }
 };
 
-/**
- * Validate project exists in both backends
- */
+
 export const validateProjectExists = async (projectId) => {
   try {
     if (!projectId) return false;
@@ -978,13 +917,25 @@ export const validateProjectExists = async (projectId) => {
   }
 };
 
+export const companyApi = {
+  getAll: (id) => api.get("/api/company/GetAll", { params: { id } }),
+
+  createCompany: (data) => api.post("/api/company/SaveCompanyDetails", data),
+
+  deleteCompany: (id) => api.delete("/api/company/deleteCompany", { params: { id } }),
+
+  revokeLicense: (id) => api.post(`/api/company/revokeLicesnse/${id}`),
+
+  licensesDetails: () => api.get("/api/company/usedLicenses",
+    { credentials:true }
+  ),
+};
+
 export default {
-  // Python APIs
   generalApi,
   buildingApi,
   cellSiteApi,
 
-  // C# APIs
   authApi,
   adminApi,
   mapViewApi,
@@ -992,7 +943,7 @@ export default {
   settingApi,
   excelApi,
 
-  // Utilities
   checkAllServices,
   validateProjectExists,
+  companyApi,
 };

@@ -18,6 +18,8 @@ import { toast } from "react-toastify";
 import { useMapContext } from "../context/MapContext";
 import MapLegend from "@/components/map/MapLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
+import DrawingControlsPanel from "@/components/map/layout/DrawingControlsPanel";
+
 import AllLogsPanelToggle from "@/components/map/layout/AllLogsPanelToggle";
 import {
   Dialog,
@@ -89,8 +91,7 @@ const getMetricValue = (log, metric) => {
   return log[key] ?? log.rsrp ?? -120;
 };
 
-// Enhanced WKT conversion that supports polygon, rectangle, and circle
-// src/pages/SessionMapDebug.jsx
+
 
 const geometryToWktPolygon = (geometry) => {
   if (!geometry) return null;
@@ -278,8 +279,16 @@ function SessionMapDebug() {
     resetFilter,
     clearFilters,
     hasActiveFilters,
+    updateUI,
     updateAvailableFilters,
   } = useMapContext();
+
+  const handleUIChange = useCallback(
+    (updates) => {
+      updateUI(updates);
+    },
+    [updateUI],
+  );
 
   // Parse session IDs
   const sessionIdParam =
@@ -677,7 +686,6 @@ function SessionMapDebug() {
 
   const goBack = useCallback(() => navigate(-1), [navigate]);
 
-  
   const formattedThresholds = useMemo(() => {
     return allThresholds
       ? {
@@ -755,9 +763,14 @@ function SessionMapDebug() {
   const selectedMetric = normalizeMetric(filters.metric);
 
   return (
-    <div
-      className="h-full w-full "
-    >
+    <div className="h-full w-full ">
+      <DrawingControlsPanel
+        ui={safeUi}
+        onUIChange={handleUIChange}
+        polygonStats={analysis}
+        onFetchLogs={() => {}} 
+      />
+
       <MapWithMultipleCircles
         isLoaded={isLoaded}
         loadError={loadError}
@@ -791,6 +804,7 @@ function SessionMapDebug() {
             shapeMode={safeUi.shapeMode}
             pixelateRect={safeUi.drawPixelateRect}
             cellSizeMeters={safeUi.drawCellSizeMeters}
+            onUIChange={handleUIChange}
             colorizeCells={safeUi.colorizeCells}
             onSummary={handleDrawingSummary}
             onDrawingsChange={() => {}}
@@ -995,11 +1009,11 @@ function SessionMapDebug() {
                     {(analysis.count || 0).toLocaleString()}
                   </span>
                 </div>
-                {analysis.stats?.mean !== undefined && (
+                {analysis.stats?.mean != null && (
                   <div>
                     Avg {filters.metric || "RSRP"}:{" "}
                     <span className="font-medium">
-                      {analysis.stats.mean.toFixed(1)}{" "}
+                      {analysis.stats.mean?.toFixed(1)}{" "}
                       {getMetricUnit(filters.metric)}
                     </span>
                   </div>

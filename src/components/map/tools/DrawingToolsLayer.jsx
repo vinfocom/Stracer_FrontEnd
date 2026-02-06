@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useCallback, memo } from "react";
 import { toast } from "react-toastify";
 
-// --- Helper Functions (Keep exactly as they were) ---
+// --- Helper Functions (Same as before, collapsed for brevity) ---
 function toLatLng(item) {
   const lat = Number(item.lat ?? item.latitude ?? item.start_lat ?? item.Latitude ?? item.LAT);
   const lng = Number(item.lng ?? item.lon ?? item.longitude ?? item.start_lon ?? item.LNG);
@@ -108,14 +108,13 @@ function filterItemsInside(type, overlay, items) {
 
 function pixelateShape(type, overlay, logs, selectedMetric, thresholds, cellSizeMeters, map, gridOverlays, colorizeCells) {
   const gm = window.google.maps;
+  if (type === "polyline") return { cellsDrawn: 0, cellsWithLogs: 0, cellData: [] };
   const bounds = type === "polygon" ? buildPolygonBounds(overlay) : overlay.getBounds();
-
   if (!bounds) return { cellsDrawn: 0, cellsWithLogs: 0, cellData: [] };
 
   const metersPerDegLat = 111320;
   const centerLat = bounds.getCenter().lat();
   const metersPerDegLng = 111320 * Math.cos((centerLat * Math.PI) / 180);
-  
   const stepLat = cellSizeMeters / metersPerDegLat;
   const stepLng = cellSizeMeters / (metersPerDegLng > 0 ? metersPerDegLng : metersPerDegLat);
 
@@ -137,11 +136,7 @@ function pixelateShape(type, overlay, logs, selectedMetric, thresholds, cellSize
     const lat = south + i * stepLat;
     for (let j = 0; j < cols; j++) {
       const lng = west + j * stepLng;
-      const cellBounds = new gm.LatLngBounds(
-        new gm.LatLng(lat, lng),
-        new gm.LatLng(lat + stepLat, lng + stepLng)
-      );
-      
+      const cellBounds = new gm.LatLngBounds(new gm.LatLng(lat, lng), new gm.LatLng(lat + stepLat, lng + stepLng));
       const cellCenter = cellBounds.getCenter();
       let isInside = false;
 
@@ -159,14 +154,11 @@ function pixelateShape(type, overlay, logs, selectedMetric, thresholds, cellSize
       if (inCell.length > 0) {
         cellsWithLogs++;
         const vals = inCell.map(x => getMetricValue(x.log, selectedMetric)).filter(Number.isFinite);
-        
         if (vals.length > 0) {
           cellStats = computeStats(vals);
           fillColor = colorizeCells ? pickColorForValue(cellStats.mean, selectedMetric, thresholds) : "#9ca3af";
           fillOpacity = 0.6;
-        } else {
-          fillOpacity = 0.3;
-        }
+        } else { fillOpacity = 0.3; }
       }
 
       const rect = new gm.Rectangle({
@@ -182,24 +174,18 @@ function pixelateShape(type, overlay, logs, selectedMetric, thresholds, cellSize
 
       gridOverlays.push(rect);
       cellsDrawn++;
-
-      cellData.push({
-        row: i,
-        col: j,
-        bounds: { south: lat, west: lng, north: lat + stepLat, east: lng + stepLng },
-        center: { lat: cellCenter.lat(), lng: cellCenter.lng() },
-        logsCount: inCell.length,
-        stats: cellStats,
-        color: fillColor
-      });
+      cellData.push({ row: i, col: j, bounds: { south: lat, west: lng, north: lat + stepLat, east: lng + stepLng }, center: { lat: cellCenter.lat(), lng: cellCenter.lng() }, logsCount: inCell.length, stats: cellStats, color: fillColor });
     }
   }
-
   return { cellsDrawn, cellsWithLogs, cellData, gridRows: rows, gridCols: cols };
 }
 
 function serializeOverlay(type, overlay) {
   if (!overlay) return null;
+  if (type === "polyline") {
+    const path = overlay.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
+    return { type, path };
+  }
   const bounds = type === "polygon" ? buildPolygonBounds(overlay) : overlay.getBounds();
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
@@ -214,12 +200,35 @@ function serializeOverlay(type, overlay) {
   return { type };
 }
 
+function getPolylineDetails(polyline) {
+  const gm = window.google.maps;
+  const path = polyline.getPath();
+  const len = gm.geometry.spherical.computeLength(path);
+  const points = path.getArray();
+  if (points.length < 2) return { length: 0, center: points[0] };
+
+  let dist = 0;
+  const targetDist = len / 2;
+  let mid = points[0];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const segLen = gm.geometry.spherical.computeDistanceBetween(points[i], points[i+1]);
+    if (dist + segLen >= targetDist) {
+      const fraction = (targetDist - dist) / segLen;
+      mid = gm.geometry.spherical.interpolate(points[i], points[i+1], fraction);
+      break;
+    }
+    dist += segLen;
+  }
+  return { length: len, center: mid };
+}
+
 // --- Component Definition ---
 
-// Define as a named function first to avoid HMR issues with anonymous memo components
 function DrawingToolsLayerComponent({
   map,
   enabled,
+  shapeMode, // ✅ NEW PROP: Receive shape mode directly
   logs,
   sessions,
   selectedMetric,
@@ -230,21 +239,21 @@ function DrawingToolsLayerComponent({
   onDrawingsChange,
   clearSignal = 0,
   colorizeCells = true,
+  onUIChange, // ✅ NEW PROP: To reset state after drawing
 }) {
   const managerRef = useRef(null);
   const shapesRef = useRef([]);
   const collectedDrawingRef = useRef([]);
   const lastClearSignalRef = useRef(clearSignal);
-  const callbacksRef = useRef({ onSummary, onDrawingsChange });
+  const callbacksRef = useRef({ onSummary, onDrawingsChange, onUIChange });
 
   useEffect(() => {
-    callbacksRef.current = { onSummary, onDrawingsChange };
-  }, [onSummary, onDrawingsChange]);
+    callbacksRef.current = { onSummary, onDrawingsChange, onUIChange };
+  }, [onSummary, onDrawingsChange, onUIChange]);
 
   const reAnalyzeShape = useCallback((shapeObj) => {
     const { type, overlay, id } = shapeObj;
     const gm = window.google.maps;
-
     if (shapeObj.gridOverlays?.length) {
       shapeObj.gridOverlays.forEach(rect => rect.setMap(null));
       shapeObj.gridOverlays = [];
@@ -252,22 +261,9 @@ function DrawingToolsLayerComponent({
 
     const allLogs = logs || [];
     const geometry = serializeOverlay(type, overlay);
-    
-    const insideLogs = filterItemsInside(type, overlay, allLogs);
-    const validValues = insideLogs.map(l => getMetricValue(l, selectedMetric)).filter(Number.isFinite);
-    const stats = computeStats(validValues);
-    
-    const intersectingSessions = filterItemsInside(type, overlay, sessions || []);
-    
-    const uniqueSessionsMap = new Map();
-    insideLogs.forEach(l => {
-      if (l.session_id && !uniqueSessionsMap.has(l.session_id)) {
-        uniqueSessionsMap.set(l.session_id, l.session_id);
-      }
-    });
-    const uniqueSessionsFromLogs = Array.from(uniqueSessionsMap.values());
-
     let areaInMeters = 0;
+    let lengthInMeters = 0;
+
     if (gm.geometry?.spherical) {
       if (type === "polygon") areaInMeters = gm.geometry.spherical.computeArea(overlay.getPath());
       else if (type === "rectangle") {
@@ -275,38 +271,29 @@ function DrawingToolsLayerComponent({
         const p = [b.getNorthEast(), new gm.LatLng(b.getNorthEast().lat(), b.getSouthWest().lng()), b.getSouthWest(), new gm.LatLng(b.getSouthWest().lat(), b.getNorthEast().lng())];
         areaInMeters = gm.geometry.spherical.computeArea(p);
       } else if (type === "circle") areaInMeters = Math.PI * Math.pow(overlay.getRadius(), 2);
+      else if (type === "polyline") lengthInMeters = gm.geometry.spherical.computeLength(overlay.getPath());
     }
 
+    const insideLogs = type === "polyline" ? [] : filterItemsInside(type, overlay, allLogs);
+    const validValues = insideLogs.map(l => getMetricValue(l, selectedMetric)).filter(Number.isFinite);
+    const stats = computeStats(validValues);
+    
+    const intersectingSessions = type === "polyline" ? [] : filterItemsInside(type, overlay, sessions || []);
+    const uniqueSessionsMap = new Map();
+    insideLogs.forEach(l => { if (l.session_id) uniqueSessionsMap.set(l.session_id, l.session_id); });
+    const uniqueSessionsFromLogs = Array.from(uniqueSessionsMap.values());
+
     let gridInfo = null;
-    if (pixelateRect) {
+    if (pixelateRect && type !== "polyline") {
       const gridResult = pixelateShape(type, overlay, allLogs, selectedMetric, thresholds, cellSizeMeters, map, shapeObj.gridOverlays, colorizeCells);
-      gridInfo = {
-        cells: gridResult.cellsDrawn,
-        cellsWithLogs: gridResult.cellsWithLogs,
-        cellSizeMeters,
-        totalGridArea: (cellSizeMeters ** 2) * gridResult.cellsWithLogs,
-        gridRows: gridResult.gridRows,
-        gridCols: gridResult.gridCols,
-        cellData: gridResult.cellData,
-      };
+      gridInfo = { cells: gridResult.cellsDrawn, cellsWithLogs: gridResult.cellsWithLogs, cellSizeMeters, totalGridArea: (cellSizeMeters ** 2) * gridResult.cellsWithLogs, gridRows: gridResult.gridRows, gridCols: gridResult.gridCols, cellData: gridResult.cellData };
     }
 
     const entry = {
-      id,
-      type,
-      geometry,
-      selectedMetric,
-      stats,
-      count: insideLogs.length,
-      session: uniqueSessionsFromLogs,
-      intersectingSessions,
-      sessionCount: uniqueSessionsFromLogs.length,
-      logs: insideLogs,
-      grid: gridInfo,
-      createdAt: shapeObj.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      area: areaInMeters,
-      areaInSqKm: (areaInMeters / 1e6).toFixed(4),
+      id, type, geometry, selectedMetric, stats, count: insideLogs.length,
+      session: uniqueSessionsFromLogs, intersectingSessions, sessionCount: uniqueSessionsFromLogs.length,
+      logs: insideLogs, grid: gridInfo, createdAt: shapeObj.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(),
+      area: areaInMeters, areaInSqKm: (areaInMeters / 1e6).toFixed(4), length: lengthInMeters, lengthInKm: (lengthInMeters / 1000).toFixed(3),
     };
 
     const idx = collectedDrawingRef.current.findIndex(d => d.id === id);
@@ -318,6 +305,7 @@ function DrawingToolsLayerComponent({
     return entry;
   }, [logs, sessions, selectedMetric, thresholds, pixelateRect, cellSizeMeters, map, colorizeCells]);
 
+  // ✅ Initialize Manager with drawingControl: false
   useEffect(() => {
     if (!map || !window.google?.maps?.drawing) return;
     
@@ -329,15 +317,12 @@ function DrawingToolsLayerComponent({
     if (!enabled) return;
 
     const dm = new window.google.maps.drawing.DrawingManager({
-      drawingMode: null,
-      drawingControl: true,
-      drawingControlOptions: {
-        position: window.google.maps.ControlPosition.TOP_CENTER,
-        drawingModes: ["rectangle", "polygon", "circle"],
-      },
+      drawingMode: null, // Start with nothing
+      drawingControl: false, // 🛑 HIDE NATIVE CONTROLS
       polygonOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.08 },
       rectangleOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.06 },
       circleOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.06 },
+      polylineOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 3, strokeColor: "#ea580c" },
     });
 
     dm.setMap(map);
@@ -345,12 +330,30 @@ function DrawingToolsLayerComponent({
     const handleComplete = (e) => {
       const shapeObj = { id: Date.now(), type: e.type, overlay: e.overlay, gridOverlays: [], createdAt: new Date().toISOString() };
       shapesRef.current.push(shapeObj);
-      
       const entry = reAnalyzeShape(shapeObj);
       const listeners = [];
       const update = () => reAnalyzeShape(shapeObj);
 
-      if (e.type === "polygon") {
+      if (e.type === "polyline") {
+        const updateDistanceLabel = () => {
+          const { length, center } = getPolylineDetails(e.overlay);
+          const text = length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`;
+          if (!shapeObj.labelMarker) {
+            shapeObj.labelMarker = new window.google.maps.Marker({
+              map: map, position: center, icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 0 },
+              label: { text: text, color: "#000000", fontWeight: "bold", fontSize: "12px" }, zIndex: 100,
+            });
+          } else {
+            shapeObj.labelMarker.setPosition(center);
+            const lbl = shapeObj.labelMarker.getLabel();
+            shapeObj.labelMarker.setLabel({ ...lbl, text });
+          }
+          update();
+        };
+        const path = e.overlay.getPath();
+        ["set_at", "insert_at", "remove_at"].forEach(ev => listeners.push(window.google.maps.event.addListener(path, ev, updateDistanceLabel)));
+        updateDistanceLabel();
+      } else if (e.type === "polygon") {
         const path = e.overlay.getPath();
         ["set_at", "insert_at", "remove_at"].forEach(ev => listeners.push(window.google.maps.event.addListener(path, ev, update)));
       } else if (e.type === "rectangle") {
@@ -360,10 +363,17 @@ function DrawingToolsLayerComponent({
       }
       
       shapeObj.listeners = listeners;
-      dm.setDrawingMode(null);
       
-      const sessionMsg = entry.intersectingSessions?.length > 0 ? ` Found ${entry.intersectingSessions.length} sessions.` : "";
-      toast.success(`${e.type.charAt(0).toUpperCase() + e.type.slice(1)} drawn.${sessionMsg}`, { position: "bottom-right", autoClose: 3000 });
+      // ✅ RESET UI STATE to "Cursor" after drawing
+      dm.setDrawingMode(null);
+      callbacksRef.current.onUIChange?.({ drawEnabled: false, shapeMode: null });
+
+      if (e.type !== "polyline") {
+        const sessionMsg = entry.intersectingSessions?.length > 0 ? ` Found ${entry.intersectingSessions.length} sessions.` : "";
+        toast.success(`${e.type.charAt(0).toUpperCase() + e.type.slice(1)} drawn.${sessionMsg}`, { position: "bottom-right", autoClose: 3000 });
+      } else {
+        toast.success("Distance measured.", { position: "bottom-right", autoClose: 2000 });
+      }
     };
 
     const listener = window.google.maps.event.addListener(dm, "overlaycomplete", handleComplete);
@@ -376,16 +386,24 @@ function DrawingToolsLayerComponent({
     };
   }, [map, enabled, reAnalyzeShape]);
 
+  // ✅ NEW EFFECT: Listen for prop changes to switch modes programmatically
+  useEffect(() => {
+    if (managerRef.current) {
+      // If shapeMode is 'polygon', set map to polygon mode. If null, set to null (cursor).
+      managerRef.current.setDrawingMode(shapeMode);
+    }
+  }, [shapeMode]);
+
+  // (Clear signal effect remains the same...)
   useEffect(() => {
     if (clearSignal === 0 || clearSignal === lastClearSignalRef.current) return;
     lastClearSignalRef.current = clearSignal;
-    
     shapesRef.current.forEach(s => {
       s.listeners?.forEach(l => window.google.maps.event.removeListener(l));
       s.overlay?.setMap(null);
       s.gridOverlays?.forEach(r => r.setMap(null));
+      s.labelMarker?.setMap(null);
     });
-
     shapesRef.current = [];
     collectedDrawingRef.current = [];
     callbacksRef.current.onDrawingsChange?.([]);
@@ -402,5 +420,4 @@ function DrawingToolsLayerComponent({
   return null;
 }
 
-// Export the memoized component
 export default memo(DrawingToolsLayerComponent);

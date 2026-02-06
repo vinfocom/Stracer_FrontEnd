@@ -946,35 +946,7 @@ const MapWithMultipleCircles = ({
         </div>
       )}
 
-      {showStats && (
-        <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg text-xs text-gray-600 z-10">
-          {isLoadingPolygons || thresholdsLoading ? (
-            <span className="animate-pulse">Loading...</span>
-          ) : enableGrid ? (
-            <span>{gridCells.filter(c => c.count > 0).length} cells with data</span>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2">
-                <Circle className="w-3 h-3 text-green-500" fill="#22C55E" />
-                <span className="font-medium text-green-600">{locationsToRender.length.toLocaleString()} primary logs</span>
-              </div>
-              {showNeighbors && processedNeighbors.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Square className="w-3 h-3 text-purple-500" fill="#8B5CF6" />
-                  <span className="font-medium text-purple-600">{processedNeighbors.length.toLocaleString()} neighbor logs</span>
-                </div>
-              )}
-              <div className="flex items-center gap-1 text-[10px] text-blue-500"><Layers className="h-3 w-3" /><span>WebGL Accelerated</span></div>
-              {enablePolygonFilter && polygonData.length > 0 && (
-                <div className="text-[10px] text-gray-400 space-y-0.5">
-                  {locations.length !== locationsToRender.length && (<div>({(locations.length - locationsToRender.length).toLocaleString()} primary outside)</div>)}
-                  {showNeighbors && neighborData.length !== processedNeighbors.length && (<div>({(neighborData.length - processedNeighbors.length).toLocaleString()} neighbors outside)</div>)}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )} 
+      
 
       {techHandOver && technologyTransitions.length > 0 && (
         <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[180px]">
