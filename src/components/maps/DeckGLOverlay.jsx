@@ -155,6 +155,8 @@ const DeckGLOverlay = ({
         lineWidthMinPixels: 1,
         filled: true,
         stroked: true,
+        extruded: true,
+        getElevation: 5,
         opacity: neighborOpacity,
         pickable,
         autoHighlight,

@@ -10,4 +10,6 @@ export const GOOGLE_MAPS_LOADER_OPTIONS = {
   id: 'google-map-script',
   googleMapsApiKey: apiKey,
   libraries: ['drawing', 'places', 'geometry', 'visualization'],
+  mapIds: [import.meta.env.VITE_GOOGLE_MAPS_MAP_ID],
+  version: 'beta'
 };

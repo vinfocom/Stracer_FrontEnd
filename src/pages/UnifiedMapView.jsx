@@ -143,7 +143,6 @@ const COLOR_GRADIENT = [
   { min: 0.0, color: "#EF4444" },
 ];
 
-// --- Helper Functions (Kept local for coloring logic) ---
 
 const debounce = (fn, wait) => {
   let timeout;
@@ -229,7 +228,6 @@ const getThresholdKey = (metric) => {
   return mapping[metric?.toLowerCase()] || metric;
 };
 
-// yeh jo polygon logs ko cut karte ki iuske bahar points na bane
 
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
@@ -611,7 +609,6 @@ const UnifiedMapView = () => {
   const [outdoor, setOutdoor] = useState([]);
   const [distance, setDistance] = useState(null);
   const [logArea, setLogArea] = useState(null);
-  //const [project, setProject] = useState(null);
   const [pciDistData, setPciDistData] = useState(null);
   const [pciThreshold, setPciThreshold] = useState(0);
   const [dominanceData, setDominanceData] = useState([]);
@@ -1412,7 +1409,7 @@ const UnifiedMapView = () => {
     (map) => {
       mapRef.current = map;
 
-      // Listen for manual map type changes (Satellite/Hybrid/Roadmap)
+      
       map.addListener("maptypeid_changed", () => {
         const currentType = map.getMapTypeId();
         setUi((prev) => {
@@ -1444,12 +1441,7 @@ const UnifiedMapView = () => {
   const handleUIChange = useCallback((newUI) => {
     setUi((prev) => {
       const updated = { ...prev, ...newUI };
-      // if (newUI.basemapStyle && newUI.basemapStyle !== prev.basemapStyle) {
-      //   if (mapRef.current) mapRef.current.setMapTypeId(newUI.basemapStyle);
-      // }
-      // if (typeof newUI.drawClearSignal === "number" && newUI.drawClearSignal !== prev.drawClearSignal) {
-      //   setDrawnPoints(null);
-      // }
+      
       return updated;
     });
   }, []);
