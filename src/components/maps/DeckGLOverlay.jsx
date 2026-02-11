@@ -3,11 +3,9 @@ import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
 import { ScatterplotLayer, PolygonLayer, TextLayer } from '@deck.gl/layers';
 
-// ✅ ROBUST COLOR PARSER (Handles Hex and HSL)
 const parseColorToRGB = (colorStr) => {
   if (!colorStr || typeof colorStr !== 'string') return [128, 128, 128, 200];
 
-  // 1. Handle HSL (used for dynamic providers)
   if (colorStr.startsWith('hsl')) {
     const values = colorStr.match(/\d+/g);
     if (values && values.length >= 3) {
@@ -92,17 +90,35 @@ const DeckGLOverlay = ({
   autoHighlight = true,
 }) => {
   const overlayRef = useRef(null);
+  const isCleanedUpRef = useRef(false);
 
   useEffect(() => {
-    if (!map) return;
+    // 1. Initial validation
+    if (!map || !window.google) return;
+
+    isCleanedUpRef.current = false;
+
+    // 2. Singleton initialization pattern
     if (!overlayRef.current) {
-      overlayRef.current = new GoogleMapsOverlay({ interleaved: true });
+      overlayRef.current = new GoogleMapsOverlay({ 
+        interleaved: true,
+        glOptions: { preserveDrawingBuffer: true } 
+      });
+      overlayRef.current.setMap(map);
     }
-    overlayRef.current.setMap(map);
-    return () => {
+
+    // 3. Attach to map safely
+    // try {
+    //   overlayRef.current.setMap(map);
+    // } catch (err) {
+    //   console.warn("Could not attach DeckGL to map instance:", err);
+    // }
+
+    // 4. Cleanup function
+   return () => {
       if (overlayRef.current) {
         overlayRef.current.setMap(null);
-        overlayRef.current.finalize();
+        overlayRef.current.finalize(); 
         overlayRef.current = null;
       }
     };

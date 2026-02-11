@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, Filter, ChartBar, ChevronDown, ChevronUp } from "lucide-react";
+import { LogOut, Filter, ChartBar, ChevronDown, ChevronUp, Plus, UploadCloud } from "lucide-react";
 import { useLocation, Link, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
 import ProjectsDropdown from "../project/ProjectsDropdown";
@@ -46,6 +46,41 @@ export default function UnifiedHeader({
       : []);
   // const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+
+  const handleFileChange = (e) => {
+    setSelectedFile(e.target.files[0]);
+  };
+
+  const handleQuickUpload = async () => {
+    if (!selectedFile) {
+      toast.warn("Please select a file first.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("UploadFile", selectedFile);
+    
+    if (projectId) {
+      formData.append("ProjectId", projectId);
+    }
+
+    setIsUploading(true);
+    try {
+      const resp = await mapViewApi.uploadSitePredictionCsv(formData); 
+      if (resp.Status === 1) {
+        toast.success("File uploaded successfully!");
+        setSelectedFile(null);
+      } else {
+        toast.error(resp.Message || "Upload failed");
+      }
+    } catch (error) {
+      toast.error("Upload request failed.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -176,7 +211,44 @@ export default function UnifiedHeader({
     <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden p-0">
       <SettingsPage onSaveSuccess={onSettingsSaved} />
     </DialogContent>
+    
   </Dialog>
+
+  <Dialog>
+          <DialogTrigger asChild>
+            <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md bg-gray-800 text-white border-gray-700">
+            <div className="p-6 text-center">
+              <h2 className="text-lg font-semibold mb-4">Quick Upload Session Data</h2>
+              <div className="flex flex-col items-center gap-4">
+                <label className="w-full flex flex-col items-center px-4 py-6 bg-gray-700 rounded-lg border-2 border-dashed border-gray-500 cursor-pointer hover:border-blue-500 transition-colors">
+                  <UploadCloud className="h-10 w-10 text-gray-400 mb-2" />
+                  <span className="text-sm">
+                    {selectedFile ? selectedFile.name : "Select .csv or .zip file"}
+                  </span>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    onChange={handleFileChange}
+                    accept=".csv,.zip"
+                  />
+                </label>
+                
+                <Button 
+                  onClick={handleQuickUpload} 
+                  disabled={isUploading || !selectedFile}
+                  className="w-full bg-blue-600 hover:bg-blue-500"
+                >
+                  {isUploading ? <Spinner /> : "Upload Now"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <ProjectsDropdown currentProjectId={effectiveProjectId} />
         
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-lg">

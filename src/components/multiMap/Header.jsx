@@ -2,18 +2,20 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { LogOut, Plus } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
+import MultiAnalytics from "./MultiAnalytics";
 
 export default function Header({
   projectId,
-  project, 
+  project,
   sessionIds,
   addMap,
   locations,
   neighborData,
-  thresholds
+  thresholds,
 }) {
   const { logout } = useAuth();
   const location = useLocation();
@@ -22,14 +24,14 @@ export default function Header({
 
   const effectiveProjectId =
     projectId || searchParams.get("project_id") || searchParams.get("project");
- 
+
   const [fetchedProject, setFetchedProject] = useState(null);
 
   const displayProject = project || fetchedProject;
 
   useEffect(() => {
     const fetchProject = async () => {
-      if (project) return; 
+      if (project) return;
 
       if (!effectiveProjectId) return;
       try {
@@ -38,7 +40,7 @@ export default function Header({
 
         if (Array.isArray(allProjects)) {
           const matchedProject = allProjects.find(
-            (p) => p.id === Number(effectiveProjectId)
+            (p) => p.id === Number(effectiveProjectId),
           );
           if (matchedProject) setFetchedProject(matchedProject);
         }
@@ -52,12 +54,12 @@ export default function Header({
 
   const handleUnifiedNavigation = () => {
     navigate(`/unified-map?${searchParams.toString()}`, {
-        state: {
-            locations,
-            neighborData,
-            thresholds,
-            project: displayProject
-        }
+      state: {
+        locations,
+        neighborData,
+        thresholds,
+        project: displayProject,
+      },
     });
   };
 
@@ -65,26 +67,43 @@ export default function Header({
     <header className="h-14 bg-slate-800 border-b flex items-center justify-between px-4 shadow-sm z-10 flex-shrink-0">
       <div className="flex items-center gap-4">
         <h1 className="font-bold text-lg text-white">
-          {displayProject ? `${displayProject.project_name || displayProject.name}` : ""}
+          {displayProject
+            ? `${displayProject.project_name || displayProject.name}`
+            : ""}
         </h1>
       </div>
 
       <div className="flex items-center gap-3">
         {/* Navigation Buttons */}
-        <Button size="sm" className="bg-blue-600 text-white" onClick={() => navigate("/dashboard")}>
+        <Button
+          size="sm"
+          className="bg-blue-600 text-white"
+          onClick={() => navigate("/dashboard")}
+        >
           Dashboard
         </Button>
-        
+
         {/* Updated Unified Map Button */}
-        <Button 
-            size="sm" 
-            className="bg-blue-600 text-white" 
-            onClick={handleUnifiedNavigation}
+        <Button
+          size="sm"
+          className="bg-blue-600 text-white"
+          onClick={handleUnifiedNavigation}
         >
-            Unified Map
+          Unified Map
         </Button>
 
+        
+
         <div className="h-6 w-px bg-gray-300 mx-1" />
+
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="default" className="text-white bg-blue-600 text-sm"> Analytics</Button>
+          </DialogTrigger>
+          <DialogContent> 
+            <MultiAnalytics  />
+          </DialogContent>
+        </Dialog>
 
         <button
           onClick={addMap}

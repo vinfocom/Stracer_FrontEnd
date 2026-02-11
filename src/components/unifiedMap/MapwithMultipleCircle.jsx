@@ -4,7 +4,7 @@ import { GoogleMap, PolygonF, RectangleF, InfoWindow } from "@react-google-maps/
 import { mapViewApi } from "@/api/apiEndpoints";
 import DeckGLOverlay from "@/components/maps/DeckGLOverlay";
 import { Zap, Layers, Radio, Square, Circle } from "lucide-react";
-import TechHandoverMarkers from "../unifiedMap/TechHandoverMarkers";
+// import TechHandoverMarkers from "../unifiedMap/TechHandoverMarkers";
 import useColorForLog from "@/hooks/useColorForLog";
 import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
 import { normalizeProviderName, normalizeTechName, getLogColor, generateColorFromHash } from "@/utils/colorUtils";
@@ -466,8 +466,8 @@ const MapWithMultipleCircles = ({
   areaEnabled = false,
   showControls = true,
   showStats = true,
-  technologyTransitions = [],
-  techHandOver = false,
+  // technologyTransitions = [],
+  // techHandOver = false,
   onFilteredLocationsChange,
   opacity = 1,
   showPoints: showPointsProp = true,
@@ -919,13 +919,7 @@ const MapWithMultipleCircles = ({
         {selectedNeighbor && <NeighborInfoWindow neighbor={selectedNeighbor} onClose={() => setSelectedNeighbor(null)} resolveColor={resolveColor} selectedMetric={selectedMetric} />}
         {selectedLog && <PrimaryLogInfoWindow log={selectedLog} onClose={() => setSelectedLog(null)} resolveColor={resolveColor} selectedMetric={selectedMetric} />}
 
-        <TechHandoverMarkers
-          transitions={technologyTransitions}
-          show={techHandOver}
-          compactMode={technologyTransitions.length > 30}
-          showConnections={technologyTransitions.length < 50}
-          onTransitionClick={() => {}}
-        />
+        
 
         {children}
       </GoogleMap>
@@ -948,7 +942,7 @@ const MapWithMultipleCircles = ({
 
       
 
-      {techHandOver && technologyTransitions.length > 0 && (
+      {/* {techHandOver && technologyTransitions.length > 0 && (
         <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[180px]">
           <div className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
             <Zap className="h-4 w-4 text-orange-500" />
@@ -961,7 +955,7 @@ const MapWithMultipleCircles = ({
             </div>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 };

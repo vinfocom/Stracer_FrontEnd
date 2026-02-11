@@ -1,4 +1,4 @@
-
+// src/hooks/useSiteData.js
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mapViewApi } from '@/api/apiEndpoints';
 
@@ -7,7 +7,7 @@ export const useSiteData = ({
   siteToggle, 
   projectId, 
   sessionIds,
-  autoFetch = true 
+  autoFetch = false 
 }) => {
   const [siteData, setSiteData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,92 +16,83 @@ export const useSiteData = ({
   const isMounted = useRef(true);
   const lastFetchParams = useRef(null);
 
+  // DEBUG: Log current state on every render
+  useEffect(() => {
+    console.log(`[useSiteData] Hook Rendered. enableSiteToggle: ${enableSiteToggle}, siteToggle: ${siteToggle}, Data Length: ${siteData.length}`);
+  }, [enableSiteToggle, siteToggle, siteData.length]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
   const fetchSiteData = useCallback(async () => {
+    console.log(`[useSiteData] fetchSiteData CALLED. enableSiteToggle: ${enableSiteToggle}`);
+
+    // If the toggle is not enabled, we clear data and stop
     if (!enableSiteToggle) {
+      console.log("[useSiteData] Toggle is OFF. Clearing siteData and returning.");
       setSiteData([]);
       setLoading(false);
+      lastFetchParams.current = null;
       return;
     }
 
+    // Prevents duplicate calls
     const currentParams = JSON.stringify({ siteToggle, projectId, sessionIds });
-    
     if (lastFetchParams.current === currentParams && siteData.length > 0) {
-      console.log('⏭️ Skipping duplicate site data fetch');
+      console.log("[useSiteData] Params unchanged and data exists. Skipping fetch.");
       return;
     }
 
+    console.log(`[useSiteData] Starting API call for ${siteToggle}...`);
     setLoading(true);
     setError(null);
     lastFetchParams.current = currentParams;
     
     try {
-      const params = {
-        projectId: projectId || '',
-        sessionIds: Array.isArray(sessionIds) ? sessionIds.join(',') : sessionIds || '',
-      };
-
+      const params = { projectId: projectId || '' };
       let response;
-      
+
       switch (siteToggle) {
-        case 'Cell':
-          console.log('🗼 Fetching Cell (Site Prediction) data...');
-          response = await mapViewApi.getSitePrediction(params);
-          break;
-        case 'NoML':
-          console.log('🗼 Fetching NoML site data...');
-          response = await mapViewApi.getSiteNoMl(params);
-          break;
-        case 'ML':
-          console.log('🗼 Fetching ML site data...');
-          response = await mapViewApi.getSiteMl(params);
-          break;
-        default:
-          response = { data: [] };
+        case 'Cell': response = await mapViewApi.getSitePrediction(params); break;
+        case 'NoML': response = await mapViewApi.getSiteNoMl(params); break;
+        case 'ML': response = await mapViewApi.getSiteMl(params); break;
+        default: response = { data: [] };
       }
 
       if (!isMounted.current) return;
 
       const rawData = response?.data?.Data || response?.data?.data || response?.Data || response?.data || [];
+      console.log(`[useSiteData] API Response received. Raw items: ${rawData.length}`);
       
       const normalizedData = Array.isArray(rawData) 
-  ? rawData.map((item, index) => ({
-      site: item.site || item.site_id || item.siteId || `site_${index}`,
-      site_name: item.site_name || item.siteName || item.name,
-      cell_id: item.cell_id_representative || item.cell_id || item.id || `cell_${index}`,
-      // ✅ Handle ML-specific coordinate keys
-      lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
-      lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
-      // ✅ Handle ML-specific azimuth and beamwidth
-      azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth || 0),
-      beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
-      range: parseFloat(item.range || item.radius || 220),
-      // ✅ Fix: Capture 'network' as the operator
-      operator: item.network || item.Network || item.operator || item.operator_name || "Unknown",
-      tech: item.tech || item.technology,
-      band: item.band || item.frequency_band,
-      _raw: item
-    }))
-          .filter(item => 
-            !isNaN(item.lat) && 
-            !isNaN(item.lng) && 
-            Math.abs(item.lat) <= 90 && 
-            Math.abs(item.lng) <= 180
-          )
+        ? rawData.map((item, index) => ({
+            site: item.site || item.site_id || `site_${index}`,
+            lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
+            lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
+            azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth || 0),
+            beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
+            range: parseFloat(item.range || item.radius || 220),
+            operator: item.network || item.Network || item.cluster || "Unknown",
+            band: item.band ||  "Unknown",
+            technology: item.Technology || item.tech || "Unknown",
+            // Helper for unique ID
+            id: item.cell_id || item.site || index
+          })).filter(item => item.lat !== 0 && !isNaN(item.lat))
         : [];
 
+      console.log(`[useSiteData] Setting siteData. Normalized items: ${normalizedData.length}`);
       setSiteData(normalizedData);
-      console.log(`✅ Loaded ${normalizedData.length} site records (${siteToggle})`);
-      
+
     } catch (err) {
-      console.error('Error fetching site data:', err);
+      console.error("[useSiteData] API Error:", err);
       if (isMounted.current) {
         setError(err);
         setSiteData([]);
       }
     } finally {
-      if (isMounted.current) {
-        setLoading(false);
-      }
+      if (isMounted.current) setLoading(false);
     }
   }, [enableSiteToggle, siteToggle, projectId, sessionIds, siteData.length]);
 
@@ -111,17 +102,5 @@ export const useSiteData = ({
     }
   }, [fetchSiteData, autoFetch]);
 
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
-  return { 
-    siteData, 
-    loading, 
-    error, 
-    refetch: fetchSiteData,
-    isEmpty: siteData.length === 0
-  };
+  return { siteData, loading, error, fetchSiteData };
 };

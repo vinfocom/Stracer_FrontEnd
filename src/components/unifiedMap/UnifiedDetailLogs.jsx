@@ -1,4 +1,3 @@
-// UnifiedDetailLogs.jsx
 import React, {
   useState,
   useRef,
@@ -28,10 +27,11 @@ import {
   FileJson,
   Loader2,
   Check,
+  GripHorizontal
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { Rnd } from "react-rnd";
 
-// Tabs
 import { OverviewTab } from "./tabs/OverviewTab";
 import { SignalTab } from "./tabs/SignalTab";
 import { HandoverAnalysisTab } from "./tabs/HandoverAnalysisTab";
@@ -39,13 +39,11 @@ import { NetworkTab } from "./tabs/NetworkTab";
 import { PerformanceTab } from "./tabs/PerformanceTab";
 import { ApplicationTab } from "./tabs/ApplicationTab";
 import { IOAnalysis } from "./tabs/IOAnalysis";
-import  N78AnalysisTab  from "./tabs/N78AnalysisTab";
+import N78AnalysisTab from "./tabs/N78AnalysisTab";
 
-// Common
 import { TabButton } from "./common/TabButton";
 import { LoadingSpinner } from "./common/LoadingSpinner";
 
-// Utils
 import { calculateStats, calculateIOSummary } from "@/utils/analyticsHelpers";
 import { exportAnalytics } from "@/utils/exportService";
 import { TABS } from "@/utils/constants";
@@ -57,11 +55,6 @@ const DEFAULT_DATA_FILTERS = {
   technologies: [],
 };
 
-// ============================================
-// EXPORT UTILITIES
-// ============================================
-
-// Convert data to CSV format
 const convertToCSV = (data, headers) => {
   if (!data || !data.length) return "";
   
@@ -83,7 +76,6 @@ const convertToCSV = (data, headers) => {
   return csvRows.join("\n");
 };
 
-// Download file utility
 const downloadFile = (content, filename, type = "text/csv") => {
   const blob = new Blob([content], { type: `${type};charset=utf-8;` });
   const link = document.createElement("a");
@@ -98,7 +90,6 @@ const downloadFile = (content, filename, type = "text/csv") => {
   URL.revokeObjectURL(url);
 };
 
-// Capture element as image using html2canvas
 const captureElementAsImage = async (element, filename) => {
   try {
     const html2canvas = (await import("html2canvas")).default;
@@ -116,14 +107,9 @@ const captureElementAsImage = async (element, filename) => {
     
     return true;
   } catch (error) {
-    console.error("Failed to capture image:", error);
     return false;
   }
 };
-
-// ============================================
-// EXPORT DROPDOWN COMPONENT
-// ============================================
 
 const ExportDropdown = ({
   locations,
@@ -153,7 +139,6 @@ const ExportDropdown = ({
   const [exportType, setExportType] = useState(null);
   const dropdownRef = useRef(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -166,7 +151,6 @@ const ExportDropdown = ({
 
   const getTimestamp = () => new Date().toISOString().split("T")[0];
 
-  // Export all data as CSV
   const exportAllDataCSV = async () => {
     setIsExporting(true);
     setExportType("csv");
@@ -174,7 +158,6 @@ const ExportDropdown = ({
     try {
       const timestamp = getTimestamp();
       
-      // Main locations data
       if (locations?.length) {
         const locationHeaders = [
           "index", "latitude", "longitude", "rsrp", "rsrq", "sinr", 
@@ -201,7 +184,6 @@ const ExportDropdown = ({
         );
       }
 
-      // Handover data
       if (technologyTransitions?.length) {
         const handoverHeaders = [
           "index", "from_tech", "to_tech", "handover_type", 
@@ -232,7 +214,6 @@ const ExportDropdown = ({
         );
       }
 
-      // N78 data
       if (n78NeighborData?.length) {
         const n78Headers = [
           "index", "neighbor_rsrp", "neighbor_rsrq", "primary_rsrp", 
@@ -260,9 +241,8 @@ const ExportDropdown = ({
         );
       }
 
-      toast.success("CSV files exported successfully!", { icon: "📊" });
+      toast.success("CSV files exported successfully!");
     } catch (error) {
-      console.error("Export failed:", error);
       toast.error("Failed to export CSV data");
     } finally {
       setIsExporting(false);
@@ -271,7 +251,6 @@ const ExportDropdown = ({
     }
   };
 
-  // Export as JSON
   const exportAllDataJSON = async () => {
     setIsExporting(true);
     setExportType("json");
@@ -289,7 +268,7 @@ const ExportDropdown = ({
           appliedFilters: dataFilters,
         },
         statistics: stats,
-        locations: locations?.slice(0, 1000), // Limit for JSON size
+        locations: locations?.slice(0, 1000),
         handovers: technologyTransitions,
         n78Neighbors: n78NeighborData?.slice(0, 500),
         n78Stats: n78NeighborStats,
@@ -308,9 +287,8 @@ const ExportDropdown = ({
         "application/json"
       );
 
-      toast.success("JSON exported successfully!", { icon: "📄" });
+      toast.success("JSON exported successfully!");
     } catch (error) {
-      console.error("Export failed:", error);
       toast.error("Failed to export JSON data");
     } finally {
       setIsExporting(false);
@@ -319,7 +297,6 @@ const ExportDropdown = ({
     }
   };
 
-  // Export current view as image
   const exportCurrentViewAsImage = async () => {
     setIsExporting(true);
     setExportType("image");
@@ -334,13 +311,12 @@ const ExportDropdown = ({
         );
         
         if (success) {
-          toast.success("Image exported successfully!", { icon: "🖼️" });
+          toast.success("Image exported successfully!");
         } else {
           toast.error("Failed to capture image");
         }
       }
     } catch (error) {
-      console.error("Export failed:", error);
       toast.error("Failed to export image");
     } finally {
       setIsExporting(false);
@@ -349,7 +325,6 @@ const ExportDropdown = ({
     }
   };
 
-  // Export all charts as images
   const exportAllChartsAsImages = async () => {
     setIsExporting(true);
     setExportType("charts");
@@ -365,18 +340,16 @@ const ExportDropdown = ({
             `chart_${chartName}_${timestamp}.png`
           );
           if (success) exportedCount++;
-          // Small delay between exports
           await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
 
       if (exportedCount > 0) {
-        toast.success(`${exportedCount} charts exported!`, { icon: "📈" });
+        toast.success(`${exportedCount} charts exported!`);
       } else {
         toast.warning("No charts available to export");
       }
     } catch (error) {
-      console.error("Export failed:", error);
       toast.error("Failed to export charts");
     } finally {
       setIsExporting(false);
@@ -385,7 +358,6 @@ const ExportDropdown = ({
     }
   };
 
-  // Export summary report
   const exportSummaryReport = async () => {
     setIsExporting(true);
     setExportType("report");
@@ -411,7 +383,6 @@ Coverage: ${totalLocations ? ((filteredCount / totalLocations) * 100).toFixed(1)
 
 `;
 
-      // Add stats
       if (stats) {
         report += `
 ────────────────────────────────────────────────────────────────
@@ -426,7 +397,6 @@ Std Dev: ${stats.stdDev?.toFixed(2) || "N/A"}
 `;
       }
 
-      // Add handover stats
       if (technologyTransitions?.length) {
         const counts = { upgrade: 0, downgrade: 0, lateral: 0 };
         technologyTransitions.forEach(t => {
@@ -449,7 +419,6 @@ Lateral: ${counts.lateral} (${((counts.lateral / technologyTransitions.length) *
 `;
       }
 
-      // Add N78 stats
       if (n78NeighborStats) {
         report += `
 ────────────────────────────────────────────────────────────────
@@ -461,7 +430,6 @@ Avg N78 RSRP: ${n78NeighborStats.avgRsrp?.toFixed(1) || "N/A"} dBm
 `;
       }
 
-      // Add filters
       if (dataFilters?.providers?.length || dataFilters?.bands?.length || dataFilters?.technologies?.length) {
         report += `
 ────────────────────────────────────────────────────────────────
@@ -480,9 +448,8 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
 `;
 
       downloadFile(report, `analytics_report_${timestamp}.txt`, "text/plain");
-      toast.success("Report exported successfully!", { icon: "📋" });
+      toast.success("Report exported successfully!");
     } catch (error) {
-      console.error("Export failed:", error);
       toast.error("Failed to export report");
     } finally {
       setIsExporting(false);
@@ -491,7 +458,6 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
     }
   };
 
-  // Full export (legacy function)
   const handleFullExport = () => {
     setIsOpen(false);
     exportAnalytics({
@@ -593,7 +559,6 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
         )}
       </button>
 
-      {/* Dropdown Menu */}
       {isOpen && !isExporting && (
         <div className="absolute right-0 mt-2 w-64 bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-2 border-b border-slate-700 bg-slate-900/50">
@@ -635,7 +600,6 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
             })}
           </div>
 
-          {/* Quick Stats Footer */}
           <div className="p-2 border-t border-slate-700 bg-slate-900/50">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>{locations?.length?.toLocaleString() || 0} locations</span>
@@ -648,10 +612,6 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
     </div>
   );
 };
-
-// ============================================
-// HELPER FUNCTIONS (keep existing ones)
-// ============================================
 
 const getColorFromThresholds = (value, thresholds) => {
   if (value == null || isNaN(value)) return "#9CA3AF";
@@ -697,9 +657,6 @@ const getSignalQuality = (value) => {
   return { label: "Very Poor", color: "#EF4444" };
 };
 
-
-
-
 export default function UnifiedDetailLogs({
   locations = [],
   distance,
@@ -740,8 +697,13 @@ export default function UnifiedDetailLogs({
   const [isFilterLoading, setIsFilterLoading] = useState(false);
   const [durationData, setDurationData] = useState(durationTime);
   
-  // Ref for content area (for image capture)
+  const rndRef = useRef(null);
   const contentRef = useRef(null);
+
+  const PANEL_WIDTH = 500;
+  const HEADER_OFFSET = 70;
+  const BOTTOM_MARGIN = 20;
+  const DEFAULT_HEIGHT = 450;
 
   useEffect(() => {
     setDurationData(durationTime);
@@ -772,62 +734,45 @@ export default function UnifiedDetailLogs({
     );
   }, [dataFilters]);
 
-  // Dynamic tabs based on N78 data availability
   const availableTabs = useMemo(() => {
     let tabs = [...TABS];
-
     if (!techHandOver) {
       tabs = tabs.filter(tab => tab.id !== 'handover');
     }
-
     if (showN78Neighbors && n78NeighborData?.length > 0) {
       tabs.push({ id: "n78", label: "Unlatched Analysis" });
     }
-
     return tabs;
   }, [techHandOver, showN78Neighbors, n78NeighborData]);
 
-  const fetchFilteredData = useCallback(
-    async (filters) => {
-      if (!projectId && !sessionIds?.length) {
-        console.warn("No projectId or sessionIds provided for filtering");
-        return locations;
+  const fetchFilteredData = useCallback(async (filters) => {
+    if (!projectId && !sessionIds?.length) return locations;
+    try {
+      setIsFilterLoading(true);
+      const payload = {
+        project_id: projectId,
+        session_ids: sessionIds,
+        filters: {
+          providers: filters.providers || [],
+          bands: filters.bands || [],
+          technologies: filters.technologies || [],
+        },
+      };
+      const response = await adminApi.getFilteredLocations(payload);
+      const filteredData = response?.Data || response?.data || [];
+      
+      if (filteredData.length > 0) {
+        toast.success(`Analytics updated: ${filteredData.length} locations`);
       }
 
-      try {
-        setIsFilterLoading(true);
-
-        const payload = {
-          project_id: projectId,
-          session_ids: sessionIds,
-          filters: {
-            providers: filters.providers || [],
-            bands: filters.bands || [],
-            technologies: filters.technologies || [],
-          },
-        };
-
-        const response = await adminApi.getFilteredLocations(payload);
-        const filteredData = response?.Data || response?.data || [];
-
-        if (filteredData.length > 0) {
-          toast.success(`Analytics updated: ${filteredData.length} locations`, {
-            duration: 2000,
-            icon: "📊",
-          });
-        }
-
-        return filteredData;
-      } catch (error) {
-        console.error("Failed to fetch filtered analytics data:", error);
-        toast.error("Failed to apply filters to analytics");
-        return locations;
-      } finally {
-        setIsFilterLoading(false);
-      }
-    },
-    [projectId, sessionIds, locations]
-  );
+      return filteredData;
+    } catch (error) {
+      toast.error("Failed to apply filters to analytics");
+      return locations;
+    } finally {
+      setIsFilterLoading(false);
+    }
+  }, [projectId, sessionIds, locations]);
 
   useEffect(() => {
     const applyFilters = async () => {
@@ -840,21 +785,12 @@ export default function UnifiedDetailLogs({
         onFilteredDataChange?.(locations);
       }
     };
-
     applyFilters();
   }, [dataFilters, hasActiveFilters]);
 
-  useEffect(() => {
-    if (!hasActiveFilters) {
-      setFilteredLocations(locations);
-    }
-  }, [locations, hasActiveFilters]);
-
   const fetchDuration = async () => {
     if (!sessionIds?.length) return null;
-    const resp = await adminApi.getNetworkDurations({
-      session_ids: sessionIds,
-    });
+    const resp = await adminApi.getNetworkDurations({ session_ids: sessionIds });
     return resp?.Data || null;
   };
 
@@ -864,22 +800,12 @@ export default function UnifiedDetailLogs({
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
-  const stats = useMemo(
-    () => calculateStats(filteredLocations, selectedMetric),
-    [filteredLocations, selectedMetric]
-  );
-
+  const stats = useMemo(() => calculateStats(filteredLocations, selectedMetric), [filteredLocations, selectedMetric]);
   const ioSummary = useMemo(() => calculateIOSummary(logArea), [logArea]);
-
   const polygonStats = useMemo(() => {
     if (!polygons?.length) return null;
-
     const withPoints = polygons.filter((p) => p.pointCount > 0);
-    const totalPoints = polygons.reduce(
-      (sum, p) => sum + (p.pointCount || 0),
-      0
-    );
-
+    const totalPoints = polygons.reduce((sum, p) => sum + (p.pointCount || 0), 0);
     return {
       total: polygons.length,
       withData: withPoints.length,
@@ -888,10 +814,29 @@ export default function UnifiedDetailLogs({
     };
   }, [polygons]);
 
-  // Collapsed state
+  const handleToggleMaximize = () => {
+    if (!rndRef.current) return;
+
+    if (expanded) {
+      rndRef.current.updateSize({ width: PANEL_WIDTH, height: DEFAULT_HEIGHT });
+      rndRef.current.updatePosition({
+        x: window.innerWidth - PANEL_WIDTH - 10,
+        y: window.innerHeight - DEFAULT_HEIGHT - BOTTOM_MARGIN,
+      });
+    } else {
+      const fullHeight = window.innerHeight - HEADER_OFFSET - BOTTOM_MARGIN;
+      rndRef.current.updateSize({ width: PANEL_WIDTH, height: fullHeight });
+      rndRef.current.updatePosition({
+        x: window.innerWidth - PANEL_WIDTH - 10,
+        y: HEADER_OFFSET,
+      });
+    }
+    setExpanded(!expanded);
+  };
+
   if (collapsed) {
     return (
-      <div className="fixed bottom-4 left-4 flex gap-2 z-40">
+      <div className="fixed bottom-4 left-4 flex gap-2 z-[1000]">
         <button
           onClick={() => setCollapsed(false)}
           className="bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-slate-800 transition-all flex items-center gap-2 text-sm"
@@ -899,20 +844,10 @@ export default function UnifiedDetailLogs({
           <BarChart3 className="h-4 w-4" />
           Show Analytics
           {hasActiveFilters && (
-            <span className="ml-1 bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">
-              Filtered
-            </span>
-          )}
-          {showN78Neighbors && n78NeighborData?.length > 0 && (
-            <span className="ml-1 bg-purple-500 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">
-              N78
-            </span>
+            <span className="ml-1 bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">Filtered</span>
           )}
         </button>
-        <button
-          onClick={onClose}
-          className="bg-red-900 text-white px-3 py-2 rounded-lg shadow-lg hover:bg-red-800 transition-all text-sm"
-        >
+        <button onClick={onClose} className="bg-red-900 text-white px-3 py-2 rounded-lg shadow-lg hover:bg-red-800 transition-all text-sm">
           ✕
         </button>
       </div>
@@ -920,40 +855,38 @@ export default function UnifiedDetailLogs({
   }
 
   return (
-    <div
-      className={`
-        fixed z-40 bg-slate-950 text-white  
-        shadow-2xl border border-slate-700 transition-all duration-300
-        ${
-          expanded
-            ? "top-14 left-1/2 -translate-x-1/2 w-[95vw] max-w-[850px]"
-            : "bottom-4 right-0 w-[480px]"
-        }
-        h-[calc(100%-72px)]
-      `}
+    <Rnd
+      ref={rndRef}
+      default={{
+        x: window.innerWidth - PANEL_WIDTH - 10,
+        y: window.innerHeight - DEFAULT_HEIGHT - BOTTOM_MARGIN,
+        width: PANEL_WIDTH,
+        height: DEFAULT_HEIGHT,
+      }}
+      minWidth={320}
+      minHeight={300}
+      bounds="window"
+      dragHandleClassName="drag-handle"
+      className="z-[1000] shadow-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg overflow-hidden flex flex-col"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 rounded-t-lg">
+      <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 rounded-t-lg drag-handle cursor-move select-none shrink-0">
         <div className="flex items-center gap-3">
           <BarChart3 className="h-5 w-5 text-blue-400" />
-          <h3 className="font-semibold text-lg">Analytics Dashboard</h3>
+          <h3 className="font-semibold text-lg text-slate-100">Analytics Dashboard</h3>
           {hasActiveFilters && (
             <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
               <Filter className="h-3 w-3" />
               Filtered
             </span>
           )}
-          
           {(isFilterLoading || n78NeighborLoading) && (
             <div className="flex items-center gap-1 text-sm text-blue-400">
-              <div className="animate-spin rounded-full h-3 w-3 border border-blue-400 border-t-transparent" />
-              <span>Loading...</span>
+              <Loader2 className="animate-spin h-3 w-3" />
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          
+        <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
           <ExportDropdown
             locations={filteredLocations}
             stats={stats}
@@ -979,9 +912,9 @@ export default function UnifiedDetailLogs({
           />
 
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={handleToggleMaximize}
             className="text-slate-400 hover:text-blue-400 p-1 rounded hover:bg-slate-800"
-            title={expanded ? "Minimize" : "Maximize"}
+            title={expanded ? "Restore" : "Maximize"}
           >
             {expanded ? (
               <Minimize2 className="h-4 w-4" />
@@ -1008,90 +941,26 @@ export default function UnifiedDetailLogs({
         </div>
       </div>
 
-      {/* Filter Summary Bar */}
-      {hasActiveFilters && (
-        <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700 flex items-center gap-3 text-sm flex-wrap">
-          <span className="text-slate-400 font-medium flex items-center gap-1">
-            <Filter className="h-3 w-3" />
-            Active Filters:
-          </span>
-
-          {dataFilters.providers?.length > 0 && (
-            <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded border border-blue-700/30 text-xs font-medium">
-               Providers: {dataFilters.providers.join(", ")}
-            </span>
-          )}
-
-          {dataFilters.bands?.length > 0 && (
-            <span className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-700/30 text-xs font-medium">
-               Bands: {dataFilters.bands.join(", ")}
-            </span>
-          )}
-
-          {dataFilters.technologies?.length > 0 && (
-            <span className="bg-green-900/50 text-green-300 px-2 py-1 rounded border border-green-700/30 text-xs font-medium">
-              🔧 Tech: {dataFilters.technologies.join(", ")}
-            </span>
-          )}
-
-          <span className="text-slate-400 ml-auto font-mono text-xs">
-            {filteredLocations.length.toLocaleString()} /{" "}
-            {totalLocations.toLocaleString()} logs
-            <span className="text-blue-400 ml-2">
-              (
-              {totalLocations > 0
-                ? ((filteredLocations.length / totalLocations) * 100).toFixed(1)
-                : 0}
-              %)
-            </span>
-          </span>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex gap-2 p-3 bg-slate-900 border-b border-slate-700 overflow-x-auto scrollbar-hide">
+      <div className="flex gap-2 p-3 bg-slate-900 border-b border-slate-700 overflow-x-auto scrollbar-hide shrink-0" onMouseDown={(e) => e.stopPropagation()}>
         {availableTabs.map((tab) => (
           <TabButton
             key={tab.id}
             active={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={
-              tab.id === "n78" ? "bg-purple-900/30 border-purple-700/50" : ""
-            }
+            className={tab.id === "n78" ? "bg-purple-900/30 border-purple-700/50" : ""}
           >
             {tab.id === "n78" && <Radio className="h-3 w-3 mr-1" />}
             {tab.label}
-            {tab.id === "n78" && n78NeighborData?.length > 0 && (
-              <span className="ml-1 text-xs opacity-70">
-                ({n78NeighborData.length})
-              </span>
-            )}
           </TabButton>
         ))}
       </div>
 
-      {/* Content - with ref for image capture */}
       <div
         ref={contentRef}
-        className={`
-        ${expanded ? "max-h-[calc(100vh-200px)]" : "max-h-[70vh]"} 
-        overflow-y-auto scrollbar-hide p-4 space-y-4
-      `}
+        className="flex-1 overflow-y-auto scrollbar-hide p-4 space-y-4 cursor-default h-full"
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {(isLoading || isFilterLoading) && <LoadingSpinner />}
-
-        {!isLoading &&
-          !isFilterLoading &&
-          filteredLocations.length === 0 &&
-          activeTab !== "n78" && (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-              <Filter className="h-16 w-16 mb-4 opacity-50" />
-              <p className="text-lg font-medium">
-                No data matches the current filters
-              </p>
-              <p className="text-sm mt-2">Try adjusting your filter criteria</p>
-            </div>
-          )}
 
         {activeTab === "overview" && filteredLocations.length > 0 && (
           <OverviewTab
@@ -1114,71 +983,22 @@ export default function UnifiedDetailLogs({
           />
         )}
 
-        {activeTab === "signal" && filteredLocations.length > 0 && (
-          <SignalTab
-            locations={filteredLocations}
-            selectedMetric={selectedMetric}
-            thresholds={thresholds}
-            expanded={expanded}
-            chartRefs={chartRefs}
-          />
+        {activeTab === "signal" && (
+           <SignalTab locations={filteredLocations} selectedMetric={selectedMetric} thresholds={thresholds} expanded={expanded} chartRefs={chartRefs} />
         )}
 
-        {activeTab === "network" && filteredLocations.length > 0 && (
-          <NetworkTab
-            locations={filteredLocations}
-            expanded={expanded}
-            chartRefs={chartRefs}
-          />
-        )}
-
-        {activeTab === "performance" && filteredLocations.length > 0 && (
-          <PerformanceTab
-            locations={filteredLocations}
-            expanded={expanded}
-            chartRefs={chartRefs}
-            onHighlightLogs={onHighlightLogs}
-          />
-        )}
-
-        {activeTab === "Application" && (
-          <ApplicationTab
-            appSummary={appSummary}
-            expanded={expanded}
-            chartRefs={chartRefs}
-          />
-        )}
-
-        {activeTab === "io" && (
-          <IOAnalysis
-            indoor={indoor}
-            outdoor={outdoor}
-            expanded={expanded}
-            chartRefs={chartRefs}
-          />
-        )}
-
-        {activeTab === "handover" && (
-          <HandoverAnalysisTab
-            transitions={technologyTransitions}
-            onRowClick={(item) => {
-              // Optional: Pan map to location logic
-            }}
-          />
-        )}
-
-        {activeTab === "n78" && (
-          <N78AnalysisTab
-            n78NeighborData={n78NeighborData}
-            n78NeighborStats={n78NeighborStats}
-            n78NeighborLoading={n78NeighborLoading}
-            thresholds={thresholds}
-            expanded={expanded}
-            primaryData={locations}
-            selectedMetric={selectedMetric}
-          />
-        )}
+        {activeTab === "network" && <NetworkTab locations={filteredLocations} expanded={expanded} chartRefs={chartRefs} />}
+        
+        {activeTab === "performance" && <PerformanceTab locations={filteredLocations} expanded={expanded} chartRefs={chartRefs} onHighlightLogs={onHighlightLogs} />}
+        
+        {activeTab === "Application" && <ApplicationTab appSummary={appSummary} expanded={expanded} chartRefs={chartRefs} />}
+        
+        {activeTab === "io" && <IOAnalysis indoor={indoor} outdoor={outdoor} expanded={expanded} chartRefs={chartRefs} />}
+        
+        {activeTab === "handover" && <HandoverAnalysisTab transitions={technologyTransitions} />}
+        
+        {activeTab === "n78" && <N78AnalysisTab n78NeighborData={n78NeighborData} n78NeighborStats={n78NeighborStats} n78NeighborLoading={n78NeighborLoading} thresholds={thresholds} expanded={expanded} primaryData={locations} selectedMetric={selectedMetric} />}
       </div>
-    </div>
+    </Rnd>
   );
 }

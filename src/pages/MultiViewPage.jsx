@@ -3,13 +3,12 @@ import { useSearchParams, useLocation } from "react-router-dom";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { Trash2, Map as MapIcon, ChevronRight } from "lucide-react";
 
-// Hooks
+
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
 import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
 import useColorForLog from "@/hooks/useColorForLog";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 
-// Components
 import MapChild from "../components/multiMap/MapChild";
 import Spinner from "../components/common/Spinner";
 import Header from "@/components/multiMap/Header";
@@ -28,7 +27,6 @@ const MultiViewPage = () => {
   const projectId =
     searchParams.get("project_id") || location.state?.project?.id;
 
-  // Check if data was passed via navigation state
   const passedState = location.state;
   const passedLocations = passedState?.locations;
   const passedNeighbors = passedState?.neighborData;
@@ -37,17 +35,14 @@ const MultiViewPage = () => {
 
   const shouldFetch = !passedLocations;
 
-  // --- 1. Fetch Shared Data (if not passed) ---
   const { locations: fetchedLocations, loading: samplesLoading } =
     useNetworkSamples(sessionIds, shouldFetch);
   const { neighborData: fetchedNeighbors, loading: neighborsLoading } =
     useSessionNeighbors(sessionIds, shouldFetch);
 
-  // Always call hooks to obey React rules
   const { thresholds: hookThresholds } = useColorForLog();
   const { isLoaded } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
 
-  // Combine passed data with fetched fallback
   const locations = passedLocations || fetchedLocations;
   const neighborData = passedNeighbors || fetchedNeighbors;
   const thresholds = passedThresholds || hookThresholds;
@@ -97,7 +92,6 @@ const MultiViewPage = () => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
-      {/* Pass data to Header so it can be sent back to Unified Map */}
       <Header 
         project={project} 
         projectId={projectId}

@@ -308,9 +308,17 @@ const UnifiedMapSidebar = ({
   setDataToggle,
   enableSiteToggle,
   setEnableSiteToggle,
-  setTechHandOver,
+  setTechHandover,
+  bandHandover,
+  setBandHandover,
+  bandTransitions,
+  pciHandover,
+  setPciHandover,
+  pciTransitions,
   siteToggle,
   setSiteToggle,
+  modeMethod,
+  setModeMethod,
   projectId,
   sessionIds,
   metric,
@@ -324,7 +332,7 @@ const UnifiedMapSidebar = ({
   setColorBy,
   ui,
   onUIChange,
-  techHandOver,
+  techHandover,
   pciRange = { min: 0, max: 100 },
   technologyTransitions,
   showPolygons,
@@ -560,7 +568,7 @@ const UnifiedMapSidebar = ({
             )}
           </CollapsibleSection>
 
-          {/* Sites Layer */}
+          
           <CollapsibleSection title="Sites Layer" icon={Radio}>
             <ToggleRow
               label="Enable Sites"
@@ -581,7 +589,7 @@ const UnifiedMapSidebar = ({
                   ]}
                 />
 
-                <div className="space-y-2 pt-1">
+                <div className="space-y-2 pt-2">
                   <ToggleRow
                     label="Show Markers"
                     checked={showSiteMarkers}
@@ -592,6 +600,22 @@ const UnifiedMapSidebar = ({
                     checked={showSiteSectors}
                     onChange={setShowSiteSectors}
                   />
+                </div>
+
+                {/* Highlighted Site Mode Selection */}
+                <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-1.5">
+                   <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
+                     <Palette className="w-3 h-3" /> Color Sites By
+                   </Label>
+                   <SegmentedControl 
+                    value={modeMethod}
+                    onChange={setModeMethod}
+                    options={[
+                      {value: "Operator", label: "Operator"},
+                      {value: "band", label: "Band"},
+                      {value: "technology", label: "Tech"},
+                    ]}
+                   />
                 </div>
               </>
             )}
@@ -908,27 +932,63 @@ const UnifiedMapSidebar = ({
           </CollapsibleSection>
 
           <CollapsibleSection
-            title="Tech Handover"
+            title="Handovers"
             icon={ArrowLeftRight}
             badge={
-              techHandOver && technologyTransitions?.length > 0
-                ? technologyTransitions.length
-                : null
+              (techHandover ? (technologyTransitions?.length || 0) : 0) +
+              (bandHandover ? (bandTransitions?.length || 0) : 0) + 
+              (pciHandover ? (pciTransitions?.length || 0) : 0)
             }
           >
+            {/* Tech Handover */}
             <ToggleRow
-              label="Show Handovers"
-              description="Display technology change points"
-              checked={techHandOver}
-              onChange={setTechHandOver}
+              label="Tech Handovers"
+              description="Technology change points"
+              checked={techHandover}
+              onChange={setTechHandover}
               useSwitch={true}
             />
-
-            {techHandOver && technologyTransitions?.length > 0 && (
-              <div className="bg-slate-800/50 rounded p-2 text-xs">
+            {techHandover && technologyTransitions?.length > 0 && (
+              <div className="bg-slate-800/50 rounded p-2 text-xs mb-2">
                 <InfoBadge
-                  label="Total Handovers"
+                  label="Count"
                   value={technologyTransitions.length}
+                  color="blue"
+                />
+              </div>
+            )}
+
+            {/* Band Handover */}
+            <ToggleRow
+              label="Band Handovers"
+              description="Frequency band changes"
+              checked={bandHandover}
+              onChange={setBandHandover}
+              useSwitch={true}
+            />
+            {bandHandover && bandTransitions?.length > 0 && (
+               <div className="bg-slate-800/50 rounded p-2 text-xs mb-2">
+                <InfoBadge
+                  label="Count"
+                  value={bandTransitions.length}
+                  color="green"
+                />
+              </div>
+            )}
+
+            {/* PCI Handover */}
+            <ToggleRow
+              label="PCI Handovers"
+              description="PCI changes"
+              checked={pciHandover}
+              onChange={setPciHandover}
+              useSwitch={true}
+            />
+             {pciHandover && pciTransitions?.length > 0 && (
+               <div className="bg-slate-800/50 rounded p-2 text-xs">
+                <InfoBadge
+                  label="Count"
+                  value={pciTransitions.length}
                   color="orange"
                 />
               </div>

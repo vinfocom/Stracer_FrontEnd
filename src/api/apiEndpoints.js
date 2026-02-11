@@ -666,6 +666,28 @@ getPciDistribution: async (sessionIds) => {
     }
   },
 
+  createProject:async (payload) => {
+    try {
+      const response = await api.post("/api/MapView/createProject", payload);
+      return response;
+    } catch (error) {
+      console.error(" Project creation error:", error);
+      throw error;
+    }
+  },
+
+  deleteProject: async (projectId) => {
+    try {
+      const response = await api.delete("/api/MapView/DeleteProject", {
+        params: { projectId },
+      });
+      return response;
+    } catch (error) {
+      console.error(" Project deletion error:", error);
+      throw error;
+    }
+  },
+
   // ==================== Network Logs ====================
  // In apiEndpoints.js
 getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {

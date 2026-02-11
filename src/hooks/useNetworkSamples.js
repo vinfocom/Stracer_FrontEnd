@@ -98,6 +98,8 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, page: 0, totalPages: 0 });
   const [technologyTransitions, setTechnologyTransitions] = useState([]);
+  const [bandTransitions, setBandTransitions] = useState([]);
+  const [pciTransitions, setPciTransitions] = useState([]);
   
   const abortControllerRef = useRef(null);
   const isFetchingRef = useRef(false);
@@ -256,28 +258,76 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
   useEffect(() => {
     if (!locations || locations.length < 2) {
       setTechnologyTransitions([]);
+      setBandTransitions([]);
+      setPciTransitions([]);
       return;
     }
-    const transitions = [];
+    
+    const techTrans = [];
+    const bandTrans = [];
+    const pciTrans = [];
+
     let prevTech = normalizeTechName(locations[0].technology);
+    let prevBand = locations[0].band;
+    let prevPci = locations[0].pci;
 
     for (let i = 1; i < locations.length; i++) {
-      const currTech = normalizeTechName(locations[i].technology);
+      const loc = locations[i];
+      
+      // Technology Transition
+      const currTech = normalizeTechName(loc.technology);
       if (currTech && prevTech && currTech !== prevTech) {
-        transitions.push({
+        techTrans.push({
           from: prevTech,
           to: currTech,
           atIndex: i,
-          lat: locations[i].lat,
-          lng: locations[i].lng,
-          // ... add other needed transition data
+          lat: loc.lat,
+          lng: loc.lng,
+          timestamp: loc.timestamp,
+          session_id: loc.session_id,
+          type: 'technology'
         });
       }
       prevTech = currTech;
-    }
-    setTechnologyTransitions(transitions);
-  }, [locations]);
 
+      // Band Transition
+      const currBand = loc.band;
+      if (currBand && prevBand && String(currBand) !== String(prevBand)) {
+        bandTrans.push({
+            from: String(prevBand),
+            to: String(currBand),
+            atIndex: i,
+            lat: loc.lat,
+            lng: loc.lng,
+            timestamp: loc.timestamp,
+            session_id: loc.session_id,
+            type: 'band'
+        });
+      }
+      prevBand = currBand;
+
+      // PCI Transition
+      const currPci = loc.pci;
+      // Ensure we treat 0 as a valid PCI value, but skip null/undefined/empty string
+      if (currPci !== '' && currPci !== null && prevPci !== '' && prevPci !== null && String(currPci) !== String(prevPci)) {
+         pciTrans.push({
+            from: String(prevPci),
+            to: String(currPci),
+            atIndex: i,
+            lat: loc.lat,
+            lng: loc.lng,
+            timestamp: loc.timestamp,
+            session_id: loc.session_id,
+            type: 'pci'
+        });
+      }
+      prevPci = currPci;
+    }
+
+    setTechnologyTransitions(techTrans);
+    setBandTransitions(bandTrans);
+    setPciTransitions(pciTrans);
+  }, [locations]);
   // Lifecycle & Polling
   useEffect(() => {
     mountedRef.current = true;
@@ -305,5 +355,7 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
       fetchData(true);
     }, [fetchData]),
     technologyTransitions,
+    bandTransitions, 
+    pciTransitions,
   };
 };

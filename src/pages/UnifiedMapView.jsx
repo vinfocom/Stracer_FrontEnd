@@ -1,3 +1,5 @@
+// src/pages/UnifiedMapView.jsx
+
 import React, {
   useState,
   useEffect,
@@ -5,7 +7,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useSearchParams, useNavigate, useLocation } from "react-router-dom"; // Added useLocation
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom"; 
 import { useJsApiLoader, Polygon } from "@react-google-maps/api";
 import { toast } from "react-toastify";
 import { LayoutGrid } from "lucide-react";
@@ -17,15 +19,14 @@ import Spinner from "../components/common/Spinner";
 import MapWithMultipleCircles from "@/components/unifiedMap/MapwithMultipleCircle";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "@/lib/googleMapsLoader";
 import UnifiedMapSidebar from "@/components/unifiedMap/UnifiedMapSideBar.jsx";
-import SiteMarkers from "@/components/unifiedMap/SiteMarkers";
 import NetworkPlannerMap from "@/components/unifiedMap/NetworkPlannerMap";
 import UnifiedHeader from "@/components/unifiedMap/unifiedMapHeader";
 import UnifiedDetailLogs from "@/components/unifiedMap/UnifiedDetailLogs";
 import MapLegend from "@/components/map/MapLegend";
 import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
-import DrawingControlsPanel from "@/components/map/layout/DrawingControlsPanel";
 import LoadingProgress from "@/components/LoadingProgress";
+import TechHandoverMarkers from "@/components/unifiedMap/TechHandoverMarkers"; // Ensure this is imported
 
 // Hooks
 import { useSiteData } from "@/hooks/useSiteData";
@@ -143,7 +144,6 @@ const COLOR_GRADIENT = [
   { min: 0.0, color: "#EF4444" },
 ];
 
-
 const debounce = (fn, wait) => {
   let timeout;
   return (...args) => {
@@ -228,7 +228,6 @@ const getThresholdKey = (metric) => {
   return mapping[metric?.toLowerCase()] || metric;
 };
 
-
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
   if (!path?.length) return false;
@@ -300,6 +299,7 @@ const calculateCategoryStats = (points, category, metric) => {
 
 // --- Sub Components ---
 
+// ... (ZoneTooltip and BestNetworkLegend remain unchanged) ...
 const ZoneTooltip = React.memo(
   ({ polygon, position, selectedMetric, selectedCategory }) => {
     if (!selectedCategory) return null;
@@ -536,6 +536,7 @@ BestNetworkLegend.displayName = "BestNetworkLegend";
 // --- Main Component ---
 
 const UnifiedMapView = () => {
+  // ... (State hooks remain exactly the same) ...
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -551,6 +552,7 @@ const UnifiedMapView = () => {
   const [dataToggle, setDataToggle] = useState("sample");
   const [enableSiteToggle, setEnableSiteToggle] = useState(false);
   const [siteToggle, setSiteToggle] = useState("Cell");
+  const [modeMethod, setModeMethod] = useState("Operator");
   const [showSiteMarkers, setShowSiteMarkers] = useState(true);
   const [showSiteSectors, setShowSiteSectors] = useState(true);
   const [showNeighbors, setShowNeighbors] = useState(false);
@@ -604,6 +606,8 @@ const UnifiedMapView = () => {
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
   const [durationTime, setDurationTime] = useState([]);
   const [techHandOver, setTechHandOver] = useState(false);
+  const [bandHandover, setBandHandover] = useState(false);
+  const [pciHandover, setPciHandover] = useState(false);
   const [showNumCells, setShowNumCells] = useState(false);
   const [indoor, setIndoor] = useState([]);
   const [outdoor, setOutdoor] = useState([]);
@@ -615,6 +619,7 @@ const UnifiedMapView = () => {
   const [manualSiteData, setManualSiteData] = useState([]);
   const [manualSiteLoading, setManualSiteLoading] = useState(false);
 
+  // ... (All existing useEffects and handlers remain exactly the same) ...
   const handleSitesLoaded = useCallback((data, isLoading) => {
     setManualSiteData(data);
     setManualSiteLoading(isLoading);
@@ -677,7 +682,6 @@ const UnifiedMapView = () => {
   );
 
   // ✅ 1. Use Network Samples Hook
-  // Determine if we should fetch: Only if enabled AND we don't have passed locations
   const shouldFetchSamples =
     !passedLocations && enableDataToggle && dataToggle === "sample";
 
@@ -690,10 +694,12 @@ const UnifiedMapView = () => {
     progress: sampleProgress,
     error: sampleError,
     refetch: refetchSample,
+    bandTransitions,
+    pciTransitions,
     technologyTransitions: technologyTransitions,
   } = useNetworkSamples(
     sessionIds,
-    shouldFetchSamples, // Use our smart flag
+    shouldFetchSamples,
     onlyInsidePolygons,
     rawFilteringPolygons,
   );
@@ -761,7 +767,7 @@ const UnifiedMapView = () => {
 
   const allNeighbors = rawAllNeighbors || [];
 
-  // yaha pe duration data ke liye define kar eraha hoon
+  // ... (Effect hooks for duration, neighbor data, etc. remain unchanged) ...
   useEffect(() => {
     const timeData = async () => {
       if (!sessionIds?.length) return;
@@ -855,12 +861,11 @@ const UnifiedMapView = () => {
     fetchDominance();
   }, [sessionIds]);
 
+  // ... (Rest of Derived State & Computations logic is same) ...
   const pciRange = useMemo(() => {
     if (!pciDistData || Object.keys(pciDistData).length === 0) {
       return { min: 0, max: 100 };
     }
-
-    // Calculate the total percentage for each PCI entry in the distribution data
     const percentages = Object.values(pciDistData).map((pciGroup) => {
       const totalWeight = Object.values(pciGroup).reduce(
         (sum, value) => sum + (parseFloat(value) || 0),
@@ -868,17 +873,14 @@ const UnifiedMapView = () => {
       );
       return totalWeight * 100;
     });
-
     const min = Math.min(...percentages);
     const max = Math.max(...percentages);
-
-    // Fallback to 0-100 if calculations result in Infinity (empty arrays)
     return {
       min: isFinite(min) ? Math.floor(min) : 0,
       max: isFinite(max) ? Math.ceil(max) : 100,
     };
   }, [pciDistData]);
-  // --- Derived State & Computations ---
+
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
     let mainLogs = [];
@@ -936,7 +938,7 @@ const UnifiedMapView = () => {
     bestNetworkOptions,
     areaData,
   );
-  // filter ke options hai yaha pe
+
   const availableFilterOptions = useMemo(() => {
     const providers = new Set();
     const bands = new Set();
@@ -971,27 +973,20 @@ const UnifiedMapView = () => {
     ) {
       return null;
     }
-
     const idMap = new Map();
     const limit = Math.abs(dominanceThreshold);
-
     dominanceData.forEach((item) => {
       const logId = String(item.LogId || item.log_id);
       const values = item.dominance || [];
-
-      // Count how many neighbor values fall within the range [-limit, limit]
       const countInRange = values.filter((val) => {
         const num = parseFloat(val);
         return num >= -limit && num <= limit;
       }).length;
-
-      // Only include logs that have at least one interfering signal
       if (countInRange > 0) {
         idMap.set(logId, countInRange);
       }
     });
-
-    return idMap; // LogId -> Count
+    return idMap;
   }, [dominanceData, dominanceThreshold]);
 
   const coverageViolationLogIds = useMemo(() => {
@@ -1002,34 +997,26 @@ const UnifiedMapView = () => {
     ) {
       return null;
     }
-
     const idMap = new Map();
-
     dominanceData.forEach((item) => {
       const logId = String(item.LogId || item.log_id);
       const values = item.dominance || [];
-
-      // Count neighbors between threshold (e.g., -10) and 0
       const countInRange = values.filter((val) => {
         const num = parseFloat(val);
         return num >= coverageViolationThreshold && num <= 0;
       }).length;
-
       if (countInRange > 0) {
         idMap.set(logId, countInRange);
       }
     });
-
-    return idMap; // Returns Map<LogId, Count>
+    return idMap;
   }, [dominanceData, coverageViolationThreshold]);
 
   const filteredLocations = useMemo(() => {
     let result = [...(locations || [])];
-
     const activeCoverageFilters = Object.entries(coverageHoleFilters).filter(
       ([, config]) => config.enabled,
     );
-
     if (activeCoverageFilters.length > 0) {
       result = result.filter((loc) =>
         activeCoverageFilters.every(([metric, { threshold }]) => {
@@ -1038,7 +1025,6 @@ const UnifiedMapView = () => {
         }),
       );
     }
-
     const { providers, bands, technologies, indoorOutdoor } = dataFilters;
     if (providers?.length)
       result = result.filter((l) => providers.includes(l.provider));
@@ -1056,29 +1042,22 @@ const UnifiedMapView = () => {
           lowerFilters.includes(l.indoor_outdoor.toLowerCase()),
       );
     }
-
     if (pciDistData && pciThreshold > 0) {
       result = result.filter((loc) => {
         const logPci = String(loc.pci || loc.PCI || "");
-        if (!logPci) return true; // Show logs without a valid PCI
-
+        if (!logPci) return true;
         const pciGroup = pciDistData[logPci];
-
         if (pciGroup) {
           const totalWeight = Object.values(pciGroup).reduce(
             (sum, value) => sum + (parseFloat(value) || 0),
             0,
           );
-
           const totalPercentage = totalWeight * 100;
-
           return totalPercentage >= pciThreshold;
         }
-
         return true;
       });
     }
-
     if (dominanceThreshold !== null && problematicLogIds) {
       result = result
         .filter((loc) => {
@@ -1087,11 +1066,9 @@ const UnifiedMapView = () => {
         })
         .map((loc) => ({
           ...loc,
-          // We attach this so 'useColorForLog' can find it when selectedMetric is 'dominance'
           dominance: problematicLogIds.get(String(loc.id || loc.LogId || "")),
         }));
     }
-
     if (coverageViolationThreshold !== null && coverageViolationLogIds) {
       result = result
         .filter((loc) => {
@@ -1100,13 +1077,11 @@ const UnifiedMapView = () => {
         })
         .map((loc) => ({
           ...loc,
-          // Attach count to the specific metric key so colors work
           coverage_violation: coverageViolationLogIds.get(
             String(loc.id || loc.LogId || ""),
           ),
         }));
     }
-
     return result;
   }, [
     locations,
@@ -1138,16 +1113,13 @@ const UnifiedMapView = () => {
         pointCount: 0,
       }));
     }
-
     const thresholdKey = getThresholdKey(selectedMetric);
     const currentThresholds = effectiveThresholds[thresholdKey] || [];
-
     return polygons.map((poly) => {
       const pointsInside = locations.filter((pt) => isPointInPolygon(pt, poly));
       const values = pointsInside
         .map((p) => parseFloat(p[selectedMetric]))
         .filter((v) => !isNaN(v));
-
       if (!values.length) {
         return {
           ...poly,
@@ -1162,7 +1134,6 @@ const UnifiedMapView = () => {
         currentThresholds,
         selectedMetric,
       );
-
       return {
         ...poly,
         fillColor,
@@ -1195,7 +1166,6 @@ const UnifiedMapView = () => {
         bestTechnology: null,
       }));
     }
-
     const thresholdKey = getThresholdKey(selectedMetric);
     const currentThresholds = baseThresholds[thresholdKey] || [];
     const useCategorical =
@@ -1203,7 +1173,6 @@ const UnifiedMapView = () => {
     const metricConfig = METRIC_CONFIG[selectedMetric] || {
       higherIsBetter: true,
     };
-
     return areaData.map((poly) => {
       const pointsInside = filteredLocations.filter((pt) =>
         isPointInPolygon(pt, poly),
@@ -1221,7 +1190,6 @@ const UnifiedMapView = () => {
           bestTechnology: null,
         };
       }
-
       const providerStats = calculateCategoryStats(
         pointsInside,
         "provider",
@@ -1237,17 +1205,14 @@ const UnifiedMapView = () => {
         "technology",
         selectedMetric,
       );
-
       const values = pointsInside
         .map((p) => parseFloat(p[selectedMetric]))
         .filter((v) => !isNaN(v) && v != null);
       const medianValue = calculateMedian(values);
-
       const findBestByMetric = (stats) => {
         if (!stats?.stats?.length) return { best: null, value: null };
         let best = null;
         let bestValue = metricConfig.higherIsBetter ? -Infinity : Infinity;
-
         stats.stats.forEach((stat) => {
           const median = stat.medianValue ?? stat.avgValue;
           if (median != null) {
@@ -1268,14 +1233,12 @@ const UnifiedMapView = () => {
               : bestValue,
         };
       };
-
       const { best: bestProvider, value: bestProviderValue } =
         findBestByMetric(providerStats);
       const { best: bestBand, value: bestBandValue } =
         findBestByMetric(bandStats);
       const { best: bestTechnology, value: bestTechnologyValue } =
         findBestByMetric(technologyStats);
-
       let fillColor;
       if (useCategorical) {
         switch (colorBy) {
@@ -1313,7 +1276,6 @@ const UnifiedMapView = () => {
               )
             : "#ccc";
       }
-
       return {
         ...poly,
         fillColor,
@@ -1346,7 +1308,6 @@ const UnifiedMapView = () => {
   const visiblePolygons = useMemo(() => {
     if (!showPolygons || !polygonsWithColors?.length) return [];
     if (!viewport) return polygonsWithColors;
-
     return polygonsWithColors.filter((poly) => {
       if (!poly.bbox) return true;
       return !(
@@ -1377,7 +1338,6 @@ const UnifiedMapView = () => {
   }, [enableDataToggle, enableSiteToggle, siteToggle]);
 
   const locationsToDisplay = useMemo(() => {
-    // if (onlyInsidePolygons) return [];
     if (!showDataCircles) return [];
     return finalDisplayLocations;
   }, [showDataCircles, finalDisplayLocations, onlyInsidePolygons]);
@@ -1401,25 +1361,16 @@ const UnifiedMapView = () => {
     [updateViewportRef],
   );
 
-  // src/pages/UnifiedMapView.jsx
-
-  // src/pages/UnifiedMapView.jsx
-
   const handleMapLoad = useCallback(
     (map) => {
       mapRef.current = map;
-
-      
       map.addListener("maptypeid_changed", () => {
         const currentType = map.getMapTypeId();
         setUi((prev) => {
-          // Sync the React state to the native Map state immediately
           if (prev.basemapStyle === currentType) return prev;
           return { ...prev, basemapStyle: currentType };
         });
       });
-
-      // Existing Viewport logic...
       const updateViewport = () => {
         const bounds = map.getBounds();
         if (!bounds) return;
@@ -1431,7 +1382,6 @@ const UnifiedMapView = () => {
         };
         debouncedSetViewport(newViewport);
       };
-
       map.addListener("idle", updateViewport);
       updateViewport();
     },
@@ -1441,7 +1391,6 @@ const UnifiedMapView = () => {
   const handleUIChange = useCallback((newUI) => {
     setUi((prev) => {
       const updated = { ...prev, ...newUI };
-      
       return updated;
     });
   }, []);
@@ -1518,7 +1467,6 @@ const UnifiedMapView = () => {
     const hasProviderFilter = providers?.length > 0;
     const hasBandFilter = bands?.length > 0;
     const hasTechFilter = technologies?.length > 0;
-
     if (hasProviderFilter || hasBandFilter || hasTechFilter) {
       data = data.filter((item) => {
         if (hasProviderFilter && !providers.includes(item.provider))
@@ -1559,12 +1507,11 @@ const UnifiedMapView = () => {
     setHoverPosition(null);
   }, []);
 
-  // --- Handle Multi View Navigation ---
   const handleNavigateToMultiView = () => {
     const url = `/multi-map?session=${sessionIds.join(",")}&project_id=${projectId || ""}`;
     navigate(url, {
       state: {
-        locations: locations, // Pass raw locations so MultiView can do its own filtering
+        locations: locations,
         neighborData: sessionNeighborData,
         thresholds: effectiveThresholds,
         project: project,
@@ -1662,12 +1609,20 @@ const UnifiedMapView = () => {
         enableDataToggle={enableDataToggle}
         setEnableDataToggle={setEnableDataToggle}
         dataToggle={dataToggle}
-        setTechHandOver={setTechHandOver}
-        techHandOver={techHandOver}
+        modeMethod={modeMethod}
+        setModeMethod={setModeMethod}
+        setTechHandover={setTechHandOver}
+        techHandover={techHandOver}
         technologyTransitions={technologyTransitions}
         setDataToggle={setDataToggle}
         enableSiteToggle={enableSiteToggle}
         setEnableSiteToggle={setEnableSiteToggle}
+        bandHandover={bandHandover}
+        setBandHandover={setBandHandover}
+        bandTransitions={bandTransitions}
+        pciHandover={pciHandover}
+        setPciHandover={setPciHandover}
+        pciTransitions={pciTransitions}
         siteToggle={siteToggle}
         showSessionNeighbors={showSessionNeighbors}
         setShowSessionNeighbors={setShowSessionNeighbors}
@@ -1722,7 +1677,6 @@ const UnifiedMapView = () => {
       />
 
       <div className="flex-grow relative overflow-hidden">
-        {/* Multi View Button */}
         <div className="absolute top-18 right-3 z-10">
           <button
             onClick={handleNavigateToMultiView}
@@ -1732,7 +1686,7 @@ const UnifiedMapView = () => {
             <LayoutGrid size={20} />
           </button>
         </div>
-        
+
         <LoadingProgress
           progress={sampleProgress}
           loading={sampleLoading && enableDataToggle && dataToggle === "sample"}
@@ -1748,7 +1702,6 @@ const UnifiedMapView = () => {
             showTechnologies={colorBy === "technology"}
             showSignalQuality={!colorBy || colorBy === "metric"}
             availableFilterOptions={availableFilterOptions}
-            // We pass filteredLocations instead of viewport-visible ones to keep legend populated
             logs={finalDisplayLocations}
             activeFilter={legendFilter}
             onFilterChange={setLegendFilter}
@@ -1758,6 +1711,7 @@ const UnifiedMapView = () => {
         <SiteLegend
           enabled={enableSiteToggle}
           sites={manualSiteData}
+          colorMode={modeMethod}
           isLoading={manualSiteLoading}
         />
 
@@ -1793,8 +1747,9 @@ const UnifiedMapView = () => {
               thresholds={effectiveThresholds}
               selectedMetric={selectedMetric}
               areaData={areaData}
-              technologyTransitions={technologyTransitions}
-              techHandOver={techHandOver}
+              // REMOVED legacy props to prevent ghost lines:
+              // technologyTransitions={technologyTransitions}
+              // techHandOver={techHandOver}
               colorBy={colorBy}
               activeMarkerIndex={null}
               onMarkerClick={() => {}}
@@ -1881,25 +1836,41 @@ const UnifiedMapView = () => {
                   />
                 ))}
 
-              {enableSiteToggle && showSiteMarkers && (
-                <SiteMarkers
-                  sites={siteData}
-                  showMarkers={showSiteMarkers}
-                  circleRadius={0}
-                  viewport={viewport}
-                />
-              )}
-
               {enableSiteToggle && showSiteSectors && (
                 <NetworkPlannerMap
                   projectId={projectId}
+                  sessionIds={sessionIds}
                   siteToggle={siteToggle}
-                  onDataLoaded={handleSitesLoaded} // Connect the data flow
+                  enableSiteToggle={enableSiteToggle}
+                  onDataLoaded={handleSitesLoaded}
+                  colorMode={modeMethod}
                   viewport={viewport}
-                  scale={0.2}
-                  options={{ zIndex: 1000 }}
+                  options={{
+                    scale: 0.2,
+                    zIndex: 1000,
+                    opacity: opacity,
+                  }}
                 />
               )}
+
+              {/* Handover Layers - New Implementation */}
+              <TechHandoverMarkers
+                transitions={technologyTransitions}
+                show={techHandOver}
+                type="technology"
+              />
+
+              <TechHandoverMarkers
+                transitions={bandTransitions}
+                show={bandHandover}
+                type="band"
+              />
+
+              <TechHandoverMarkers
+                transitions={pciTransitions}
+                show={pciHandover}
+                type="pci"
+              />
             </MapWithMultipleCircles>
           )}
         </div>

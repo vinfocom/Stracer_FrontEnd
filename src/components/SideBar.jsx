@@ -71,7 +71,7 @@ const SideBar = ({ collapsed }) => {
             hasDropdown: true,
             allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN], 
             children: [
-                { icon: Plus, text: 'Create Project', path: '/create-project' },
+                { icon: Plus, text: 'Planing', path: '/create-project' },
                 { icon: FileText, text: 'View Projects', path: '/viewProject' },
             ]
         },

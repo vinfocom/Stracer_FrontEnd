@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Map, Folder, Calendar, Building2, RefreshCw, Search, Eye } from "lucide-react";
+import { Map, Folder, Calendar, Building2, RefreshCw, Search, Eye, Delete, Trash } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Spinner from "@/components/common/Spinner";
 import { mapViewApi } from "@/api/apiEndpoints";
+import { Remove } from "@mui/icons-material";
 
 const ViewProjectsPage = () => {
   const navigate = useNavigate();
@@ -66,6 +67,30 @@ const ViewProjectsPage = () => {
     if (project.ref_session_id) params.set("session", project.ref_session_id);
     navigate(`/unified-map?${params.toString()}`);
   };
+
+
+  const handleDeleteProject = async (project) => {
+    if (!project || !project.id) {
+      toast.warn("Project has no ID to delete.");
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete project "${project.project_name}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const res = await mapViewApi.deleteProject(project.id);
+      if (res.Status === 1) {
+        toast.success("Project deleted successfully.");
+        fetchProjects();
+      } else {
+        toast.error("Failed to delete project.");
+      }
+    } catch (error) {
+      toast.error("An error occurred while deleting the project.");
+    }
+  }
 
   return (
     <div className="p-6 min-h-screen bg-gray-50">
@@ -138,6 +163,9 @@ const ViewProjectsPage = () => {
                     <th className="text-center p-3 font-semibold text-gray-700 border-b">
                       Actions
                     </th>
+                    <th className="text-center p-3 font-semibold text-gray-700 border-b">
+                      Delete
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -168,6 +196,15 @@ const ViewProjectsPage = () => {
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           View on Map
+                        </Button>
+                      </td>
+                      <td className="p-3 text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteProject(project)}
+                        >
+                          <Trash  color="red"/>
                         </Button>
                       </td>
                     </tr>

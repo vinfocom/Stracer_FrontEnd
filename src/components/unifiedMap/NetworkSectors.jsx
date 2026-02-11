@@ -2,7 +2,6 @@
 import React, { useMemo, useState, memo } from "react";
 import { PolygonF, InfoWindowF } from "@react-google-maps/api";
 
-// Compute offset point given center, distance (m) and heading (deg)
 function computeOffset(center, distanceMeters, headingDegrees) {
   const earthRadius = 6378137;
   const lat1 = (center.lat * Math.PI) / 180;
@@ -160,6 +159,7 @@ const NetworkSectors = ({
   }, [sectors, defaultRadius]);
 
   // Filter sectors within viewport for performance
+  console.log(`[NetworkSectors] RENDER. showSectors: ${showSectors}, Sector Count: ${sectors.length}`);
   const visibleSectors = useMemo(() => {
     if (!viewport || normalizedSectors.length < 50) {
       return normalizedSectors;

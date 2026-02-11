@@ -20,6 +20,8 @@ const basicContentStyle = {
   padding: "1.5rem",
   borderRadius: "0.5rem",
   maxWidth: "90%",
+  maxHeight: "90vh",
+  overflowY: "auto",
   width: "50%",
   zIndex: 51,
 };
