@@ -456,6 +456,11 @@ export const predictionApi = {
   },
 };
 
+export const reportApi = {
+  generateReport: (payload) => pythonApi.post("/api/report/generate", payload),
+  getReport: (reportId) => pythonApi.get(`/api/report/download/${reportId}`),
+}
+
 export const authApi = {
   checkStatus: () => api.get("/api/auth/status"),
 };
