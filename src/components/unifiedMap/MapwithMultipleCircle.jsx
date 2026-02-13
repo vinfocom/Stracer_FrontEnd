@@ -440,6 +440,8 @@ PrimaryLogInfoWindow.displayName = 'PrimaryLogInfoWindow';
 const containerStyle = { width: "100%", height: "100%" };
 
 const MapWithMultipleCircles = ({
+  onMarkerHover, 
+  hoveredCellId,
   isLoaded,
   loadError,
   showNumCells = false,
@@ -639,6 +641,14 @@ const MapWithMultipleCircles = ({
 
     return filtered;
   }, [locations, polygonData, polygonsFetched, enablePolygonFilter, legendFilter, selectedMetric]);
+
+  const handleHover = useCallback((info) => {
+    if (info.object) {
+      onMarkerHover?.(info.object);
+    } else {
+      onMarkerHover?.(null);
+    }
+  }, [onMarkerHover]);
 
   // Process and filter neighbor data by polygon AND Legend
   const processedNeighbors = useMemo(() => {
@@ -872,7 +882,11 @@ const MapWithMultipleCircles = ({
           <PolygonF
             key={`polygon-${idx}`}
             paths={path}
-            options={{ fillColor: "transparent", fillOpacity: 0, strokeColor: "#2563eb", strokeWeight: 2, strokeOpacity: 0.8, zIndex: 1 }}
+            options={{ fillColor: "transparent", fillOpacity: 0, strokeColor: "#2563eb", strokeWeight: 2, strokeOpacity: 0.8, zIndex: 1,clickable: false
+
+
+             }}
+            
           />
         ))}
 
@@ -880,7 +894,7 @@ const MapWithMultipleCircles = ({
          <PolygonF
            key={zone.uid}
            paths={zone.paths}
-           options={{ fillColor: "#3b82f6", fillOpacity: 0.2, strokeColor: "#2563eb", strokeWeight: 2, zIndex: 5 }}
+           options={{ fillColor: "#3b82f6", fillOpacity: 0.2, strokeColor: "#2563eb", strokeWeight: 2, zIndex: 5, clickable: false }}
          />
        ))}
        
@@ -888,7 +902,7 @@ const MapWithMultipleCircles = ({
           <RectangleF
             key={`grid-${cell.id}`}
             bounds={cell.bounds}
-            options={{ fillColor: cell.fillColor, fillOpacity: cell.count > 0 ? 0.7 : 0.2, strokeColor: "transparent", strokeWeight: 0, zIndex: 2, clickable: true }}
+            options={{ fillColor: cell.fillColor, fillOpacity: cell.count > 0 ? 0.7 : 0.2, strokeColor: "transparent", strokeWeight: 0, zIndex: 2, clickable: false }}
             onMouseOver={() => setHoveredCell(cell)}
             onMouseOut={() => setHoveredCell(null)}
           />
@@ -907,6 +921,7 @@ const MapWithMultipleCircles = ({
             radiusMaxPixels={40}
             showPrimaryLogs={showPoints}
             showNumCells={showNumCells}
+            onHover={handleHover}
             neighbors={processedNeighbors}
             getNeighborColor={getNeighborColor}
             neighborSquareSize={neighborSquareSize}
@@ -942,20 +957,7 @@ const MapWithMultipleCircles = ({
 
       
 
-      {/* {techHandOver && technologyTransitions.length > 0 && (
-        <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-20 min-w-[180px]">
-          <div className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-orange-500" />
-            Tech Handovers
-          </div>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Total:</span>
-              <span className="font-bold text-orange-600">{technologyTransitions.length}</span>
-            </div>
-          </div>
-        </div>
-      )} */}
+      
     </div>
   );
 };

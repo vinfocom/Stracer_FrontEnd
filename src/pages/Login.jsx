@@ -71,12 +71,12 @@ const LoginPage = () => {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-white to-indigo-200 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 px-4">
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br  from-grey-900 via-white to-blue-900  px-4">
             
-            <div className="relative w-full max-w-md p-8 bg-white/80 dark:bg-gray-800/90 backdrop-blur-md rounded-2xl shadow-lg space-y-6">
+            <div className="relative w-full max-w-md p-8 bg-white/80  backdrop-blur-md rounded-2xl shadow-lg space-y-6">
                 
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-2xl z-10">
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/70  rounded-2xl z-10">
                         <Spinner />
                     </div>
                 )}
@@ -87,8 +87,8 @@ const LoginPage = () => {
                             <img src={vinfocom} alt="vinfocom" />
                         </span>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome Back</h2>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    <h2 className="text-2xl font-bold text-gray-900 ">Welcome Back</h2>
+                    <p className="mt-1 text-sm text-gray-500 ">
                         Sign in to continue to your account
                     </p>
                 </div>
@@ -97,7 +97,7 @@ const LoginPage = () => {
                     <div>
                         <label
                             htmlFor="email-address"
-                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                            className="block text-sm font-medium text-gray-700  mb-1"
                         >
                             Email address
                         </label>
@@ -107,7 +107,7 @@ const LoginPage = () => {
                             type="email"
                             autoComplete="email"
                             required
-                            className="block w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition"
+                            className="block w-full px-3 py-2 rounded-lg border border-gray-300  bg-white  text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition"
                             placeholder="Enter your email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
@@ -117,7 +117,7 @@ const LoginPage = () => {
                     <div>
                         <label
                             htmlFor="password"
-                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                            className="block text-sm font-medium text-gray-700  mb-1"
                         >
                             Password
                         </label>
@@ -127,7 +127,7 @@ const LoginPage = () => {
                             type="password"
                             autoComplete="current-password"
                             required
-                            className="block w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition"
+                            className="block w-full px-3 py-2 rounded-lg border border-gray-300  bg-white  text-gray-900  placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition"
                             placeholder="Enter your password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}

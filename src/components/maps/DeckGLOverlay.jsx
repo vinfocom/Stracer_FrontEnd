@@ -69,6 +69,7 @@ const getSquarePolygon = (lat, lng, sizeMeters) => {
 
 
 const DeckGLOverlay = ({
+  onHover,
   map,
   showNumCells = false,
   locations = [],
@@ -133,13 +134,18 @@ const DeckGLOverlay = ({
   }, [onNeighborClick]);
 
   // Pre-compute colors in memo to avoid repeat parsing
+  // In src/components/maps/DeckGLOverlay.jsx
+
   const primaryData = useMemo(() => {
     if (!showPrimaryLogs || !locations?.length) return [];
     return locations.map((loc, idx) => ({
       ...loc,
       index: idx,
-      position: [loc.lng, loc.lat],
-      // ✅ Use new robust parser
+      // Safely check all coordinate naming conventions
+      position: [
+        parseFloat(loc.lng ?? loc.longitude ?? loc.lon ?? loc.Lng ?? 0), 
+        parseFloat(loc.lat ?? loc.latitude ?? loc.Lat ?? 0)
+      ],
       computedColor: getColor ? parseColorToRGB(getColor(loc)) : [16, 185, 129, 200],
     }));
   }, [locations, showPrimaryLogs, getColor]);
@@ -192,6 +198,7 @@ const DeckGLOverlay = ({
         opacity,
         pickable,
         autoHighlight,
+        onHover: onHover,
         onClick: handlePrimaryClick,
         updateTriggers: {
           getFillColor: [getColor],

@@ -68,7 +68,8 @@ export const useSiteData = ({
       
       const normalizedData = Array.isArray(rawData) 
         ? rawData.map((item, index) => ({
-            site: item.site || item.site_id || `site_${index}`,
+          ...item,
+           site: item.site || item.site_id || `site_${index}`,
             lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
             lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
             azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth || 0),
@@ -77,7 +78,7 @@ export const useSiteData = ({
             operator: item.network || item.Network || item.cluster || "Unknown",
             band: item.band ||  "Unknown",
             technology: item.Technology || item.tech || "Unknown",
-            // Helper for unique ID
+            pci: item.pci ?? item.PCI ?? item.pci_or_psi ?? item.cell_id, // ✅ FIX: Explicitly extract PCI
             id: item.cell_id || item.site || index
           })).filter(item => item.lat !== 0 && !isNaN(item.lat))
         : [];

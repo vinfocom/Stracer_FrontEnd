@@ -568,6 +568,8 @@ const UnifiedMapView = () => {
   const [hoverPosition, setHoverPosition] = useState(null);
   const [mapVisibleLocations, setMapVisibleLocations] = useState([]);
   const [dominanceThreshold, setDominanceThreshold] = useState(null);
+  const [hoveredCellId, setHoveredCellId] = useState(null);
+  const [hoveredLog, setHoveredLog] = useState(null);
 
   const [ui, setUi] = useState({
     basemapStyle: "roadmap",
@@ -1519,6 +1521,34 @@ const UnifiedMapView = () => {
     });
   };
 
+  // inside UnifiedMapView component
+// In src/pages/UnifiedMapView.jsx
+
+const handleMarkerHover = useCallback((hoverInfo) => {
+  // 1. Unpack the deck.gl event object to get the actual log data
+  const log = hoverInfo?.object || hoverInfo;
+  
+  if (!log) {
+     setHoveredLog(null);
+     setHoveredCellId(null);
+     return;
+  }
+
+  console.log("✅ [BOTTLENECK CHECK 2] UnifiedMapView received log:", log);
+
+  console.log("DEBUG: Actual Hovered Log Data:", log);
+  
+  // 2. Extract PCI from the unpacked log
+  const pci = log?.pci ?? log?.PCI ?? log?.cell_id ?? log?.physical_cell_id;
+  const normalizedPci = pci !== null && pci !== undefined ? String(pci).trim() : null;
+  
+  console.log(`[UnifiedMapView] Hovered Log PCI: ${normalizedPci}`); 
+  
+  // 3. Set the corrected log object to state
+  setHoveredLog(log);
+  setHoveredCellId(normalizedPci);
+}, []);
+
   if (!isLoaded)
     return (
       <div className="flex items-center justify-center h-screen">
@@ -1750,6 +1780,8 @@ const UnifiedMapView = () => {
               // REMOVED legacy props to prevent ghost lines:
               // technologyTransitions={technologyTransitions}
               // techHandOver={techHandOver}
+              onMarkerHover={handleMarkerHover} // Pass the new handler
+              hoveredCellId={hoveredLog?.pci}
               colorBy={colorBy}
               activeMarkerIndex={null}
               onMarkerClick={() => {}}
@@ -1842,6 +1874,9 @@ const UnifiedMapView = () => {
                   sessionIds={sessionIds}
                   siteToggle={siteToggle}
                   enableSiteToggle={enableSiteToggle}
+                  hoveredCellId={hoveredCellId}
+                  hoveredLog={hoveredLog}
+                  locations={finalDisplayLocations}
                   onDataLoaded={handleSitesLoaded}
                   colorMode={modeMethod}
                   viewport={viewport}
