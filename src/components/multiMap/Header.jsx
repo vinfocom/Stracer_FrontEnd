@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
-import { LogOut, Plus } from "lucide-react";
+import { LogOut, Plus, BarChart3 } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
 import MultiAnalytics from "./MultiAnalytics";
@@ -83,7 +83,7 @@ export default function Header({
           Dashboard
         </Button>
 
-        {/* Updated Unified Map Button */}
+        {/* Unified Map Button */}
         <Button
           size="sm"
           className="bg-blue-600 text-white"
@@ -92,16 +92,21 @@ export default function Header({
           Unified Map
         </Button>
 
-        
+        <div className="h-6 w-px bg-gray-500 mx-1" />
 
-        <div className="h-6 w-px bg-gray-300 mx-1" />
-
+        {/* Analytics Dialog */}
         <Dialog>
           <DialogTrigger asChild>
-            <Button variant="default" className="text-white bg-blue-600 text-sm"> Analytics</Button>
+            <Button variant="default" className="text-white bg-blue-600 hover:bg-blue-700 text-sm flex items-center gap-2"> 
+              <BarChart3 size={16} /> Analytics
+            </Button>
           </DialogTrigger>
-          <DialogContent> 
-            <MultiAnalytics  />
+          <DialogContent className="max-w-5xl bg-slate-50"> 
+            <MultiAnalytics 
+              locations={locations} 
+              sessionIds={sessionIds} 
+              projectId={effectiveProjectId} 
+            />
           </DialogContent>
         </Dialog>
 

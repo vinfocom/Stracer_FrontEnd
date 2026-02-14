@@ -95,6 +95,7 @@ const MultiViewPage = () => {
       <Header 
         project={project} 
         projectId={projectId}
+        sessionIds={sessionIds} // Pass sessionIds here
         addMap={addMap} 
         locations={locations}
         neighborData={neighborData}
