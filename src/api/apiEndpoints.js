@@ -5,7 +5,7 @@ import { pythonApi } from "./pythonApiService"; // Python Backend
 import axios from "axios";
 import { isCancelledError } from './apiService'; // Import the utility
 
-const isRequestCancelled =   (error) => {
+const isRequestCancelled = (error) => {
   if (!error) return false;
   return (
     error.isCancelled === true ||
@@ -119,7 +119,7 @@ export const cellSiteApi = {
   uploadSite: async (formData, onUploadProgress = null) => {
     try {
 
-      
+
 
       const response = await pythonApi.post("/api/process-and-save", formData, {
         timeout: 300000, // 5 minutes
@@ -144,10 +144,10 @@ export const cellSiteApi = {
     }
   },
 
-  
+
   uploadSessions: async (payload) => {
     try {
-     
+
       const response = await pythonApi.post(
         "/api/cell-site/process-session",
         payload,
@@ -182,7 +182,7 @@ export const cellSiteApi = {
         config
       );
 
-      
+
       return response;
     } catch (error) {
       // Handle cancellation
@@ -340,7 +340,7 @@ export const predictionApi = {
         Project_id: params.Project_id,
         Session_ids: params.Session_ids,
         indoor_mode: params.indoor_mode || "heuristic",
-        grid: params.grid || 10.0, 
+        grid: params.grid || 10.0,
       };
 
       const response = await pythonApi.post("/api/prediction/run", payload, {
@@ -363,7 +363,7 @@ export const predictionApi = {
     }
   },
 
- 
+
   debugDatabase: async (projectId) => {
     try {
       const response = await pythonApi.get(
@@ -403,17 +403,17 @@ export const predictionApi = {
     }
   },
 
-  
+
   waitForSiteData: async (projectId, maxRetries = 5, delayMs = 2000) => {
-    
+
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      
+
       try {
         const result = await predictionApi.verifySiteData(projectId);
 
         if (result.hasData && result.count > 0) {
-          
+
           return {
             success: true,
             count: result.count,
@@ -458,8 +458,11 @@ export const predictionApi = {
 
 export const reportApi = {
   generateReport: (payload) => pythonApi.post("/api/report/generate", payload),
-  getReport: (reportId) => pythonApi.get(`/api/report/download/${reportId}`),
-}
+  downloadReport: (reportId) =>
+    pythonApi.get(`/api/report/download/${reportId}`, {
+      responseType: 'blob',
+    }),
+};
 
 export const authApi = {
   checkStatus: () => api.get("/api/auth/status"),
@@ -569,11 +572,12 @@ export const adminApi = {
 };
 
 export const mapViewApi = {
-  
+  addSitePrediction: (payload) => api.post("/api/Mapview/AddSitePrediction", payload),
+
   signup: (user) => api.post("/api/MapView/user_signup", user),
   startSession: (data) => api.post("/api/MapView/start_session", data),
   endSession: (data) => api.post("/api/MapView/end_session", data),
-  getDuration: ({sessionIds}) => api.get(`/api/MapView/session/provider-network-time/combined`,{ params: { sessionIds } }),
+  getDuration: ({ sessionIds }) => api.get(`/api/MapView/session/provider-network-time/combined`, { params: { sessionIds } }),
   getIOAnalysis: (params) =>
     api.get(`/api/MapView/GetIndoorOutdoorSessionAnalytics`, { params }),
 
@@ -583,8 +587,8 @@ export const mapViewApi = {
       params: { projectId },
     }),
 
-  
-    getProjectPolygonsV2: (projectId, source = "map") =>
+
+  getProjectPolygonsV2: (projectId, source = "map") =>
     api.get("/api/MapView/GetProjectPolygonsV2", {
       params: { projectId, source },
     }),
@@ -615,19 +619,19 @@ export const mapViewApi = {
       params: { polygonId, projectId },
     }),
 
-    // src/api/apiEndpoints.js
-getPciDistribution: async (sessionIds) => {
-  try {
-    const response = await api.get(`/api/MapView/GetPciDistribution`, {
-      params: { session_ids: sessionIds.join(',') }
-    });
-    // REMOVE .data here because api.get already returns the JSON body
-    return response; 
-  } catch (error) {
-    console.error("Error fetching PCI distribution:", error);
-    return null;
-  }
-},
+  // src/api/apiEndpoints.js
+  getPciDistribution: async (sessionIds) => {
+    try {
+      const response = await api.get(`/api/MapView/GetPciDistribution`, {
+        params: { session_ids: sessionIds.join(',') }
+      });
+      // REMOVE .data here because api.get already returns the JSON body
+      return response;
+    } catch (error) {
+      console.error("Error fetching PCI distribution:", error);
+      return null;
+    }
+  },
 
   // ==================== Project Management ====================
   getProjects: () => api.get("/api/MapView/GetProjects"),
@@ -658,8 +662,7 @@ getPciDistribution: async (sessionIds) => {
           const validationErrors = Object.entries(data.errors)
             .map(
               ([field, messages]) =>
-                `${field}: ${
-                  Array.isArray(messages) ? messages.join(", ") : messages
+                `${field}: ${Array.isArray(messages) ? messages.join(", ") : messages
                 }`
             )
             .join("; ");
@@ -671,7 +674,7 @@ getPciDistribution: async (sessionIds) => {
     }
   },
 
-  createProject:async (payload) => {
+  createProject: async (payload) => {
     try {
       const response = await api.post("/api/MapView/createProject", payload);
       return response;
@@ -694,69 +697,69 @@ getPciDistribution: async (sessionIds) => {
   },
 
   // ==================== Network Logs ====================
- // In apiEndpoints.js
-getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
-  const sid = Array.isArray(session_ids) ? session_ids.join(",") : session_ids;
-  
-  
-  const response = await api.get("/api/MapView/GetNetworkLog", {
-    params: { 
-      session_Ids: sid,
-      page: page,
-      limit: limit,
-    },
-    signal: signal,
-  });
-  
-  
-  
-  return response;
-},
-  
- // apiEndpoints.js
+  // In apiEndpoints.js
+  getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
+    const sid = Array.isArray(session_ids) ? session_ids.join(",") : session_ids;
 
-// apiEndpoints.js
-getSessionNeighbour: async ({ sessionIds, signal }) => {
-  try {
-    const idsParam = Array.isArray(sessionIds) ? sessionIds.join(",") : sessionIds;
-    
-    
-    const response = await api.get(
-      '/api/MapView/GetN78Neighbours', 
-      { 
-        params: {
-          session_Ids: idsParam
-        },
-        signal,
-        dedupe: false  
-      }
-    );
-    
-    
-    if (response?.data) {
-      return response.data;
-    }
-    
-    if (response?.Status !== undefined) {
-      return response;
-    }
-    
-    console.warn(" Unexpected response structure:", response);
+
+    const response = await api.get("/api/MapView/GetNetworkLog", {
+      params: {
+        session_Ids: sid,
+        page: page,
+        limit: limit,
+      },
+      signal: signal,
+    });
+
+
+
     return response;
-    
-  } catch (error) {
-    // ✅ Don't log cancelled requests as errors
-    if (isCancelledError(error) || isRequestCancelled(error)) {
-      // Silently re-throw - the calling hook will handle this
+  },
+
+  // apiEndpoints.js
+
+  // apiEndpoints.js
+  getSessionNeighbour: async ({ sessionIds, signal }) => {
+    try {
+      const idsParam = Array.isArray(sessionIds) ? sessionIds.join(",") : sessionIds;
+
+
+      const response = await api.get(
+        '/api/MapView/GetN78Neighbours',
+        {
+          params: {
+            session_Ids: idsParam
+          },
+          signal,
+          dedupe: false
+        }
+      );
+
+
+      if (response?.data) {
+        return response.data;
+      }
+
+      if (response?.Status !== undefined) {
+        return response;
+      }
+
+      console.warn(" Unexpected response structure:", response);
+      return response;
+
+    } catch (error) {
+      // ✅ Don't log cancelled requests as errors
+      if (isCancelledError(error) || isRequestCancelled(error)) {
+        // Silently re-throw - the calling hook will handle this
+        throw error;
+      }
+
+      console.error(" N78 API Error:", error);
       throw error;
     }
-    
-    console.error(" N78 API Error:", error);
-    throw error;
-  }
-},
+  },
 
-getDominanceDetails: (sessionIds) => {
+  getDominanceDetails: (sessionIds) => {
     const ids = Array.isArray(sessionIds) ? sessionIds.join(',') : sessionIds;
     return api.get(`/api/MapView/GetDominanceDetails`, {
       params: { session_ids: ids }
@@ -766,19 +769,19 @@ getDominanceDetails: (sessionIds) => {
 
   getDistanceSession: (session) =>
     api.get("/api/MapView/sessionsDistance", {
-       params:session 
+      params: session
     }),
 
   getLogsByDateRange: (filters) =>
-    api.get("/api/MapView/GetLogsByDateRange",  { withCredentials: true, params: filters }),
+    api.get("/api/MapView/GetLogsByDateRange", { withCredentials: true, params: filters }),
 
   logNetwork: (data) => api.post("/api/MapView/log_networkAsync", data),
 
   getLogsByneighbour: (params) => {
-  return api.get("/api/MapView/GetNeighbourLogsByDateRange", {
-    params: params
-  });
-},
+    return api.get("/api/MapView/GetNeighbourLogsByDateRange", {
+      params: params
+    });
+  },
   getproviderVolume: (params) =>
     api.get("/api/MapView/GetProviderWiseVolume", { params }),
   // ==================== Filter Options ====================
@@ -841,7 +844,7 @@ export const settingApi = {
   checkSession: async () => {
     try {
       const response = await api.get("/api/Setting/CheckSession");
-      return response; 
+      return response;
     } catch (error) {
       console.error("CheckSession error:", error);
       throw error;
@@ -860,7 +863,7 @@ export const settingApi = {
 
   saveThreshold: async (payload) => {
     try {
-      
+
       const response = await api.post("/api/Setting/SaveThreshold", payload);
       return response;
     } catch (error) {
@@ -954,7 +957,7 @@ export const companyApi = {
   revokeLicense: (id) => api.post(`/api/company/revokeLicesnse/${id}`),
 
   licensesDetails: () => api.get("/api/company/usedLicenses",
-    { credentials:true }
+    { credentials: true }
   ),
 };
 

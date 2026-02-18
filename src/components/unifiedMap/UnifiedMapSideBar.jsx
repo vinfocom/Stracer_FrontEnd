@@ -19,6 +19,7 @@ import {
   Grid3X3,
   Thermometer,
   ArrowLeftRight,
+  PlusCircle,
   Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -359,6 +360,7 @@ const UnifiedMapSidebar = ({
   setGridSizeMeters,
   coverageViolationThreshold,
   setCoverageViolationThreshold,
+  onAddSiteClick,
 }) => {
   const sideClasses = useMemo(() => {
     const base =
@@ -616,6 +618,17 @@ const UnifiedMapSidebar = ({
                       {value: "technology", label: "Tech"},
                     ]}
                    />
+                </div>
+
+                {/* Add Site Button */}
+                <div className="mt-3 pt-3 border-t border-slate-700/50">
+                  <button
+                    onClick={() => onAddSiteClick?.()}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-lg hover:shadow-blue-500/25 transition-all duration-200"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    Add Site
+                  </button>
                 </div>
               </>
             )}
