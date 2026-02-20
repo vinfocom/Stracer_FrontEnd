@@ -47,13 +47,46 @@ import { LoadingSpinner } from "./common/LoadingSpinner";
 import { calculateStats, calculateIOSummary } from "@/utils/analyticsHelpers";
 import { exportAnalytics } from "@/utils/exportService";
 import { TABS } from "@/utils/constants";
-import { homeApi, reportApi } from "@/api/apiEndpoints";
+import { adminApi, homeApi, reportApi } from "@/api/apiEndpoints";
 import { useAuth } from "@/hooks/useAuth";
 
 const DEFAULT_DATA_FILTERS = {
   providers: [],
   bands: [],
   technologies: [],
+};
+
+const normalizeValue = (value) => String(value ?? "").trim().toLowerCase();
+
+const applyDataFiltersToLocations = (locations = [], filters = DEFAULT_DATA_FILTERS) => {
+  if (!Array.isArray(locations) || locations.length === 0) return [];
+
+  const providers = new Set((filters.providers || []).map(normalizeValue).filter(Boolean));
+  const bands = new Set((filters.bands || []).map(normalizeValue).filter(Boolean));
+  const technologies = new Set((filters.technologies || []).map(normalizeValue).filter(Boolean));
+
+  const hasProviderFilter = providers.size > 0;
+  const hasBandFilter = bands.size > 0;
+  const hasTechFilter = technologies.size > 0;
+
+  return locations.filter((loc) => {
+    if (hasProviderFilter) {
+      const provider = normalizeValue(loc.provider || loc.operator);
+      if (!providers.has(provider)) return false;
+    }
+
+    if (hasBandFilter) {
+      const band = normalizeValue(loc.band || loc.primaryBand);
+      if (!bands.has(band)) return false;
+    }
+
+    if (hasTechFilter) {
+      const technology = normalizeValue(loc.technology || loc.networkType);
+      if (!technologies.has(technology)) return false;
+    }
+
+    return true;
+  });
 };
 
 const convertToCSV = (data, headers) => {
@@ -751,48 +784,15 @@ export default function UnifiedDetailLogs({
     return tabs;
   }, [techHandOver, showN78Neighbors, n78NeighborData]);
 
-  const fetchFilteredData = useCallback(async (filters) => {
-    if (!projectId && !sessionIds?.length) return locations;
-    try {
-      setIsFilterLoading(true);
-      const payload = {
-        project_id: projectId,
-        session_ids: sessionIds,
-        filters: {
-          providers: filters.providers || [],
-          bands: filters.bands || [],
-          technologies: filters.technologies || [],
-        },
-      };
-      const response = await adminApi.getFilteredLocations(payload);
-      const filteredData = response?.Data || response?.data || [];
-      
-      if (filteredData.length > 0) {
-        toast.success(`Analytics updated: ${filteredData.length} locations`);
-      }
-
-      return filteredData;
-    } catch (error) {
-      toast.error("Failed to apply filters to analytics");
-      return locations;
-    } finally {
-      setIsFilterLoading(false);
-    }
-  }, [projectId, sessionIds, locations]);
-
   useEffect(() => {
-    const applyFilters = async () => {
-      if (hasActiveFilters) {
-        const filtered = await fetchFilteredData(dataFilters);
-        setFilteredLocations(filtered);
-        onFilteredDataChange?.(filtered);
-      } else {
-        setFilteredLocations(locations);
-        onFilteredDataChange?.(locations);
-      }
-    };
-    applyFilters();
-  }, [dataFilters, hasActiveFilters]);
+    setIsFilterLoading(true);
+    const filtered = hasActiveFilters
+      ? applyDataFiltersToLocations(locations, dataFilters)
+      : locations;
+    setFilteredLocations(filtered);
+    onFilteredDataChange?.(filtered);
+    setIsFilterLoading(false);
+  }, [locations, dataFilters, hasActiveFilters, onFilteredDataChange]);
 
   const fetchDuration = async () => {
     if (!sessionIds?.length) return null;

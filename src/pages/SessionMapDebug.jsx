@@ -468,7 +468,7 @@ function SessionMapDebug() {
     }
 
     const wktString = geometryToWktPolygon(analysis.geometry);
-    console.log("💾 SAVING POLYGON:", {
+    console.log(" SAVING POLYGON:", {
       name: polygonName,
       wkt: wktString,
       geometry: analysis.geometry,
@@ -523,6 +523,12 @@ function SessionMapDebug() {
           return `${k}: ${v}`;
         })
         .join("; ") || "None";
+    const polygonWkt = geometryToWktPolygon(analysis?.geometry) || "N/A";
+    const escapeCsv = (value) => {
+      if (value == null) return "";
+      const str = String(value);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
 
     const csvRows = [
       ["Metric", "Value"],
@@ -530,6 +536,7 @@ function SessionMapDebug() {
       ["Total Points (Filtered)", filteredLogs.length],
       ["Total Points (Original)", logs.length],
       ["Active Filters", activeFiltersStr],
+      ["Polygon WKT", polygonWkt],
       [
         `${filters.metric || "RSRP"} Mean`,
         values.length > 0
@@ -551,9 +558,10 @@ function SessionMapDebug() {
       ["Generated At", new Date().toISOString()],
     ];
 
-    const blob = new Blob([csvRows.map((r) => r.join(",")).join("\n")], {
-      type: "text/csv",
-    });
+    const blob = new Blob(
+      [csvRows.map((r) => r.map(escapeCsv).join(",")).join("\n")],
+      { type: "text/csv" },
+    );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -563,7 +571,7 @@ function SessionMapDebug() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Stats CSV downloaded!");
-  }, [filteredLogs, logs.length, sessionIds, filters]);
+  }, [filteredLogs, logs.length, sessionIds, filters, analysis]);
 
   // Raw logs CSV download
   const handleRawDownload = useCallback(() => {
