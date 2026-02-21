@@ -60,25 +60,35 @@ export default function UnifiedHeader({
       toast.warn("Please select a file first.");
       return;
     }
+    if (!effectiveProjectId) {
+      toast.error("ProjectId is missing. Open a project first, then upload.");
+      return;
+    }
 
     const formData = new FormData();
+    // Send both keys for compatibility with older/newer backend binders.
+    formData.append("File", selectedFile);
     formData.append("UploadFile", selectedFile);
-    
-    if (effectiveProjectId) {
-      formData.append("ProjectId", String(effectiveProjectId));
-    }
+    formData.append("ProjectId", String(effectiveProjectId));
 
     setIsUploading(true);
     try {
       const resp = await mapViewApi.uploadSitePredictionCsv(formData); 
-      if (resp.Status === 1) {
+      if (resp?.Status === 1 || resp?.status === 1) {
         toast.success("File uploaded successfully!");
         setSelectedFile(null);
       } else {
-        toast.error(resp.Message || "Upload failed");
+        toast.error(resp?.Message || resp?.message || "Upload failed");
       }
     } catch (error) {
-      toast.error(error?.response?.data?.Message || "Upload request failed.");
+      const errorMsg =
+        error?.data?.Message ||
+        error?.data?.message ||
+        error?.response?.data?.Message ||
+        error?.response?.data?.message ||
+        error?.message ||
+        "Upload request failed.";
+      toast.error(errorMsg);
     } finally {
       setIsUploading(false);
     }
