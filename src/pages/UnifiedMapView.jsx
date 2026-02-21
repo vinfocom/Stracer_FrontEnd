@@ -26,7 +26,9 @@ import MapLegend from "@/components/map/MapLegend";
 import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 import LoadingProgress from "@/components/LoadingProgress";
-import TechHandoverMarkers from "@/components/unifiedMap/TechHandoverMarkers"; // Ensure this is imported
+import TechHandoverMarkers from "@/components/unifiedMap/TechHandoverMarkers";
+import AddSiteFormDialog from "@/components/unifiedMap/AddSiteFormDialog";
+import { normalizeBandName } from "@/utils/colorUtils";
 
 // Hooks
 import { useSiteData } from "@/hooks/useSiteData";
@@ -637,6 +639,12 @@ const UnifiedMapView = () => {
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
 
+  // --- Add Site Mode ---
+  const [addSiteMode, setAddSiteMode] = useState(false);
+  const [pickedLatLng, setPickedLatLng] = useState(null);
+  const [showAddSiteDialog, setShowAddSiteDialog] = useState(false);
+  const addSiteModeRef = useRef(false);
+
   // --- Handling Passed State from MultiView ---
   const passedState = location.state;
   const passedLocations = passedState?.locations;
@@ -948,21 +956,34 @@ const UnifiedMapView = () => {
 
     (locations || []).forEach((loc) => {
       if (loc.provider) providers.add(loc.provider);
-      if (loc.band) bands.add(String(loc.band));
+      if (loc.band) {
+        const norm = normalizeBandName(loc.band);
+        if (norm && norm !== "Unknown") bands.add(norm);
+      }
       if (loc.technology) technologies.add(normalizeTechName(loc.technology));
     });
 
     (sessionNeighborData || []).forEach((n) => {
       if (n.provider) providers.add(n.provider);
-      if (n.primaryBand) bands.add(String(n.primaryBand));
-      if (n.neighbourBand) bands.add(String(n.neighbourBand));
+      if (n.primaryBand) {
+        const norm = normalizeBandName(n.primaryBand);
+        if (norm && norm !== "Unknown") bands.add(norm);
+      }
+      if (n.neighbourBand) {
+        const norm = normalizeBandName(n.neighbourBand);
+        if (norm && norm !== "Unknown") bands.add(norm);
+      }
       if (n.networkType)
         technologies.add(normalizeTechName(n.networkType, n.neighbourBand));
     });
 
     return {
       providers: [...providers].sort(),
-      bands: [...bands].sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
+      bands: [...bands].sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.replace(/\D/g, '')) || 0;
+        return numA - numB;
+      }),
       technologies: [...technologies].sort(),
     };
   }, [locations, sessionNeighborData]);
@@ -1386,6 +1407,18 @@ const UnifiedMapView = () => {
       };
       map.addListener("idle", updateViewport);
       updateViewport();
+
+      // Add site click listener
+      map.addListener("click", (e) => {
+        if (addSiteModeRef.current) {
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          setPickedLatLng({ lat, lng });
+          setAddSiteMode(false);
+          addSiteModeRef.current = false;
+          setShowAddSiteDialog(true);
+        }
+      });
     },
     [debouncedSetViewport],
   );
@@ -1549,6 +1582,65 @@ const handleMarkerHover = useCallback((hoverInfo) => {
   setHoveredCellId(normalizedPci);
 }, []);
 
+const uniqueBands = useMemo(() => {
+  if (!siteData || !siteData.length) return [];
+  const paramSet = new Set();
+  siteData.forEach((s) => {
+    const bandVal = s.Band || s.band;
+    if (bandVal) {
+      const normalized = normalizeBandName(bandVal);
+      if (normalized && normalized !== "Unknown") {
+        paramSet.add(normalized);
+      }
+    }
+  });
+  return Array.from(paramSet).sort();
+}, [siteData]);
+
+const uniquePcis = useMemo(() => {
+  if (!siteData || !siteData.length) return [];
+  const paramSet = new Set();
+  siteData.forEach((s) => {
+    // Check various casing for PCI
+    const val = s.Pci !== undefined ? s.Pci : (s.pci !== undefined ? s.pci : s.PCI);
+    if (val !== undefined && val !== null && val !== "") {
+      const num = Number(val);
+      if (!isNaN(num)) paramSet.add(num);
+    }
+  });
+  return Array.from(paramSet).sort((a, b) => a - b);
+}, [siteData]);
+
+  const uniquePcisFromLogs = useMemo(() => {
+    const pciSet = new Set();
+    const processItem = (item) => {
+      const pci = item.pci ?? item.PCI ?? item.cell_id ?? item.physical_cell_id;
+      if (pci !== undefined && pci !== null && pci !== "") {
+        const num = Number(pci);
+        if (!isNaN(num)) pciSet.add(num);
+      }
+    };
+    (locations || []).forEach(processItem);
+    (sessionNeighborData || []).forEach(processItem);
+    return pciSet;
+  }, [locations, sessionNeighborData]);
+
+  const combinedBands = useMemo(() => {
+    // Merge bands from logs (availableFilterOptions) and sites (uniqueBands)
+    const set = new Set([...(availableFilterOptions?.bands || []), ...uniqueBands]);
+    return Array.from(set).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
+  }, [availableFilterOptions, uniqueBands]);
+
+  const combinedPcis = useMemo(() => {
+    // Merge PCIs from logs and sites
+    const set = new Set([...uniquePcisFromLogs, ...uniquePcis]);
+    return Array.from(set).sort((a, b) => a - b);
+  }, [uniquePcisFromLogs, uniquePcis]);
+
   if (!isLoaded)
     return (
       <div className="flex items-center justify-center h-screen">
@@ -1704,6 +1796,11 @@ const handleMarkerHover = useCallback((hoverInfo) => {
         bestNetworkStats={bestNetworkStats}
         coverageViolationThreshold={coverageViolationThreshold}
         setCoverageViolationThreshold={setCoverageViolationThreshold}
+        onAddSiteClick={() => {
+          setAddSiteMode(true);
+          addSiteModeRef.current = true;
+          toast.info("Click on the map to pick a location for the new site", { autoClose: 4000 });
+        }}
       />
 
       <div className="flex-grow relative overflow-hidden">
@@ -1919,6 +2016,30 @@ const handleMarkerHover = useCallback((hoverInfo) => {
           selectedCategory={colorBy}
         />
       )}
+
+      {/* Add Site Cursor Indicator */}
+      {addSiteMode && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[2000] bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
+          📍 Click on the map to select a location
+          <button
+            onClick={() => { setAddSiteMode(false); addSiteModeRef.current = false; }}
+            className="ml-2 bg-white/20 hover:bg-white/30 rounded-full px-2 py-0.5 text-xs"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Add Site Dialog */}
+      <AddSiteFormDialog
+        open={showAddSiteDialog}
+        onOpenChange={setShowAddSiteDialog}
+        projectId={projectId}
+        pickedLatLng={pickedLatLng}
+        onSuccess={refetchSites}
+        availableBands={combinedBands}
+        availablePcis={combinedPcis}
+      />
     </div>
   );
 };

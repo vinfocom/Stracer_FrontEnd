@@ -29,7 +29,7 @@ import {
   Check,
   GripHorizontal
 } from "lucide-react";
-import toast from "react-hot-toast";
+import { toast } from "react-toastify";
 import { Rnd } from "react-rnd";
 
 import { OverviewTab } from "./tabs/OverviewTab";
@@ -47,12 +47,46 @@ import { LoadingSpinner } from "./common/LoadingSpinner";
 import { calculateStats, calculateIOSummary } from "@/utils/analyticsHelpers";
 import { exportAnalytics } from "@/utils/exportService";
 import { TABS } from "@/utils/constants";
-import { adminApi } from "@/api/apiEndpoints";
+import { adminApi, homeApi, reportApi } from "@/api/apiEndpoints";
+import { useAuth } from "@/hooks/useAuth";
 
 const DEFAULT_DATA_FILTERS = {
   providers: [],
   bands: [],
   technologies: [],
+};
+
+const normalizeValue = (value) => String(value ?? "").trim().toLowerCase();
+
+const applyDataFiltersToLocations = (locations = [], filters = DEFAULT_DATA_FILTERS) => {
+  if (!Array.isArray(locations) || locations.length === 0) return [];
+
+  const providers = new Set((filters.providers || []).map(normalizeValue).filter(Boolean));
+  const bands = new Set((filters.bands || []).map(normalizeValue).filter(Boolean));
+  const technologies = new Set((filters.technologies || []).map(normalizeValue).filter(Boolean));
+
+  const hasProviderFilter = providers.size > 0;
+  const hasBandFilter = bands.size > 0;
+  const hasTechFilter = technologies.size > 0;
+
+  return locations.filter((loc) => {
+    if (hasProviderFilter) {
+      const provider = normalizeValue(loc.provider || loc.operator);
+      if (!providers.has(provider)) return false;
+    }
+
+    if (hasBandFilter) {
+      const band = normalizeValue(loc.band || loc.primaryBand);
+      if (!bands.has(band)) return false;
+    }
+
+    if (hasTechFilter) {
+      const technology = normalizeValue(loc.technology || loc.networkType);
+      if (!technologies.has(technology)) return false;
+    }
+
+    return true;
+  });
 };
 
 const convertToCSV = (data, headers) => {
@@ -598,6 +632,7 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
                 </button>
               );
             })}
+
           </div>
 
           <div className="p-2 border-t border-slate-700 bg-slate-900/50">
@@ -696,6 +731,10 @@ export default function UnifiedDetailLogs({
   const [filteredLocations, setFilteredLocations] = useState(locations);
   const [isFilterLoading, setIsFilterLoading] = useState(false);
   const [durationData, setDurationData] = useState(durationTime);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  const { user } = useAuth();
+
   
   const rndRef = useRef(null);
   const contentRef = useRef(null);
@@ -745,48 +784,15 @@ export default function UnifiedDetailLogs({
     return tabs;
   }, [techHandOver, showN78Neighbors, n78NeighborData]);
 
-  const fetchFilteredData = useCallback(async (filters) => {
-    if (!projectId && !sessionIds?.length) return locations;
-    try {
-      setIsFilterLoading(true);
-      const payload = {
-        project_id: projectId,
-        session_ids: sessionIds,
-        filters: {
-          providers: filters.providers || [],
-          bands: filters.bands || [],
-          technologies: filters.technologies || [],
-        },
-      };
-      const response = await adminApi.getFilteredLocations(payload);
-      const filteredData = response?.Data || response?.data || [];
-      
-      if (filteredData.length > 0) {
-        toast.success(`Analytics updated: ${filteredData.length} locations`);
-      }
-
-      return filteredData;
-    } catch (error) {
-      toast.error("Failed to apply filters to analytics");
-      return locations;
-    } finally {
-      setIsFilterLoading(false);
-    }
-  }, [projectId, sessionIds, locations]);
-
   useEffect(() => {
-    const applyFilters = async () => {
-      if (hasActiveFilters) {
-        const filtered = await fetchFilteredData(dataFilters);
-        setFilteredLocations(filtered);
-        onFilteredDataChange?.(filtered);
-      } else {
-        setFilteredLocations(locations);
-        onFilteredDataChange?.(locations);
-      }
-    };
-    applyFilters();
-  }, [dataFilters, hasActiveFilters]);
+    setIsFilterLoading(true);
+    const filtered = hasActiveFilters
+      ? applyDataFiltersToLocations(locations, dataFilters)
+      : locations;
+    setFilteredLocations(filtered);
+    onFilteredDataChange?.(filtered);
+    setIsFilterLoading(false);
+  }, [locations, dataFilters, hasActiveFilters, onFilteredDataChange]);
 
   const fetchDuration = async () => {
     if (!sessionIds?.length) return null;
@@ -832,6 +838,112 @@ export default function UnifiedDetailLogs({
       });
     }
     setExpanded(!expanded);
+  };
+
+  const handleGenerateReport = async () => {
+    console.log("Generate Report clicked - projectId:", projectId, "userId:", user?.id, "user object:", user);
+    
+    if (!projectId || !user?.id) {
+      toast.error(`Missing ${!projectId ? 'Project ID' : 'User ID'}. Please ensure you are logged in and have a project selected.`);
+      return;
+    }
+
+    setIsGeneratingReport(true);
+    toast.info("Report generation started", { autoClose: 2000 });
+    
+    const toastId = toast.loading("Processing report request...");
+
+    try {
+      const genResponse = await reportApi.generateReport({
+        project_id: projectId,
+        user_id: user.id
+      });
+
+      // pythonApi returns response.data directly, so genResponse IS the JSON body
+      const reportId = genResponse?.report_id;
+
+      if (reportId) {
+        toast.update(toastId, { render: "Report generating... this may take a moment", type: "info", isLoading: true });
+
+        // 2. Poll for completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const checkResponse = await reportApi.downloadReport(reportId);
+            
+            if (checkResponse) {
+              clearInterval(pollInterval);
+              
+              const url = window.URL.createObjectURL(new Blob([checkResponse]));
+              const link = document.createElement('a');
+              link.href = url;
+              link.setAttribute('download', `Report_${projectId}_${new Date().toISOString().split('T')[0]}.pdf`);
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              window.URL.revokeObjectURL(url);
+
+              toast.update(toastId, { 
+                render: "Report downloaded successfully!", 
+                type: "success", 
+                isLoading: false, 
+                autoClose: 3000,
+                closeButton: true
+              });
+              setIsGeneratingReport(false);
+            }
+          } catch (error) {
+             if (error.response && error.response.status === 404) {
+             console.log("Report not found",error)
+             } else {
+               clearInterval(pollInterval);
+               console.error("Polling error:", error);
+               toast.update(toastId, { 
+                 render: "Error downloading report", 
+                 type: "error", 
+                 isLoading: false,
+                 autoClose: 5000 
+               });
+               setIsGeneratingReport(false);
+             }
+          }
+        }, 3000); 
+
+        // Safety timeout
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          if (isGeneratingReport) {
+             setIsGeneratingReport(false);
+             toast.update(toastId, { 
+               render: "Report generation timed out", 
+               type: "error", 
+               isLoading: false,
+               autoClose: 5000 
+             });
+          }
+        }, 120000);
+
+      } else {
+         console.error("Unexpected API response:", genResponse);
+         toast.update(toastId, { 
+           render: "Failed to start generation - no report ID returned", 
+           type: "error", 
+           isLoading: false,
+           autoClose: 5000 
+         });
+         setIsGeneratingReport(false);
+      }
+
+    } catch (error) {
+      console.error("Report generation error:", error);
+      toast.update(toastId, { 
+        render: error.message || error
+        , 
+        type: "error", 
+        isLoading: false,
+        autoClose: 5000 
+      });
+      setIsGeneratingReport(false);
+    }
   };
 
   if (collapsed) {
@@ -887,6 +999,31 @@ export default function UnifiedDetailLogs({
         </div>
 
         <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            onClick={handleGenerateReport}
+            disabled={isGeneratingReport || !locations?.length}
+            className={`
+              flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-sm
+              transition-all duration-200 
+              ${!isGeneratingReport && locations?.length
+                ? "bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-lg hover:shadow-blue-500/25"
+                : "bg-slate-700 text-slate-400 cursor-not-allowed"
+              }
+            `}
+          >
+            {isGeneratingReport ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4" />
+                <span className="hidden sm:inline">Generate PDF</span>
+              </>
+            )}
+          </button>
+
           <ExportDropdown
             locations={filteredLocations}
             stats={stats}

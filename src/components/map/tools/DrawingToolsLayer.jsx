@@ -386,13 +386,12 @@ function DrawingToolsLayerComponent({
     };
   }, [map, enabled, reAnalyzeShape]);
 
-  // ✅ NEW EFFECT: Listen for prop changes to switch modes programmatically
+  // Keep DrawingManager mode in sync when tool or enabled state changes.
   useEffect(() => {
     if (managerRef.current) {
-      // If shapeMode is 'polygon', set map to polygon mode. If null, set to null (cursor).
-      managerRef.current.setDrawingMode(shapeMode);
+      managerRef.current.setDrawingMode(enabled ? shapeMode : null);
     }
-  }, [shapeMode]);
+  }, [enabled, shapeMode]);
 
   // (Clear signal effect remains the same...)
   useEffect(() => {
