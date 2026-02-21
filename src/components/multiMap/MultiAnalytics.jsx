@@ -136,20 +136,7 @@ const MultiAnalytics = ({ locations = [], sessionIds = [], projectId }) => {
             icon={Database} 
             color="#3B82F6" 
           />
-          {/* <StatCard 
-            title="Total Duration" 
-            value={duration} 
-            icon={Clock} 
-            color="#10B981" 
-            loading={loadingAsync}
-          />
-          <StatCard 
-            title="Total Sites" 
-            value={siteCount} 
-            icon={Server} 
-            color="#8B5CF6" 
-            loading={loadingAsync}
-          /> */}
+          
           <StatCard 
             title="Total Distance" 
             value={distance} 

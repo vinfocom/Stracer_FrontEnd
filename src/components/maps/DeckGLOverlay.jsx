@@ -92,38 +92,41 @@ const DeckGLOverlay = ({
 }) => {
   const overlayRef = useRef(null);
   const isCleanedUpRef = useRef(false);
+  const isValidMapInstance = useCallback((m) => {
+    if (!m || !window.google?.maps) return false;
+    if (typeof m.getDiv !== 'function') return false;
+    return Boolean(m.getDiv());
+  }, []);
 
   useEffect(() => {
-    // 1. Initial validation
-    if (!map || !window.google) return;
+    if (!isValidMapInstance(map)) return;
 
     isCleanedUpRef.current = false;
 
-    // 2. Singleton initialization pattern
     if (!overlayRef.current) {
       overlayRef.current = new GoogleMapsOverlay({ 
         interleaved: true,
         glOptions: { preserveDrawingBuffer: true } 
       });
-      overlayRef.current.setMap(map);
     }
 
-    // 3. Attach to map safely
-    // try {
-    //   overlayRef.current.setMap(map);
-    // } catch (err) {
-    //   console.warn("Could not attach DeckGL to map instance:", err);
-    // }
+    try {
+      overlayRef.current.setMap(map);
+    } catch (err) {
+      console.warn("Could not attach DeckGL to map instance:", err);
+    }
 
-    // 4. Cleanup function
-   return () => {
+    return () => {
       if (overlayRef.current) {
-        overlayRef.current.setMap(null);
-        overlayRef.current.finalize(); 
-        overlayRef.current = null;
+        try {
+          overlayRef.current.setProps({ layers: [] });
+          overlayRef.current.setMap(null);
+        } catch (e) {
+          // ignore detach errors during fast remount/unmount
+        }
       }
     };
-  }, [map]);
+  }, [map, isValidMapInstance]);
 
   const handlePrimaryClick = useCallback((info) => {
     if (info.object && onClick) onClick(info.index, info.object);
@@ -162,7 +165,7 @@ const DeckGLOverlay = ({
   }, [neighbors, showNeighbors, neighborSquareSize, getNeighborColor]);
 
   useEffect(() => {
-    if (!overlayRef.current || !map) return;
+    if (!overlayRef.current || !isValidMapInstance(map)) return;
 
     const layers = [];
 
@@ -223,7 +226,22 @@ const DeckGLOverlay = ({
     }
 
     overlayRef.current.setProps({ layers });
-  }, [map, primaryData, neighborData, showPrimaryLogs, showNeighbors, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor]);
+  }, [map, primaryData, neighborData, showPrimaryLogs, showNeighbors, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor, isValidMapInstance]);
+
+  useEffect(() => {
+    return () => {
+      if (!overlayRef.current || isCleanedUpRef.current) return;
+      try {
+        overlayRef.current.setProps({ layers: [] });
+        overlayRef.current.setMap(null);
+        overlayRef.current.finalize();
+      } catch (e) {
+        // ignore cleanup errors
+      }
+      overlayRef.current = null;
+      isCleanedUpRef.current = true;
+    };
+  }, []);
 
   return null;
 };

@@ -154,6 +154,11 @@ const N78DeckGLOverlay = React.memo(({
 }) => {
   const overlayRef = useRef(null);
   const isCleanedUpRef = useRef(false);
+  const isValidMapInstance = useCallback((m) => {
+    if (!m || !window.google?.maps) return false;
+    if (typeof m.getDiv !== 'function') return false;
+    return Boolean(m.getDiv());
+  }, []);
 
   // Get the correct threshold key
   const getThresholdKey = useCallback((metric) => {
@@ -270,7 +275,7 @@ const N78DeckGLOverlay = React.memo(({
 
   // Create and manage overlay
   useEffect(() => {
-    if (!map || !window.google) {
+    if (!isValidMapInstance(map)) {
       return;
     }
 
@@ -333,7 +338,7 @@ const N78DeckGLOverlay = React.memo(({
     return () => {
       // Cleanup handled in unmount effect
     };
-  }, [map, processedData, getColor, getLineColor, handleClick, selectedMetric, currentThresholds, opacity, visible, colorBy]);
+  }, [map, processedData, getColor, getLineColor, handleClick, selectedMetric, currentThresholds, opacity, visible, colorBy, isValidMapInstance]);
 
   // Cleanup on unmount
   useEffect(() => {

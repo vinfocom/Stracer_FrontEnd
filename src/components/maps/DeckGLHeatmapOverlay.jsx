@@ -13,6 +13,11 @@ const DeckGLHeatmapOverlay = ({
   threshold = 0.05,
 }) => {
   const overlayRef = useRef(null);
+  const isValidMapInstance = (m) => {
+    if (!m || !window.google?.maps) return false;
+    if (typeof m.getDiv !== 'function') return false;
+    return Boolean(m.getDiv());
+  };
 
   // Default color range (blue -> green -> yellow -> red)
   const defaultColorRange = [
@@ -31,7 +36,7 @@ const DeckGLHeatmapOverlay = ({
   ];
 
   useEffect(() => {
-    if (!map) return;
+    if (!isValidMapInstance(map)) return;
 
     const overlay = new GoogleMapsOverlay({ interleaved: true });
     overlay.setMap(map);

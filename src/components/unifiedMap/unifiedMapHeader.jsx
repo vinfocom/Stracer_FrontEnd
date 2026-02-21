@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Filter, ChartBar, ChevronDown, ChevronUp, Plus, UploadCloud } from "lucide-react";
 import { useLocation, Link, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
+import { toast } from "react-toastify";
+import Spinner from "@/components/common/Spinner";
 import ProjectsDropdown from "../project/ProjectsDropdown";
 import DrawingControlsPanel from "../map/layout/DrawingControlsPanel";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -62,8 +64,8 @@ export default function UnifiedHeader({
     const formData = new FormData();
     formData.append("UploadFile", selectedFile);
     
-    if (projectId) {
-      formData.append("ProjectId", projectId);
+    if (effectiveProjectId) {
+      formData.append("ProjectId", String(effectiveProjectId));
     }
 
     setIsUploading(true);
@@ -76,7 +78,7 @@ export default function UnifiedHeader({
         toast.error(resp.Message || "Upload failed");
       }
     } catch (error) {
-      toast.error("Upload request failed.");
+      toast.error(error?.response?.data?.Message || "Upload request failed.");
     } finally {
       setIsUploading(false);
     }
@@ -227,13 +229,13 @@ export default function UnifiedHeader({
                 <label className="w-full flex flex-col items-center px-4 py-6 bg-gray-700 rounded-lg border-2 border-dashed border-gray-500 cursor-pointer hover:border-blue-500 transition-colors">
                   <UploadCloud className="h-10 w-10 text-gray-400 mb-2" />
                   <span className="text-sm">
-                    {selectedFile ? selectedFile.name : "Select .csv or .zip file"}
+                    {selectedFile ? selectedFile.name : "Select .csv file"}
                   </span>
                   <input 
                     type="file" 
                     className="hidden" 
                     onChange={handleFileChange}
-                    accept=".csv,.zip"
+                    accept=".csv"
                   />
                 </label>
                 
