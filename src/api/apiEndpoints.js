@@ -573,6 +573,7 @@ export const adminApi = {
 
 export const mapViewApi = {
   addSitePrediction: (payload) => api.post("/api/Mapview/AddSitePrediction", payload),
+  getLtePfrection: (params) => api.get("/api/MapView/GetLtePredictionLocationStats", { params }),
 
   signup: (user) => api.post("/api/MapView/user_signup", user),
   startSession: (data) => api.post("/api/MapView/start_session", data),

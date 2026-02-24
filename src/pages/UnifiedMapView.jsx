@@ -623,6 +623,12 @@ const UnifiedMapView = () => {
   const [manualSiteData, setManualSiteData] = useState([]);
   const [manualSiteLoading, setManualSiteLoading] = useState(false);
 
+  useEffect(() => {
+    if (!enableSiteToggle) {
+      setManualSiteData([]);
+    }
+  }, [enableSiteToggle]);
+
   // ... (All existing useEffects and handlers remain exactly the same) ...
   const handleSitesLoaded = useCallback((data, isLoading) => {
     setManualSiteData(data);
@@ -691,7 +697,6 @@ const UnifiedMapView = () => {
     [showPolygons, polygons, areaEnabled, areaData],
   );
 
-  // ✅ 1. Use Network Samples Hook
   const shouldFetchSamples =
     !passedLocations && enableDataToggle && dataToggle === "sample";
 
@@ -761,10 +766,11 @@ const UnifiedMapView = () => {
     projectId,
     sessionIds,
     autoFetch: true,
+    filterEnabled: onlyInsidePolygons,
+    polygons: rawFilteringPolygons,
   });
 
   const siteData = rawSiteData || [];
-
   const {
     allNeighbors: rawAllNeighbors,
     stats: neighborStats,
@@ -1353,6 +1359,7 @@ const UnifiedMapView = () => {
 
   const showDataCircles =
     enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
+  const shouldRenderSiteLayer = Boolean(showSiteMarkers || showSiteSectors);
   const shouldShowLegend = useMemo(() => {
     return (
       enableDataToggle ||
@@ -1554,8 +1561,7 @@ const UnifiedMapView = () => {
     });
   };
 
-  // inside UnifiedMapView component
-// In src/pages/UnifiedMapView.jsx
+
 
 const handleMarkerHover = useCallback((hoverInfo) => {
   // 1. Unpack the deck.gl event object to get the actual log data
@@ -1965,12 +1971,19 @@ const uniquePcis = useMemo(() => {
                   />
                 ))}
 
-              {enableSiteToggle && showSiteSectors && (
+              {shouldRenderSiteLayer && (
                 <NetworkPlannerMap
+                  key={`site-layer-${projectId || "none"}-${siteToggle}`}
                   projectId={projectId}
                   sessionIds={sessionIds}
                   siteToggle={siteToggle}
                   enableSiteToggle={enableSiteToggle}
+                  showSiteMarkers={showSiteMarkers}
+                  showSiteSectors={showSiteSectors}
+                  map={mapRef.current}
+                  selectedMetric={selectedMetric}
+                  onlyInsidePolygons={onlyInsidePolygons}
+                  filterPolygons={rawFilteringPolygons}
                   hoveredCellId={hoveredCellId}
                   hoveredLog={hoveredLog}
                   locations={finalDisplayLocations}
@@ -1988,19 +2001,19 @@ const uniquePcis = useMemo(() => {
               {/* Handover Layers - New Implementation */}
               <TechHandoverMarkers
                 transitions={technologyTransitions}
-                show={techHandOver}
+                show={enableSiteToggle && techHandOver}
                 type="technology"
               />
 
               <TechHandoverMarkers
                 transitions={bandTransitions}
-                show={bandHandover}
+                show={enableSiteToggle && bandHandover}
                 type="band"
               />
 
               <TechHandoverMarkers
                 transitions={pciTransitions}
-                show={pciHandover}
+                show={enableSiteToggle && pciHandover}
                 type="pci"
               />
             </MapWithMultipleCircles>

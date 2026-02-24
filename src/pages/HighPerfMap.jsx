@@ -598,17 +598,32 @@ export default function HighPerfMap() {
   const handleUIChange = (partial) => setUi((prev) => ({ ...prev, ...partial }));
 
   const handleSessionMarkerClick = async (session) => {
+    const clickedSessionId =
+      session?.id ??
+      session?.session_id ??
+      session?.SessionId ??
+      session?.sessionId ??
+      null;
+
+    if (!clickedSessionId) {
+      toast.error("Invalid session payload. Missing session id.");
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const response = await mapViewApi.getNetworkLog({session_ids: sessionIds,
-            page: currentPage,
-            limit: PAGE_SIZE,
-            signal: abortControllerRef.current.signal,});
+      const response = await mapViewApi.getNetworkLog({
+        session_ids: String(clickedSessionId),
+        page: 1,
+        limit: 10000,
+      });
       const logs = extractLogsFromResponse(response);
       setSelectedSessionData({ session, logs });
-      if (logs.length === 0) toast.warn(`No logs found for session ${session.id}`);
+      if (logs.length === 0) toast.warn(`No logs found for session ${clickedSessionId}`);
     } catch (e) {
-      toast.error(`Failed to fetch logs for session ${session.id}: ${e?.message || "Unknown error"}`);
+      toast.error(
+        `Failed to fetch logs for session ${clickedSessionId}: ${e?.message || "Unknown error"}`,
+      );
       setSelectedSessionData(null);
     } finally {
       setIsLoading(false);

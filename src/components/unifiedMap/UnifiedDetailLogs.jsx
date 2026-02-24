@@ -979,7 +979,7 @@ export default function UnifiedDetailLogs({
       minHeight={300}
       bounds="window"
       dragHandleClassName="drag-handle"
-      className="z-[1000] shadow-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg overflow-hidden flex flex-col"
+      className="z-[1000] shadow-2xl border border-gray-700 bg-gray-900 rounded-lg overflow-hidden flex flex-col"
     >
       <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 rounded-t-lg drag-handle cursor-move select-none shrink-0">
         <div className="flex items-center gap-3">

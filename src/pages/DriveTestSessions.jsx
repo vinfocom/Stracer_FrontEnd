@@ -383,6 +383,26 @@ const DriveTestSessionsPage = () => {
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (!selectedSessions.length) return;
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedSessions.length} selected session(s)? This will also remove all associated log data.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await Promise.all(selectedSessions.map((id) => adminApi.deleteSession(id)));
+      toast.success(`${selectedSessions.length} session(s) deleted successfully`);
+      setSelectedSessions([]);
+      fetchSessions();
+    } catch (error) {
+      toast.error(`Failed to delete selected sessions: ${error.message}`);
+    }
+  };
+
   const handleCreateProject = async () => {
     const payload = {
       projectName: projectName,
@@ -563,6 +583,15 @@ const DriveTestSessionsPage = () => {
               >
                 <MapPin className="h-4 w-4 mr-2" />
                 View on Map
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteSelected}
+                className="h-9"
+              >
+                <Trash2 className="h-4 w-4 mr-2 text-red-500" />
+                Delete Selected
               </Button>
             </>
           )}
@@ -1072,13 +1101,22 @@ const DriveTestSessionsPage = () => {
 
                   {visibleColumns.actions && (
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleViewOnMap(session.id)}
-                      >
-                        <Map className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewOnMap(session.id)}
+                        >
+                          <Map className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(session.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>

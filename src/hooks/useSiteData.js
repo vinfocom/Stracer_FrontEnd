@@ -2,12 +2,38 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mapViewApi } from '@/api/apiEndpoints';
 
+const isPointInPolygon = (point, polygon) => {
+  const path = Array.isArray(polygon?.paths?.[0])
+    ? polygon.paths[0]
+    : Array.isArray(polygon?.paths) && polygon.paths[0]?.lat != null
+      ? polygon.paths
+      : Array.isArray(polygon?.path) && polygon.path[0]?.lat != null
+        ? polygon.path
+        : null;
+  if (!path?.length) return false;
+  const lat = point.lat ?? point.latitude;
+  const lng = point.lng ?? point.longitude;
+  if (lat == null || lng == null) return false;
+
+  let inside = false;
+  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+    const { lng: xi, lat: yi } = path[i];
+    const { lng: xj, lat: yj } = path[j];
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+};
+
 export const useSiteData = ({ 
   enableSiteToggle, 
   siteToggle, 
   projectId, 
   sessionIds,
-  autoFetch = false 
+  autoFetch = false,
+  filterEnabled = false,
+  polygons = [],
 }) => {
   const [siteData, setSiteData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -39,7 +65,13 @@ export const useSiteData = ({
     }
 
     // Prevents duplicate calls
-    const currentParams = JSON.stringify({ siteToggle, projectId, sessionIds });
+    const currentParams = JSON.stringify({
+      siteToggle,
+      projectId,
+      sessionIds,
+      filterEnabled,
+      polygons,
+    });
     if (lastFetchParams.current === currentParams && siteData.length > 0) {
       console.log("[useSiteData] Params unchanged and data exists. Skipping fetch.");
       return;
@@ -83,8 +115,15 @@ export const useSiteData = ({
           })).filter(item => item.lat !== 0 && !isNaN(item.lat))
         : [];
 
-      console.log(`[useSiteData] Setting siteData. Normalized items: ${normalizedData.length}`);
-      setSiteData(normalizedData);
+      let finalData = normalizedData;
+      if (filterEnabled && polygons?.length > 0) {
+        finalData = normalizedData.filter((site) =>
+          polygons.some((poly) => isPointInPolygon(site, poly)),
+        );
+      }
+
+      console.log(`[useSiteData] Setting siteData. Normalized items: ${finalData.length}`);
+      setSiteData(finalData);
 
     } catch (err) {
       console.error("[useSiteData] API Error:", err);
@@ -95,7 +134,7 @@ export const useSiteData = ({
     } finally {
       if (isMounted.current) setLoading(false);
     }
-  }, [enableSiteToggle, siteToggle, projectId, sessionIds, siteData.length]);
+  }, [enableSiteToggle, siteToggle, projectId, sessionIds, siteData.length, filterEnabled, polygons]);
 
   useEffect(() => {
     if (autoFetch) {

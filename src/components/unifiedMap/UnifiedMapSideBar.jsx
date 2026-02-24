@@ -15,7 +15,6 @@ import {
   Radio,
   Hexagon,
   Palette,
-  MapPin,
   Grid3X3,
   Thermometer,
   ArrowLeftRight,
@@ -1076,7 +1075,7 @@ const UnifiedMapSidebar = ({
               {activeCoverageFiltersCount > 0 && (
                 <div className="p-2 bg-yellow-900/20 border border-yellow-700/50 rounded text-xs text-yellow-300 mt-2">
                   <div className="font-medium mb-1">
-                    ⚠️ {activeCoverageFiltersCount} filter
+                     {activeCoverageFiltersCount} filter
                     {activeCoverageFiltersCount > 1 ? "s" : ""} active
                   </div>
                   <div className="text-yellow-400/80 text-[10px]">
