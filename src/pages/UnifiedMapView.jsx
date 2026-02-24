@@ -676,11 +676,12 @@ const UnifiedMapView = () => {
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
   const { thresholds: baseThresholds, refetch: refetchColors } =
     useColorForLog();
+  const shouldLoadProjectPolygons = showPolygons || enableSiteToggle || onlyInsidePolygons;
   const {
     polygons,
     loading: polygonLoading,
     refetch: refetchPolygons,
-  } = useProjectPolygons(projectId, showPolygons, polygonSource);
+  } = useProjectPolygons(projectId, shouldLoadProjectPolygons, polygonSource);
 
   // ✅ 5. Use Area Polygons Hook
   const {
@@ -691,11 +692,12 @@ const UnifiedMapView = () => {
 
   const rawFilteringPolygons = useMemo(
     () => [
-      ...(showPolygons && polygons ? polygons : []),
+      ...(polygons ? polygons : []),
       ...(areaEnabled && areaData ? areaData : []),
     ],
-    [showPolygons, polygons, areaEnabled, areaData],
+    [polygons, areaEnabled, areaData],
   );
+  const siteLayerPolygonFiltering = Boolean(enableSiteToggle && rawFilteringPolygons.length > 0);
 
   const shouldFetchSamples =
     !passedLocations && enableDataToggle && dataToggle === "sample";
@@ -766,7 +768,7 @@ const UnifiedMapView = () => {
     projectId,
     sessionIds,
     autoFetch: true,
-    filterEnabled: onlyInsidePolygons,
+    filterEnabled: siteLayerPolygonFiltering || onlyInsidePolygons,
     polygons: rawFilteringPolygons,
   });
 
@@ -1982,7 +1984,7 @@ const uniquePcis = useMemo(() => {
                   showSiteSectors={showSiteSectors}
                   map={mapRef.current}
                   selectedMetric={selectedMetric}
-                  onlyInsidePolygons={onlyInsidePolygons}
+                  onlyInsidePolygons={siteLayerPolygonFiltering || onlyInsidePolygons}
                   filterPolygons={rawFilteringPolygons}
                   hoveredCellId={hoveredCellId}
                   hoveredLog={hoveredLog}

@@ -1,28 +1,33 @@
 import React, { useState } from "react";
 import { companyApi } from "../api/apiEndpoints";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const CompanyForm = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const editCompany = location.state?.company || null;
+  const isEditMode = Boolean(editCompany?.id);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    company_name: "",
-    contact_person: "",
-    mobile: "",
-    email: "",
+    company_name: editCompany?.company_name || "",
+    contact_person: editCompany?.contact_person || "",
+    mobile: editCompany?.mobile || "",
+    email: editCompany?.email || "",
     password: "",
-    address: "",
-    pincode: "",
-    gst_id: "",
-    license_validity_in_months: "",
-    total_granted_licenses: "",
-    otp_phone_number: "",
-    ask_for_otp: false,
-    blacklisted_phone_number: "",
-    remarks: "",
-    isd_code: "",
-    country_code: "",
-    status: true,
+    address: editCompany?.address || "",
+    pincode: editCompany?.pincode || "",
+    gst_id: editCompany?.gst_id || "",
+    license_validity_in_months: editCompany?.license_validity_in_months?.toString?.() || "",
+    total_granted_licenses: editCompany?.total_granted_licenses?.toString?.() || "",
+    otp_phone_number: editCompany?.otp_phone_number || "",
+    ask_for_otp: editCompany ? editCompany?.ask_for_otp === 1 : false,
+    blacklisted_phone_number: editCompany?.blacklisted_phone_number || "",
+    remarks: editCompany?.remarks || "",
+    isd_code: editCompany?.isd_code || "",
+    country_code: editCompany?.country_code || "",
+    status: editCompany ? editCompany?.status === 1 : true,
   });
-  const [country, setCountry] = useState("IN");
+  const [country, setCountry] = useState(editCompany?.country_code || "IN");
 
   const toggleCountry = () => {
   const newCountry = country === "IN" ? "TW" : "IN";
@@ -48,12 +53,13 @@ const CompanyForm = () => {
     setLoading(true);
 
     const payload = {
+      ...(isEditMode ? { id: editCompany.id } : {}),
       // Strings
       company_name: formData.company_name,
       contact_person: formData.contact_person,
       mobile: formData.mobile,
       email: formData.email,
-      password: formData.password,
+      password: formData.password || "",
       address: formData.address || "",
       pincode: formData.pincode || "",
       gst_id: formData.gst_id || "",
@@ -73,7 +79,7 @@ const CompanyForm = () => {
       total_granted_licenses: formData.total_granted_licenses
         ? parseInt(formData.total_granted_licenses, 10)
         : 0,
-      total_used_licenses: 0,
+      total_used_licenses: isEditMode ? editCompany?.total_used_licenses || 0 : 0,
 
       // Booleans (DTO defines these as bool, not int)
       ask_for_otp: formData.ask_for_otp ? 1 : 0,
@@ -87,28 +93,33 @@ const CompanyForm = () => {
 
       // Success Check
       if (data && data.Status === 1) {
-        alert(`Success! Company Created.\nCode: ${data.CompanyCode}`);
-        setFormData({
-          company_name: "",
-          contact_person: "",
-          mobile: "",
-          email: "",
-          password: "",
-          address: "",
-          pincode: "",
-          gst_id: "",
-          license_validity_in_months: "",
-          total_granted_licenses: "",
-          otp_phone_number: "",
-          ask_for_otp: 0,
-          blacklisted_phone_number: "",
-          remarks: "",
-          status: 1,
-          country_code: "",
-          isd_code: "",
-        });
+        if (isEditMode) {
+          alert("Success! Company Updated.");
+          navigate("/companies");
+        } else {
+          alert(`Success! Company Created.\nCode: ${data.CompanyCode}`);
+          setFormData({
+            company_name: "",
+            contact_person: "",
+            mobile: "",
+            email: "",
+            password: "",
+            address: "",
+            pincode: "",
+            gst_id: "",
+            license_validity_in_months: "",
+            total_granted_licenses: "",
+            otp_phone_number: "",
+            ask_for_otp: 0,
+            blacklisted_phone_number: "",
+            remarks: "",
+            status: 1,
+            country_code: "",
+            isd_code: "",
+          });
+        }
       } else {
-        alert(data?.Message || "Failed to create company (Unknown Status).");
+        alert(data?.Message || `Failed to ${isEditMode ? "update" : "create"} company (Unknown Status).`);
       }
     } catch (error) {
       console.error(" API Error Object:", error);
@@ -154,9 +165,11 @@ const CompanyForm = () => {
       <div className="bg-white w-full  overflow-hidden">
         <div className="px-8 py-4 ">
           <h2 className="text-2xl font-bold text-black">
-            Company Registration
+            {isEditMode ? "Edit Company" : "Company Registration"}
           </h2>
-          <p className="text-black text-sm mt-1">Enter company details.</p>
+          <p className="text-black text-sm mt-1">
+            {isEditMode ? "Update company details." : "Enter company details."}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="py-2 px-8">
@@ -235,7 +248,7 @@ const CompanyForm = () => {
                 placeholder="••••••••"
                 value={formData.password}
                 onChange={handleChange}
-                required
+                required={!isEditMode}
                 className={inputClass}
               />
             </div>
@@ -414,7 +427,13 @@ const CompanyForm = () => {
               className={`w-full text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 transform hover:-translate-y-0.5 
                 ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 hover:shadow-lg"}`}
             >
-              {loading ? "Registering..." : "Register Company"}
+              {loading
+                ? isEditMode
+                  ? "Updating..."
+                  : "Registering..."
+                : isEditMode
+                  ? "Update Company"
+                  : "Register Company"}
             </button>
           </div>
         </form>

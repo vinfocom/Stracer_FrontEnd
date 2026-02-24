@@ -11,6 +11,127 @@ import DrawingControlsPanel from "../map/layout/DrawingControlsPanel";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import SettingsPage from "@/pages/Setting";
 
+const REQUIRED_SITE_COLUMNS = [
+  "site",
+  "sector",
+  "cell_id",
+  "longitude",
+  "latitude",
+  "pci",
+  "azimuth",
+  "band",
+  "earfcn",
+  "cluster",
+  "technology",
+];
+
+const SITE_COLUMN_ALIASES = {
+  site: ["site", "siteid", "site_id", "sitename", "site_name", "nodeb", "enodeb", "gnodeb"],
+  sector: ["sector", "sectorid", "sector_id", "sectorname", "sector_name"],
+  cell_id: ["cell_id", "cellid", "cell", "cellname", "cell_name", "cid", "ecgi"],
+  longitude: ["longitude", "long", "lon", "lng", "x"],
+  latitude: ["latitude", "lat", "y"],
+  pci: ["pci", "physicalcellid", "physical_cell_id", "psc"],
+  azimuth: ["azimuth", "azimuthdeg", "azimuth_deg", "bearing", "direction"],
+  band: ["band", "frequencyband", "frequency_band", "freqband"],
+  earfcn: ["earfcn", "dl_earfcn", "arfcn", "uarfcn", "nrarfcn"],
+  cluster: ["cluster", "operator", "network", "provider", "circle"],
+  technology: ["technology", "tech", "rat", "networktype", "network_type"],
+};
+
+const normalizeHeaderToken = (value = "") =>
+  String(value)
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+const parseCsvLine = (line = "") => {
+  const out = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === "," && !inQuotes) {
+      out.push(current);
+      current = "";
+      continue;
+    }
+
+    current += ch;
+  }
+
+  out.push(current);
+  return out;
+};
+
+const toCsvField = (value = "") => {
+  const str = String(value ?? "");
+  if (!/[",\r\n]/.test(str)) return str;
+  return `"${str.replace(/"/g, '""')}"`;
+};
+
+const normalizeSiteCsvHeaders = async (file) => {
+  const content = await file.text();
+  const newline = content.includes("\r\n") ? "\r\n" : "\n";
+  const firstNewlineIndex = content.indexOf("\n");
+
+  const rawHeaderLine =
+    firstNewlineIndex === -1
+      ? content.replace(/\r$/, "")
+      : content.slice(0, firstNewlineIndex).replace(/\r$/, "");
+
+  const restContent = firstNewlineIndex === -1 ? "" : content.slice(firstNewlineIndex + 1);
+  const rawHeaders = parseCsvLine(rawHeaderLine);
+
+  const normalizedAliasMap = new Map();
+  Object.entries(SITE_COLUMN_ALIASES).forEach(([canonical, aliases]) => {
+    aliases.forEach((alias) => normalizedAliasMap.set(normalizeHeaderToken(alias), canonical));
+  });
+
+  const normalizedHeaders = rawHeaders.map((header) => {
+    const aliasKey = normalizeHeaderToken(header);
+    return normalizedAliasMap.get(aliasKey) || header.trim();
+  });
+
+  const normalizedHeaderSet = new Set(
+    normalizedHeaders.map((header) => normalizeHeaderToken(header))
+  );
+  const missingColumns = REQUIRED_SITE_COLUMNS.filter(
+    (required) => !normalizedHeaderSet.has(normalizeHeaderToken(required))
+  );
+
+  if (missingColumns.length > 0) {
+    return {
+      ok: false,
+      missingColumns,
+    };
+  }
+
+  const headersChanged = normalizedHeaders.some((header, idx) => header !== rawHeaders[idx]);
+  if (!headersChanged) {
+    return { ok: true, file };
+  }
+
+  const normalizedHeaderLine = normalizedHeaders.map(toCsvField).join(",");
+  const normalizedContent = normalizedHeaderLine + (firstNewlineIndex === -1 ? "" : `${newline}${restContent}`);
+
+  const normalizedFile = new File([normalizedContent], file.name, { type: file.type || "text/csv" });
+  return { ok: true, file: normalizedFile };
+};
+
 export default function UnifiedHeader({
   onToggleControls,
   isControlsOpen,
@@ -65,10 +186,25 @@ export default function UnifiedHeader({
       return;
     }
 
+    let uploadFile = selectedFile;
+    try {
+      const normalizedCsv = await normalizeSiteCsvHeaders(selectedFile);
+      if (!normalizedCsv.ok) {
+        toast.error(
+          `Missing required CSV columns: ${normalizedCsv.missingColumns.join(", ")}`
+        );
+        return;
+      }
+      uploadFile = normalizedCsv.file;
+    } catch (e) {
+      toast.error("Unable to read CSV file. Please verify file format.");
+      return;
+    }
+
     const formData = new FormData();
     // Send both keys for compatibility with older/newer backend binders.
-    formData.append("File", selectedFile);
-    formData.append("UploadFile", selectedFile);
+    formData.append("File", uploadFile);
+    formData.append("UploadFile", uploadFile);
     formData.append("ProjectId", String(effectiveProjectId));
 
     setIsUploading(true);
