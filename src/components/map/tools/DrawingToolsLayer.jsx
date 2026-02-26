@@ -59,16 +59,29 @@ function pickColorForValue(value, selectedMetric, thresholds) {
   const key = normalizeMetricKey(selectedMetric);
   const arr = thresholds?.[key];
   if (Array.isArray(arr) && arr.length) {
-    for (const t of arr) {
-      const min = t.min ?? t.from ?? -Infinity;
-      const max = t.max ?? t.to ?? Infinity;
-      const val = t.value;
+    const sorted = [...arr].sort((a, b) => {
+      const aMin = parseFloat(a.min ?? a.from ?? -Infinity);
+      const bMin = parseFloat(b.min ?? b.from ?? -Infinity);
+      return aMin - bMin;
+    });
+    for (let i = 0; i < sorted.length; i++) {
+      const t = sorted[i];
+      const min = parseFloat(t.min ?? t.from ?? -Infinity);
+      const max = parseFloat(t.max ?? t.to ?? Infinity);
+      const val = parseFloat(t.value);
+      const isLast = i === sorted.length - 1;
+      
       if (Number.isFinite(val)) {
         if (value <= val) return t.color || "#4ade80";
-      } else if (value >= min && value <= max) {
+      } else if (value >= min && (isLast ? value <= max : value < max)) {
         return t.color || "#4ade80";
       }
     }
+    
+    // Fallbacks boundary
+    if (value < parseFloat(sorted[0].min ?? sorted[0].from ?? -Infinity)) return sorted[0].color || "#4ade80";
+    const last = sorted[sorted.length - 1];
+    if (value > parseFloat(last.max ?? last.to ?? Infinity)) return last.color || "#4ade80";
   }
   return "#93c5fd";
 }
@@ -228,7 +241,7 @@ function getPolylineDetails(polyline) {
 function DrawingToolsLayerComponent({
   map,
   enabled,
-  shapeMode, // ✅ NEW PROP: Receive shape mode directly
+  shapeMode, 
   logs,
   sessions,
   selectedMetric,

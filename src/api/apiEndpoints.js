@@ -560,6 +560,7 @@ export const adminApi = {
 
   saveUserDetails: (data) => api.post("/Admin/SaveUserDetails", data),
   deleteUser: (id) => api.post(`/Admin/DeleteUser`, { id }),
+  activateUser: (id) => api.post(`/Admin/ActivateUser`, { id }),
   userResetPassword: (data) => api.post("/Admin/UserResetPassword", data),
   changePassword: (data) => api.post("/Admin/ChangePassword", data),
   getSessions: () => api.get("/Admin/GetSessions"),
@@ -955,10 +956,10 @@ export const companyApi = {
 
   deleteCompany: (id) => api.delete("/api/company/deleteCompany", { params: { id } }),
 
-  revokeLicense: (id) => api.post(`/api/company/revokeLicesnse/${id}`),
+  revokeLicense: (id) => api.post(`/api/company/revokeLicense`, null, { params: { licenseId: id } }),
 
-  licensesDetails: () => api.get("/api/company/usedLicenses",
-    { credentials: true }
+  licensesDetails: (params) => api.get("/api/company/usedLicenses",
+    { params, withCredentials: true }
   ),
 };
 

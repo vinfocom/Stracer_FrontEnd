@@ -35,6 +35,7 @@ import useColorForLog from "@/hooks/useColorForLog.js";
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
 import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
 import MapWithMultipleCircles from "@/components/unifiedMap/MapwithMultipleCircle";
+import LoadingProgress from "@/components/LoadingProgress";
 
 // ============================================
 // CONSTANTS & HELPERS
@@ -383,7 +384,6 @@ function SessionMapDebug() {
 
     return logs
       .filter((log) => {
-        // ✅ FIX: Use normalized value helper for filtering
         const metricValue = getMetricValue(log, filters.metric);
 
         if (filters.minSignal !== "" && !isNaN(parseFloat(filters.minSignal))) {
@@ -421,14 +421,7 @@ function SessionMapDebug() {
           }
         }
         return true;
-      })
-      .map((log) => ({
-        // ✅ FIX: Map data to ensure normalized keys exist for the map component
-        ...log,
-        dl_thpt: log.dl_thpt ?? log.dl_tpt ?? log.DL_TPT ?? null,
-        ul_thpt: log.ul_thpt ?? log.ul_tpt ?? log.UL_TPT ?? null,
-        lte_bler: log.lte_bler ?? log.lteBler ?? null,
-      }));
+      });
   }, [logs, filters]);
 
   // Show toast when filtered count changes
@@ -658,8 +651,8 @@ function SessionMapDebug() {
               values.length > 0
                 ? values.reduce((a, b) => a + b, 0) / values.length
                 : 0,
-            min: values.length > 0 ? Math.min(...values) : 0,
-            max: values.length > 0 ? Math.max(...values) : 0,
+            min: values.length > 0 ? values.reduce((min, v) => (v < min ? v : min), values[0]) : 0,
+            max: values.length > 0 ? values.reduce((max, v) => (v > max ? v : max), values[0]) : 0,
             median:
               values.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0,
           },
@@ -678,6 +671,21 @@ function SessionMapDebug() {
   // Map callbacks
   const onMapLoad = useCallback((m) => setMap(m), []);
   const onMapUnmount = useCallback(() => setMap(null), []);
+
+  // Auto-fit bounds when logs load or filter changes
+  useEffect(() => {
+    if (map && filteredLogs.length > 0 && window.google) {
+      const bounds = new window.google.maps.LatLngBounds();
+      // Sample points for performance if there are too many
+      const sampleSize = Math.min(filteredLogs.length, 500);
+      const step = Math.max(1, Math.floor(filteredLogs.length / sampleSize));
+      
+      for (let i = 0; i < filteredLogs.length; i += step) {
+        bounds.extend({ lat: filteredLogs[i].lat, lng: filteredLogs[i].lng });
+      }
+      map.fitBounds(bounds, 50); // 50px padding
+    }
+  }, [map, filteredLogs]);
 
   const handleDrawingSummary = useCallback(
     (stats) => {
@@ -723,31 +731,12 @@ function SessionMapDebug() {
   }, [filteredLogs]);
 
   // Loading State - This is the conditional return that was causing issues
-  if (!isLoaded || loading || thresholdsLoading) {
+  if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-900">
+      <div className="flex items-center justify-center h-[calc(100vh-64px)] w-full bg-gray-900 rounded-lg overflow-hidden relative">
         <div className="text-center">
           <Spinner />
-          <p className="mt-4 text-white">
-            {thresholdsLoading
-              ? "Loading thresholds..."
-              : loading && fetchProgress?.total > 0
-                ? `Loading... ${fetchProgress.current.toLocaleString()} / ${fetchProgress.total.toLocaleString()} points`
-                : "Loading map..."}
-          </p>
-          {loading && fetchProgress?.total > 0 && (
-            <div className="mt-2 w-64 mx-auto bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (fetchProgress.current / fetchProgress.total) * 100,
-                  )}%`,
-                }}
-              />
-            </div>
-          )}
+          <p className="mt-4 text-white">Loading map...</p>
         </div>
       </div>
     );
@@ -755,7 +744,7 @@ function SessionMapDebug() {
 
   if (loadError || error) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-900 text-white">
+      <div className="flex items-center justify-center h-[calc(100vh-64px)] w-full bg-gray-900 text-white rounded-lg overflow-hidden relative">
         <div className="text-center max-w-md px-4">
           <h2 className="text-2xl font-bold mb-4">Error</h2>
           <p className="text-red-400 mb-4">{loadError?.message || error}</p>
@@ -767,16 +756,13 @@ function SessionMapDebug() {
     );
   }
 
-  // ✅ Force metric to lowercase for correct data mapping
   const selectedMetric = normalizeMetric(filters.metric);
 
   return (
-    <div className="h-full w-full ">
-      <DrawingControlsPanel
-        ui={safeUi}
-        onUIChange={handleUIChange}
-        polygonStats={analysis}
-        onFetchLogs={() => {}} 
+    <div className="h-[calc(100vh-64px)] w-full relative rounded-lg overflow-hidden shadow-md">
+      <LoadingProgress
+        progress={fetchProgress}
+        loading={loading || thresholdsLoading}
       />
 
       <MapWithMultipleCircles
@@ -785,13 +771,13 @@ function SessionMapDebug() {
         locations={filteredLogs}
         neighborData={neighborData}
         showNeighbors={true}
-        // ✅ Passed lowercased metric to fix color issue
         selectedMetric={selectedMetric}
         thresholds={formattedThresholds}
         onLoad={onMapLoad}
         options={MAP_OPTIONS}
         legendFilter={legendFilter}
         center={mapCenter}
+        fitToLocations={true}
         showPoints={true}
         pointRadius={12}
         showStats={false}

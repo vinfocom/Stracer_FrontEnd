@@ -152,6 +152,9 @@ const NetworkPlannerMap = ({
   selectedMetric = "rsrp",
   onlyInsidePolygons = false,
   filterPolygons = [],
+  mlGridEnabled = false,
+  mlGridSize = 50,
+  mlGridAggregation = "mean",
 }) => {
   const { siteData, loading, error } = useSiteData({
     enableSiteToggle,
@@ -166,12 +169,15 @@ const NetworkPlannerMap = ({
   const polygonRefs = useRef(new Set());
   const markerRefs = useRef(new Set());
   const polylineRefs = useRef(new Set());
-  const [selectedSiteId, setSelectedSiteId] = useState(null);
-  const [selectedSiteName, setSelectedSiteName] = useState(null);
+
+  // Changed to handle an array of selected sites
+  const [selectedSiteIds, setSelectedSiteIds] = useState([]);
   const [selectedSiteSectors, setSelectedSiteSectors] = useState([]);
-  const [selectedSiteLoading, setSelectedSiteLoading] = useState(false);
-  const [lteLoading, setLteLoading] = useState(false);
   const [selectedSiteLteLocations, setSelectedSiteLteLocations] = useState([]);
+  
+  const [loadingSitesQueue, setLoadingSitesQueue] = useState(new Set());
+  const [lteLoadingQueue, setLteLoadingQueue] = useState(new Set());
+  
   const [selectedSectorInfo, setSelectedSectorInfo] = useState(null);
 
   const normalizedPolygonPaths = useMemo(() => {
@@ -257,6 +263,8 @@ const NetworkPlannerMap = ({
     polylineRefs.current.clear();
   }, []);
 
+
+
   useEffect(() => {
     if (onDataLoaded) {
       onDataLoaded(siteData, loading);
@@ -264,19 +272,18 @@ const NetworkPlannerMap = ({
   }, [siteData, loading, onDataLoaded]);
 
   useEffect(() => {
-    if (!enableSiteToggle) {
+    if (!enableSiteToggle || siteToggle !== "ML") {
       requestIdRef.current += 1;
       clearMapOverlays();
 
-      setSelectedSiteId(null);
-      setSelectedSiteName(null);
+      setSelectedSiteIds([]);
       setSelectedSiteSectors([]);
       setSelectedSiteLteLocations([]);
       setSelectedSectorInfo(null);
-      setSelectedSiteLoading(false);
-      setLteLoading(false);
+      setLoadingSitesQueue(new Set());
+      setLteLoadingQueue(new Set());
     }
-  }, [enableSiteToggle, clearMapOverlays]);
+  }, [enableSiteToggle, clearMapOverlays, siteToggle]);
 
   useEffect(() => {
     if (showSiteSectors) return;
@@ -356,33 +363,34 @@ const NetworkPlannerMap = ({
   const fetchSiteDetails = useCallback(
     async (siteMarker) => {
       if (!siteMarker?.siteId) return;
+      const tSiteId = siteMarker.siteId;
 
-      if (selectedSiteId && selectedSiteId === siteMarker.siteId) {
-        requestIdRef.current += 1;
-        setSelectedSiteId(null);
-        setSelectedSiteName(null);
-        setSelectedSiteSectors([]);
-        setSelectedSiteLteLocations([]);
-        setSelectedSectorInfo(null);
-        setSelectedSiteLoading(false);
-        setLteLoading(false);
+      if (selectedSiteIds.includes(tSiteId)) {
+        // Deselect
+        setSelectedSiteIds((prev) => prev.filter((id) => id !== tSiteId));
+        setSelectedSiteSectors((prev) => prev.filter((s) => s.siteId !== tSiteId));
+        setSelectedSiteLteLocations((prev) => prev.filter((s) => s.siteId !== tSiteId));
         return;
       }
 
-      const requestId = requestIdRef.current + 1;
-      requestIdRef.current = requestId;
-
-      setSelectedSiteId(siteMarker.siteId);
-      setSelectedSiteName(siteMarker.siteName);
-      setSelectedSiteLoading(true);
-      setLteLoading(true);
+      // Add to selection and fetch
+      setSelectedSiteIds((prev) => [...prev, tSiteId]);
+      
+      // Check if we already have the sector and lte location data for this site
+      // Due to the previous bug, "Deselecting all sites and clicking again fails to draw data,"
+      // the issue might be that the async fetch exits early or fails to redraw correctly.
+      // We will perform the explicit fetch immediately even if previous data structures linger,
+      // as they might be out of sync.
+      
+      setLoadingSitesQueue((prev) => { const next = new Set(prev); next.add(tSiteId); return next; });
+      setLteLoadingQueue((prev) => { const next = new Set(prev); next.add(tSiteId); return next; });
 
       try {
         const baseParams = { projectId: projectId || "" };
         const candidateParams = [
-          { ...baseParams, siteId: siteMarker.siteId },
-          { ...baseParams, site_id: siteMarker.siteId },
-          { ...baseParams, site: siteMarker.siteId },
+          { ...baseParams, siteId: tSiteId },
+          { ...baseParams, site_id: tSiteId },
+          { ...baseParams, site: tSiteId },
           { ...baseParams, siteName: siteMarker.siteName },
         ];
 
@@ -394,7 +402,7 @@ const NetworkPlannerMap = ({
             const rawRows = res?.Data || res?.data?.Data || res?.data || [];
             const normalizedAll = normalizeSiteRows(rawRows);
             const normalizedMatch = normalizedAll.filter(
-              (r) => getSiteId(r) === siteMarker.siteId,
+              (r) => getSiteId(r) === tSiteId,
             );
 
             if (normalizedMatch.length > 0) {
@@ -412,7 +420,7 @@ const NetworkPlannerMap = ({
         }
 
         if (rows.length === 0) {
-          rows = filteredSiteData.filter((r) => getSiteId(r) === siteMarker.siteId);
+          rows = filteredSiteData.filter((r) => getSiteId(r) === tSiteId);
         }
 
         const sectors = rows
@@ -420,7 +428,7 @@ const NetworkPlannerMap = ({
           .filter((s) => pointInsideAnyPolygon({ lat: s.lat, lng: s.lng }));
 
         const metricKey = String(selectedMetric || "rsrp").toLowerCase();
-        const siteIdStr = String(siteMarker.siteId).trim();
+        const siteIdStr = String(tSiteId).trim();
         const siteIdComparable = normalizeComparableSiteId(siteIdStr);
         const lteParamCandidates = [
           { projectId: projectId || "", metric: metricKey, siteId: siteIdStr },
@@ -450,7 +458,7 @@ const NetworkPlannerMap = ({
                   lng,
                   value: Number.isFinite(value) ? value : null,
                   sampleCount: Number.isFinite(sampleCount) ? sampleCount : 0,
-                  siteId: rowSiteId,
+                  siteId: rowSiteId || tSiteId, // Ensure it has the ID we queried
                 };
               })
               .filter(Boolean);
@@ -464,8 +472,6 @@ const NetworkPlannerMap = ({
               break;
             }
 
-            // Some backend variants return site-filtered rows without siteId field.
-            // If a site filter was sent and rows exist, trust those rows.
             const hasSiteFilterParam = Boolean(
               params.siteId ||
                 params.site_id ||
@@ -479,42 +485,36 @@ const NetworkPlannerMap = ({
               lteRows = normalized;
               break;
             }
-
-            if (
-              normalized.length > 0 &&
-              !params.siteId &&
-              !params.site_id &&
-              !params.siteIdFiltered &&
-              !params.SiteIdFiltered &&
-              !params.SiteId &&
-              !params.site
-            ) {
-              lteRows = normalized;
-              break;
-            }
           } catch {
             // continue trying
           }
         }
 
-        if (requestIdRef.current !== requestId) return;
-        setSelectedSiteSectors(sectors);
-        setSelectedSiteLteLocations(lteRows);
+        // Only add them if this site is still selected
+        setSelectedSiteSectors((prev) => {
+          // Double check the site wasn't deselected
+          const idx = prev.findIndex((p) => p.siteId === tSiteId);
+          if (idx !== -1) return prev; // Already exists somehow
+          return [...prev, ...sectors];
+        });
+
+        setSelectedSiteLteLocations((prev) => {
+          return [...prev.filter((p) => p.siteId !== tSiteId), ...lteRows];
+        });
+
       } finally {
-        if (requestIdRef.current === requestId) {
-          setSelectedSiteLoading(false);
-          setLteLoading(false);
-        }
+        setLoadingSitesQueue((prev) => { const next = new Set(prev); next.delete(tSiteId); return next; });
+        setLteLoadingQueue((prev) => { const next = new Set(prev); next.delete(tSiteId); return next; });
       }
     },
-    [projectId, filteredSiteData, colorMode, selectedMetric, pointInsideAnyPolygon, selectedSiteId],
+    [projectId, filteredSiteData, colorMode, selectedMetric, pointInsideAnyPolygon, selectedSiteIds],
   );
 
   const sectorsToRender = useMemo(() => {
     if (!showSiteSectors) return [];
 
     const source =
-      selectedSiteId && selectedSiteSectors.length > 0 ? selectedSiteSectors : uniqueSectors;
+      selectedSiteIds.length > 0 && selectedSiteSectors.length > 0 ? selectedSiteSectors : uniqueSectors;
     const seen = new Set();
     return source.filter((sector, idx) => {
       const key =
@@ -531,7 +531,7 @@ const NetworkPlannerMap = ({
       seen.add(key);
       return true;
     });
-  }, [showSiteSectors, selectedSiteId, selectedSiteSectors, uniqueSectors]);
+  }, [showSiteSectors, selectedSiteIds, selectedSiteSectors, uniqueSectors]);
 
   const visibleSectors = useMemo(() => {
     if (!viewport) return sectorsToRender;
@@ -554,6 +554,46 @@ const NetworkPlannerMap = ({
         s.lng <= viewport.east,
     );
   }, [siteMarkers, viewport]);
+
+  // Handle select all and clear events
+  useEffect(() => {
+    const handleSelectAll = async () => {
+      // Find all visible sites
+      const visibleIds = visibleSiteMarkers.map(s => s.siteId);
+      const newIds = visibleIds.filter(id => !selectedSiteIds.includes(id));
+      
+      if (newIds.length === 0) return;
+      
+      // Select them all
+      setSelectedSiteIds(prev => [...new Set([...prev, ...newIds])]);
+      
+      // Fetch data for all new ones
+      for (const site of visibleSiteMarkers) {
+        if (newIds.includes(site.siteId)) {
+           // Small delay to prevent hammering the browser/API too hard
+           await new Promise(r => setTimeout(r, 50));
+           fetchSiteDetails(site);
+        }
+      }
+    };
+
+    const handleClear = () => {
+      setSelectedSiteIds([]);
+      setSelectedSiteSectors([]);
+      setSelectedSiteLteLocations([]);
+      setSelectedSectorInfo(null);
+      setLoadingSitesQueue(new Set());
+      setLteLoadingQueue(new Set());
+    };
+
+    window.addEventListener('map:selectAllSites', handleSelectAll);
+    window.addEventListener('map:clearSelectedSites', handleClear);
+
+    return () => {
+      window.removeEventListener('map:selectAllSites', handleSelectAll);
+      window.removeEventListener('map:clearSelectedSites', handleClear);
+    };
+  }, [visibleSiteMarkers, selectedSiteIds, fetchSiteDetails]);
 
   const logPci = useMemo(() => {
     if (!hoveredLog) return null;
@@ -583,13 +623,13 @@ const NetworkPlannerMap = ({
             position={{ lat: site.lat, lng: site.lng }}
             icon={{
               path: window.google.maps.SymbolPath.CIRCLE,
-              scale: selectedSiteId === site.siteId ? 7 : 5,
-              fillColor: selectedSiteId === site.siteId ? "#dc2626" : "#2563eb",
+              scale: selectedSiteIds.includes(site.siteId) ? 7 : 5,
+              fillColor: selectedSiteIds.includes(site.siteId) ? "#dc2626" : "#2563eb",
               fillOpacity: 0.95,
               strokeColor: "#ffffff",
               strokeWeight: 1.5,
             }}
-            zIndex={selectedSiteId === site.siteId ? 4001 : 3001}
+            zIndex={selectedSiteIds.includes(site.siteId) ? 4001 : 3001}
             onClick={() => fetchSiteDetails(site)}
             onLoad={(marker) => {
               if (marker) markerRefs.current.add(marker);
@@ -600,25 +640,29 @@ const NetworkPlannerMap = ({
           />
         ))}
 
-      {selectedSiteLoading && (
+      {loadingSitesQueue.size > 0 && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[2100] rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-md">
-          Loading site: {selectedSiteId} {selectedSiteName ? `(${selectedSiteName})` : ""}
+          Loading {loadingSitesQueue.size} site(s)...
         </div>
       )}
-      {lteLoading && (
+      {lteLoadingQueue.size > 0 && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[2100] rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white shadow-md">
-          Loading LTE prediction for site {selectedSiteId}
+          Loading LTE prediction for {lteLoadingQueue.size} site(s)...
         </div>
       )}
 
       <LtePredictionLocationLayer
-        enabled={Boolean(enableSiteToggle && selectedSiteId && selectedSiteLteLocations.length > 0)}
+        enabled={Boolean(enableSiteToggle && selectedSiteIds.length > 0 && selectedSiteLteLocations.length > 0)}
         map={map}
         locations={selectedSiteLteLocations}
         selectedMetric={selectedMetric}
         thresholds={{}}
         filterPolygons={filterPolygons}
         filterInsidePolygons={onlyInsidePolygons}
+        aggregateOverlaps={true}
+        mlGridEnabled={mlGridEnabled}
+        mlGridSize={mlGridSize}
+        mlGridAggregation={mlGridAggregation}
       />
 
       {visibleSectors.map((sector, index) => {

@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
-import { IconLayer } from "@deck.gl/layers";
+import { IconLayer, PolygonLayer } from "@deck.gl/layers";
 
 const FALLBACK_COLORS = [
   { min: 0.8, color: "#16a34a" },
@@ -138,6 +138,10 @@ const LtePredictionLocationLayer = ({
   filterPolygons = [],
   filterInsidePolygons = true,
   maxPoints = 20000,
+  aggregateOverlaps = false,
+  mlGridEnabled = false,
+  mlGridSize = 50,
+  mlGridAggregation = "mean",
 }) => {
   const overlayRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(13);
@@ -179,6 +183,88 @@ const LtePredictionLocationLayer = ({
       })
       .filter(Boolean);
 
+    if (mlGridEnabled || aggregateOverlaps) {
+      const grouped = new Map();
+      const metersPerDegLat = 111320;
+
+      for (const p of points) {
+        let key, bounds, cellLat, cellLng;
+
+        if (mlGridEnabled) {
+          const stepLat = mlGridSize / metersPerDegLat;
+          const stepLng = mlGridSize / (metersPerDegLat * Math.cos((p.lat * Math.PI) / 180));
+          const row = Math.floor(p.lat / stepLat);
+          const col = Math.floor(p.lng / stepLng);
+          key = `grid-${row},${col}`;
+
+          const s = row * stepLat;
+          const w = col * stepLng;
+          const n = s + stepLat;
+          const e = w + stepLng;
+          bounds = [[w, s], [e, s], [e, n], [w, n]];
+          cellLat = (s + n) / 2;
+          cellLng = (w + e) / 2;
+        } else {
+          key = `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+          cellLat = p.lat;
+          cellLng = p.lng;
+        }
+
+        if (!grouped.has(key)) {
+          grouped.set(key, { points: [], bounds, cellLat, cellLng });
+        }
+        grouped.get(key).points.push(p);
+      }
+
+      points = Array.from(grouped.values()).map(cell => {
+        if (cell.points.length === 1 && !mlGridEnabled) return cell.points[0];
+
+        const values = cell.points.map(g => g.value).filter(v => typeof v === 'number');
+        if (values.length === 0) return { ...cell.points[0], polygon: cell.bounds };
+
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+
+        const counts = {};
+        let mode = values[0];
+        let maxCount = 0;
+        for (const v of values) {
+          counts[v] = (counts[v] || 0) + 1;
+          if (counts[v] > maxCount) {
+            maxCount = counts[v];
+            mode = v;
+          }
+        }
+
+        const sites = [...new Set(cell.points.map(g => g.siteId).filter(Boolean))];
+
+        let aggValue = mean;
+        if (mlGridEnabled) {
+          if (mlGridAggregation === "median") aggValue = median;
+          if (mlGridAggregation === "mode") aggValue = mode;
+        }
+
+        return {
+          ...cell.points[0],
+          lat: cell.cellLat,
+          lng: cell.cellLng,
+          value: aggValue,
+          mean,
+          median,
+          mode,
+          isAggregated: true,
+          isGridCell: mlGridEnabled,
+          overlapCount: cell.points.length,
+          aggregatedSites: sites,
+          polygon: cell.bounds,
+          sampleCount: cell.points.reduce((sum, p) => sum + (p.sampleCount || 0), 0)
+        };
+      });
+    }
+
     if (filterInsidePolygons && polygonPaths.length > 0) {
       points = points.filter((point) => polygonPaths.some((path) => isPointInPolygon(point, path)));
     }
@@ -189,7 +275,7 @@ const LtePredictionLocationLayer = ({
     const sampled = [];
     for (let i = 0; i < points.length; i += step) sampled.push(points[i]);
     return sampled;
-  }, [enabled, locations, maxPoints, filterInsidePolygons, polygonPaths]);
+  }, [enabled, locations, maxPoints, filterInsidePolygons, polygonPaths, aggregateOverlaps, mlGridEnabled, mlGridSize, mlGridAggregation]);
 
   const layerData = useMemo(() => {
     return filteredAndSampledPoints.map((point) => {
@@ -200,11 +286,12 @@ const LtePredictionLocationLayer = ({
       return {
         ...point,
         position: [point.lng, point.lat],
-        color: toRgbaArray(colorHex, 220),
+        polygon: point.polygon,
+        color: toRgbaArray(colorHex, mlGridEnabled ? 180 : 220),
         size: Math.max(1, Math.log2((point.sampleCount || 1) + 1)),
       };
     });
-  }, [filteredAndSampledPoints, selectedMetric, thresholds]);
+  }, [filteredAndSampledPoints, selectedMetric, thresholds, mlGridEnabled]);
 
   const sizeScale = useMemo(() => {
     return Math.max(8, Math.min(28, zoomLevel * 1.6));
@@ -255,29 +342,52 @@ const LtePredictionLocationLayer = ({
   useEffect(() => {
     if (!enabled || !overlayRef.current || !validMap || !squareAtlas) return;
 
-    const layer = new IconLayer({
-      id: "lte-prediction-square-layer",
-      data: layerData,
-      pickable: true,
-      autoHighlight: true,
-      getPosition: (d) => d.position,
-      iconAtlas: squareAtlas,
-      iconMapping: squareIconMapping,
-      getIcon: () => "square",
-      sizeUnits: "pixels",
-      sizeScale,
-      sizeMinPixels: 3,
-      sizeMaxPixels: 42,
-      getSize: (d) => d.size,
-      getColor: (d) => d.color,
-      onHover: handleHover,
-      updateTriggers: {
-        getColor: [selectedMetric, thresholds],
-        getSize: [zoomLevel],
-      },
-    });
+    const layers = [];
 
-    overlayRef.current.setProps({ layers: [layer] });
+    if (mlGridEnabled) {
+      layers.push(
+        new PolygonLayer({
+          id: "lte-prediction-grid-layer",
+          data: layerData,
+          pickable: true,
+          stroked: false,
+          filled: true,
+          extruded: false,
+          getPolygon: (d) => d.polygon,
+          getFillColor: (d) => d.color,
+          onHover: handleHover,
+          updateTriggers: {
+            getFillColor: [selectedMetric, thresholds, mlGridAggregation],
+          },
+        })
+      );
+    } else {
+      layers.push(
+        new IconLayer({
+          id: "lte-prediction-square-layer",
+          data: layerData,
+          pickable: true,
+          autoHighlight: true,
+          getPosition: (d) => d.position,
+          iconAtlas: squareAtlas,
+          iconMapping: squareIconMapping,
+          getIcon: () => "square",
+          sizeUnits: "pixels",
+          sizeScale,
+          sizeMinPixels: 3,
+          sizeMaxPixels: 42,
+          getSize: (d) => d.size,
+          getColor: (d) => d.color,
+          onHover: handleHover,
+          updateTriggers: {
+            getColor: [selectedMetric, thresholds],
+            getSize: [zoomLevel],
+          },
+        })
+      );
+    }
+
+    overlayRef.current.setProps({ layers });
   }, [
     enabled,
     validMap,
@@ -313,10 +423,32 @@ const LtePredictionLocationLayer = ({
     >
       <div className="font-semibold">LTE Prediction</div>
       <div>Metric: {String(selectedMetric || "rsrp").toUpperCase()}</div>
-      <div>Value: {Number.isFinite(hovered.object.value) ? hovered.object.value.toFixed(2) : "N/A"}</div>
-      <div>Samples: {hovered.object.sampleCount ?? 0}</div>
-      <div>Site ID: {hovered.object.siteId || "N/A"}</div>
-      <div className="text-[10px] text-slate-500">
+      
+      {hovered.object.isGridCell ? (
+        <>
+          <div className="mt-1 font-semibold text-[11px] text-blue-600 border-b pb-0.5 mb-0.5">Cell ({hovered.object.overlapCount} samples)</div>
+          <div>Aggregated ({mlGridAggregation}): {Number.isFinite(hovered.object.value) ? hovered.object.value.toFixed(2) : "N/A"}</div>
+          <div className="text-[10px] text-slate-500">Mean: {hovered.object.mean?.toFixed(2)} | Median: {hovered.object.median?.toFixed(2)}</div>
+        </>
+      ) : hovered.object.isAggregated ? (
+        <>
+          <div className="mt-1 font-semibold text-[11px] text-blue-600 border-b pb-0.5 mb-0.5">Aggregated ({hovered.object.overlapCount} overlaps)</div>
+          <div>Mean: {hovered.object.mean?.toFixed(2)}</div>
+          <div>Median: {hovered.object.median?.toFixed(2)}</div>
+          <div>Mode: {hovered.object.mode?.toFixed(2)}</div>
+          <div className="text-[10px] italic text-slate-500 max-w-[150px] truncate" title={hovered.object.aggregatedSites?.join(", ")}>
+            Sites: {hovered.object.aggregatedSites?.join(", ") || "N/A"}
+          </div>
+        </>
+      ) : (
+        <>
+          <div>Value: {Number.isFinite(hovered.object.value) ? hovered.object.value.toFixed(2) : "N/A"}</div>
+          <div>Samples: {hovered.object.sampleCount ?? 0}</div>
+          <div>Site ID: {hovered.object.siteId || "N/A"}</div>
+        </>
+      )}
+
+      <div className="text-[10px] text-slate-500 mt-1">
         {hovered.object.lat?.toFixed?.(6)}, {hovered.object.lng?.toFixed?.(6)}
       </div>
     </div>

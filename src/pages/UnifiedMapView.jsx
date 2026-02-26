@@ -154,8 +154,17 @@ const debounce = (fn, wait) => {
   };
 };
 
+const normalizeMetric = (metric) => {
+  if (!metric) return "rsrp";
+  const lower = metric.toLowerCase();
+  if (["dl_tpt", "dl_throughput", "tpt_dl", "throughput_dl"].includes(lower)) return "dl_thpt";
+  if (["ul_tpt", "ul_throughput", "tpt_ul", "throughput_ul"].includes(lower)) return "ul_thpt";
+  return lower;
+};
+
 const normalizeMetricValue = (value, metric) => {
-  const config = METRIC_CONFIG[metric];
+  const normalizedKey = normalizeMetric(metric);
+  const config = METRIC_CONFIG[normalizedKey] || METRIC_CONFIG[metric];
   if (!config || value == null || isNaN(value)) return null;
 
   let normalized = (value - config.min) / (config.max - config.min);
@@ -177,7 +186,8 @@ const getColorFromNormalizedValue = (normalizedValue) => {
 };
 
 const getColorForMetricValue = (value, metric) => {
-  const normalized = normalizeMetricValue(value, metric);
+  const normalizedKey = normalizeMetric(metric);
+  const normalized = normalizeMetricValue(value, normalizedKey);
   return getColorFromNormalizedValue(normalized);
 };
 
@@ -210,24 +220,7 @@ const getColorFromValueOrMetric = (value, thresholds, metric) => {
 };
 
 const getThresholdKey = (metric) => {
-  const mapping = {
-    dl_tpt: "dl_thpt",
-    ul_tpt: "ul_thpt",
-    rsrp: "rsrp",
-    rsrq: "rsrq",
-    sinr: "sinr",
-    mos: "mos",
-    lte_bler: "lte_bler_json",
-    pci: "pci",
-    num_cells: "num_cells",
-    level: "level",
-    jitter: "jitter",
-    latency: "latency",
-    packet_loss: "packet_loss",
-    coverage_violation: "coverage_violation",
-    dominance: "dominance",
-  };
-  return mapping[metric?.toLowerCase()] || metric;
+  return normalizeMetric(metric);
 };
 
 const isPointInPolygon = (point, polygon) => {
@@ -608,6 +601,9 @@ const UnifiedMapView = () => {
   const [dataFilters, setDataFilters] = useState(DEFAULT_DATA_FILTERS);
   const [enableGrid, setEnableGrid] = useState(false);
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
+  const [mlGridEnabled, setMlGridEnabled] = useState(false);
+  const [mlGridSize, setMlGridSize] = useState(50);
+  const [mlGridAggregation, setMlGridAggregation] = useState("mean");
   const [durationTime, setDurationTime] = useState([]);
   const [techHandOver, setTechHandOver] = useState(false);
   const [bandHandover, setBandHandover] = useState(false);
@@ -1795,6 +1791,12 @@ const uniquePcis = useMemo(() => {
         setEnableGrid={setEnableGrid}
         gridSizeMeters={gridSizeMeters}
         setGridSizeMeters={setGridSizeMeters}
+        mlGridEnabled={mlGridEnabled}
+        setMlGridEnabled={setMlGridEnabled}
+        mlGridSize={mlGridSize}
+        setMlGridSize={setMlGridSize}
+        mlGridAggregation={mlGridAggregation}
+        setMlGridAggregation={setMlGridAggregation}
         bestNetworkEnabled={bestNetworkEnabled}
         setBestNetworkEnabled={setBestNetworkEnabled}
         bestNetworkWeights={bestNetworkWeights}
@@ -1992,6 +1994,9 @@ const uniquePcis = useMemo(() => {
                   onDataLoaded={handleSitesLoaded}
                   colorMode={modeMethod}
                   viewport={viewport}
+                  mlGridEnabled={mlGridEnabled}
+                  mlGridSize={mlGridSize}
+                  mlGridAggregation={mlGridAggregation}
                   options={{
                     scale: 0.2,
                     zIndex: 1000,
