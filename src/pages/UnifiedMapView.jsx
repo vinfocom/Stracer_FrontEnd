@@ -601,16 +601,13 @@ const UnifiedMapView = () => {
   const [dataFilters, setDataFilters] = useState(DEFAULT_DATA_FILTERS);
   const [enableGrid, setEnableGrid] = useState(false);
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
-<<<<<<< HEAD
   const [lteGridEnabled, setLteGridEnabled] = useState(false);
   const [lteGridSizeMeters, setLteGridSizeMeters] = useState(50);
   const [lteGridAggregationMethod, setLteGridAggregationMethod] =
     useState("median");
-=======
   const [mlGridEnabled, setMlGridEnabled] = useState(false);
   const [mlGridSize, setMlGridSize] = useState(50);
   const [mlGridAggregation, setMlGridAggregation] = useState("mean");
->>>>>>> 9937a50b18f2f2f0835a3afe4a59efe8bdd01289
   const [durationTime, setDurationTime] = useState([]);
   const [techHandOver, setTechHandOver] = useState(false);
   const [bandHandover, setBandHandover] = useState(false);
@@ -1801,21 +1798,18 @@ const uniquePcis = useMemo(() => {
         setEnableGrid={setEnableGrid}
         gridSizeMeters={gridSizeMeters}
         setGridSizeMeters={setGridSizeMeters}
-<<<<<<< HEAD
         lteGridEnabled={lteGridEnabled}
         setLteGridEnabled={setLteGridEnabled}
         lteGridSizeMeters={lteGridSizeMeters}
         setLteGridSizeMeters={setLteGridSizeMeters}
         lteGridAggregationMethod={lteGridAggregationMethod}
         setLteGridAggregationMethod={setLteGridAggregationMethod}
-=======
         mlGridEnabled={mlGridEnabled}
         setMlGridEnabled={setMlGridEnabled}
         mlGridSize={mlGridSize}
         setMlGridSize={setMlGridSize}
         mlGridAggregation={mlGridAggregation}
         setMlGridAggregation={setMlGridAggregation}
->>>>>>> 9937a50b18f2f2f0835a3afe4a59efe8bdd01289
         bestNetworkEnabled={bestNetworkEnabled}
         setBestNetworkEnabled={setBestNetworkEnabled}
         bestNetworkWeights={bestNetworkWeights}
@@ -2013,17 +2007,14 @@ const uniquePcis = useMemo(() => {
                   onDataLoaded={handleSitesLoaded}
                   colorMode={modeMethod}
                   viewport={viewport}
-<<<<<<< HEAD
                   lteGridEnabled={lteGridEnabled}
                   lteGridSizeMeters={lteGridSizeMeters}
                   lteGridAggregationMethod={lteGridAggregationMethod}
                   thresholds={effectiveThresholds}
                   getMetricColor={getMetricColorForLog}
-=======
                   mlGridEnabled={mlGridEnabled}
                   mlGridSize={mlGridSize}
                   mlGridAggregation={mlGridAggregation}
->>>>>>> 9937a50b18f2f2f0835a3afe4a59efe8bdd01289
                   options={{
                     scale: 0.2,
                     zIndex: 1000,

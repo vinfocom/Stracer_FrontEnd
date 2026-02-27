@@ -357,21 +357,18 @@ const UnifiedMapSidebar = ({
   setEnableGrid,
   gridSizeMeters,
   setGridSizeMeters,
-<<<<<<< HEAD
   lteGridEnabled,
   setLteGridEnabled,
   lteGridSizeMeters,
   setLteGridSizeMeters,
   lteGridAggregationMethod,
   setLteGridAggregationMethod,
-=======
   mlGridEnabled,
   setMlGridEnabled,
   mlGridSize,
   setMlGridSize,
   mlGridAggregation,
   setMlGridAggregation,
->>>>>>> 9937a50b18f2f2f0835a3afe4a59efe8bdd01289
   coverageViolationThreshold,
   setCoverageViolationThreshold,
   onAddSiteClick,
