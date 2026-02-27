@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import React, { useMemo, useCallback, useState, memo } from 'react';
+import React, { useMemo, useCallback, useState, useEffect, memo } from 'react';
 import { 
   BarChart2, RefreshCw, Users, Car, Waypoints, FileText, 
   Wifi, Layers, Home, MapPin 
@@ -40,12 +40,13 @@ const MemoizedHolesScatterChart = memo(HolesScatterChart);
 
 const DashboardPage = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [chartStage, setChartStage] = useState(1);
 
   // Persisted filters for each chart
   const [monthlySamplesFilters, setMonthlySamplesFilters] = usePersistedFilters('monthlySamples');
   const [operatorSamplesFilters, setOperatorSamplesFilters] = usePersistedFilters('operatorSamples');
   const [metricFilters, setMetricFilters] = usePersistedFilters('metric');
-  const [bandDistFilters, setBandDistFilters] = usePersistedFilters('bandDist');
+  const [bandDistFilters] = usePersistedFilters('bandDist');
 
   // ✅ Fetch ONLY KPI data on initial load - no chart data yet
   const { data: totalsData, isLoading: isTotalsLoading } = useTotals();
@@ -55,6 +56,15 @@ const DashboardPage = () => {
   const { data: outdoorCount, isLoading: isOutdoorLoading } = useOutdoorCount();
   
   const refreshDashboard = useRefreshDashboard();
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setChartStage(2), 700);
+    const t2 = setTimeout(() => setChartStage(3), 1800);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
 
   // Calculate total samples
   const totalLocationSamples = useMemo(() => {
@@ -154,10 +164,6 @@ const DashboardPage = () => {
     setMetricFilters(filters);
   }, [setMetricFilters]);
 
-  const handleBandDistFilterChange = useCallback((filters) => {
-    setBandDistFilters(filters);
-  }, [setBandDistFilters]);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <div className="max-w-[1920px] mx-auto p-6 space-y-6">
@@ -208,42 +214,47 @@ const DashboardPage = () => {
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
-          <MemoizedMonthlySamplesChart
-            chartFilters={monthlySamplesFilters}
-            onChartFiltersChange={handleMonthlySamplesFilterChange}
-            operators={operators}
-            networks={networks}
-          />
 
-          <MemoizedOperatorNetworkChart
-            chartFilters={operatorSamplesFilters}
-            onChartFiltersChange={handleOperatorSamplesFilterChange}
-            operators={operators}
-            networks={networks}
-          />
+          {chartStage >= 1 && (
+            <MemoizedMonthlySamplesChart
+              chartFilters={monthlySamplesFilters}
+              onChartFiltersChange={handleMonthlySamplesFilterChange}
+              operators={operators}
+              networks={networks}
+            />
+          )}
 
-          <MemoizedAppChart />
+          {chartStage >= 1 && (
+            <MemoizedOperatorNetworkChart
+              chartFilters={operatorSamplesFilters}
+              onChartFiltersChange={handleOperatorSamplesFilterChange}
+              operators={operators}
+              networks={networks}
+            />
+          )}
 
-          <MemoizedMetricChart
-            chartFilters={metricFilters}
-            onChartFiltersChange={handleMetricFilterChange}
-            operators={operators}
-            networks={networks}
-          />
+          {chartStage >= 2 && <MemoizedAppChart />}
 
-          <MemoizedBandDistributionChart
-            chartFilters={bandDistFilters}
-            onChartFiltersChange={handleBandDistFilterChange}
-            operators={operators}
-            networks={networks}
-          />
+          {chartStage >= 2 && (
+            <MemoizedMetricChart
+              chartFilters={metricFilters}
+              onChartFiltersChange={handleMetricFilterChange}
+              operators={operators}
+              networks={networks}
+            />
+          )}
 
-          <MemoizedHandsetPerformanceChart />
+          {chartStage >= 2 && (
+            <MemoizedBandDistributionChart
+              filters={bandDistFilters}
+            />
+          )}
 
-          <MemoizedHolesScatterChart />
-          
-          <MemoizedQualityRankingChart />
+          {chartStage >= 3 && <MemoizedHandsetPerformanceChart />}
+
+          {chartStage >= 3 && <MemoizedHolesScatterChart />}
+
+          {chartStage >= 3 && <MemoizedQualityRankingChart />}
         </div>
       </div>
     </div>

@@ -481,8 +481,12 @@ export const adminApi = {
     }),
 
   getHoles: () => api.get("/Admin/holes"),
-  getBoxData: (metric) => api.get(`/Admin/box-plot/operators?metric=${metric}`),
-  getIndoorOutdoor: () => api.get("/Admin/operator-indoor-outdoor-avg"),
+  getBoxData: (metric, params = {}) =>
+    api.get("/Admin/box-plot/operators", {
+      params: { metric, ...params },
+    }),
+  getIndoorOutdoor: (params = {}) =>
+    api.get("/Admin/operator-indoor-outdoor-avg", { params }),
 
   getNetworkDurations: async (startDate, endDate) => {
     const formatDateLocal = (d) => {
@@ -521,11 +525,11 @@ export const adminApi = {
   getUsers: (params) => api.get("/Admin/GetUsers", { params }),
   getOnlineUsers: () => api.get("/Admin/GetOnlineUsers"),
 
-  getOperatorCoverageRanking: ({ min, max }) =>
-    api.get("/Admin/GetOperatorCoverageRanking", { params: { min, max } }),
+  getOperatorCoverageRanking: ({ min, max, from, to } = {}) =>
+    api.get("/Admin/GetOperatorCoverageRanking", { params: { min, max, from, to } }),
 
-  getOperatorQualityRanking: ({ min, max }) =>
-    api.get("/Admin/GetOperatorQualityRanking", { params: { min, max } }),
+  getOperatorQualityRanking: ({ min, max, from, to } = {}) =>
+    api.get("/Admin/GetOperatorQualityRanking", { params: { min, max, from, to } }),
 
   getUserById: (userId) => {
     const formData = new FormData();

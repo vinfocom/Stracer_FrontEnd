@@ -20,7 +20,7 @@ const MonthlySamplesChart = ({ chartFilters, onChartFiltersChange, operators, ne
       networks={networks}
       showChartFilters={false}
     >
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
         <AreaChart data={data} margin={{ top: 16, right: 24, left: -10, bottom: 8 }}>
           <defs>
             <linearGradient id="gradBlue" x1="0" y1="0" x2="0" y2="1">

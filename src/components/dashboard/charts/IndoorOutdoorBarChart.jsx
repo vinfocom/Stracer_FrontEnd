@@ -254,7 +254,7 @@ const IndoorOutdoorProviderChart = () => {
       ) : chartData.length > 0 ? (
         <div className="h-full flex flex-col">
           <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
               <BarChart
                 data={chartData}
                 margin={{ top: 10, right: 25, bottom: 45, left: 15 }}

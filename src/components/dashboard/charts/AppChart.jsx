@@ -379,7 +379,7 @@ function AppChart() {
       ) : displayData.length > 0 ? (
         // ✅ Chart Render
         <div style={{ width: "100%", height: "100%" }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
             <ComposedChart
               data={displayData}
               margin={{ top: 20, right: 60, left: 20, bottom: 80 }}

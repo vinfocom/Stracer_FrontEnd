@@ -106,7 +106,7 @@ const ChartCard = ({
   }
 
   return (
-    <Card className="bg-white border border-gray-200 shadow-md hover:shadow-xl transition-shadow duration-300">
+    <Card className="bg-white border border-gray-200 shadow-md hover:shadow-xl transition-shadow duration-300 min-w-0">
       <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white pb-4">
         <div className="flex justify-between items-center gap-3">
           <div className="flex-1 min-w-0">
@@ -188,7 +188,7 @@ const ChartCard = ({
         </div>
       </CardHeader>
 
-      <CardContent className="h-[380px] relative p-6">
+      <CardContent className="h-[380px] relative p-6 min-h-0 min-w-0 overflow-hidden">
         {error ? (
           <div className="flex flex-col items-center justify-center h-full text-red-400">
             <svg className="h-16 w-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -231,8 +231,10 @@ const ChartCard = ({
             </table>
           </div>
         ) : (
-          <div ref={cardRef} className="chart-content h-full w-full">
-            {children}
+          <div ref={cardRef} className="chart-content h-full w-full min-h-0 min-w-0">
+            <div className="h-full w-full min-h-[220px] min-w-0">
+              {children}
+            </div>
           </div>
         )}
 

@@ -119,7 +119,11 @@ const BoxPlotChartSimple = ({
   const [hoveredItem, setHoveredItem] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
-  const { data: boxData, isLoading, error } = useBoxData(selectedMetric);
+  const { data: boxData, isLoading, error } = useBoxData({
+    metric: selectedMetric,
+    dateFrom: chartFilters?.dateFrom,
+    dateTo: chartFilters?.dateTo,
+  });
 
   const metricConfig = useMemo(() => {
     return METRIC_CONFIG[selectedMetric] || METRIC_CONFIG.rsrp;

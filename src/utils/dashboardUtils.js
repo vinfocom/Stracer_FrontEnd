@@ -110,25 +110,25 @@ export const downloadCSVFromData = (data = [], filename = 'data.csv') => {
 };
 
 export const buildQueryString = (filters) => {
-  const params = new URLSearchParams();
-  
+  const params = {};
+
   if (filters?.operators?.length > 0) {
-    params.append('operatorName', filters.operators.join(','));
+    params.operatorName = filters.operators.join(',');
   }
-  
+
   if (filters?.networks?.length > 0) {
-    params.append('networkType', filters.networks.join(','));
+    params.networkType = filters.networks.join(',');
   }
-  
+
   if (filters?.dateFrom) {
-    params.append('from', new Date(filters.dateFrom).toISOString());
+    params.from = new Date(filters.dateFrom).toISOString();
   }
-  
+
   if (filters?.dateTo) {
-    params.append('to', new Date(filters.dateTo).toISOString());
+    params.to = new Date(filters.dateTo).toISOString();
   }
-  
-  return params.toString() ? `?${params.toString()}` : '';
+
+  return params;
 };
 
 export const applyTopN = (data, topN) => {

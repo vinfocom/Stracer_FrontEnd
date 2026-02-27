@@ -357,6 +357,12 @@ const UnifiedMapSidebar = ({
   setEnableGrid,
   gridSizeMeters,
   setGridSizeMeters,
+  lteGridEnabled,
+  setLteGridEnabled,
+  lteGridSizeMeters,
+  setLteGridSizeMeters,
+  lteGridAggregationMethod,
+  setLteGridAggregationMethod,
   coverageViolationThreshold,
   setCoverageViolationThreshold,
   onAddSiteClick,
@@ -601,6 +607,70 @@ const UnifiedMapSidebar = ({
                     checked={showSiteSectors}
                     onChange={setShowSiteSectors}
                   />
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-2">
+                  <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
+                    <Grid3X3 className="w-3 h-3" /> LTE Prediction Grid
+                  </Label>
+                  <ToggleRow
+                    label="Enable LTE Grid"
+                    description="Draw grid inside loaded polygons"
+                    checked={Boolean(lteGridEnabled)}
+                    onChange={setLteGridEnabled}
+                  />
+
+                  {lteGridEnabled && (
+                    <>
+                      <div className="pt-1 bg-slate-800/50 rounded-lg p-2">
+                        <div className="flex items-center justify-between text-xs mb-2">
+                          <span className="text-slate-400">Grid Size</span>
+                          <span className="text-blue-400 font-semibold">
+                            {lteGridSizeMeters || 50}m
+                          </span>
+                        </div>
+                        <Input
+                          type="number"
+                          min={5}
+                          max={500}
+                          step={5}
+                          value={lteGridSizeMeters || 50}
+                          onChange={(e) => {
+                            const next = Number(e.target.value);
+                            if (!Number.isFinite(next)) return;
+                            const clamped = Math.max(5, Math.min(500, Math.round(next)));
+                            setLteGridSizeMeters?.(clamped);
+                          }}
+                          className="bg-slate-800 border-slate-600 text-white h-8 text-sm mb-2"
+                        />
+                        <input
+                          type="range"
+                          min="5"
+                          max="500"
+                          step="5"
+                          value={lteGridSizeMeters || 50}
+                          onChange={(e) =>
+                            setLteGridSizeMeters?.(parseInt(e.target.value, 10))
+                          }
+                          className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                        />
+                      </div>
+
+                      <SelectRow
+                        label="Aggregation"
+                        value={lteGridAggregationMethod || "median"}
+                        onChange={setLteGridAggregationMethod}
+                        options={[
+                          { value: "avg", label: "Average" },
+                          { value: "median", label: "Median" },
+                          { value: "mean", label: "Mean" },
+                          { value: "min", label: "Min" },
+                          { value: "max", label: "Max" },
+                        ]}
+                        placeholder="Select aggregation"
+                      />
+                    </>
+                  )}
                 </div>
 
                 {/* Highlighted Site Mode Selection */}

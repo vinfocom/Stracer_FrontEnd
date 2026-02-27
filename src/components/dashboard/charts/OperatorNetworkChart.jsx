@@ -147,7 +147,7 @@ const OperatorNetworkChart = ({ chartFilters, onChartFiltersChange }) => {
 
   const [selectedMetric, setSelectedMetric] = useState("samples");
 
-  const { data: allData, isLoading } = useOperatorMetrics(selectedMetric, {});
+  const { data: allData, isLoading } = useOperatorMetrics(selectedMetric, chartFilters || {});
 
  
 
@@ -494,7 +494,7 @@ const OperatorNetworkChart = ({ chartFilters, onChartFiltersChange }) => {
           filteredData.length > 0 &&
           technologyTypes.length > 0 ? (
           <div className="bg-gray-50 rounded-xl p-4 h-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
               <BarChart
                 data={filteredData}
                 margin={{ top: 20, right: 30, left: 50, bottom: 60 }}

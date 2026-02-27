@@ -396,7 +396,7 @@ const HandsetPerformanceChart = () => {
           </p>
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
           <ComposedChart
             data={chartData}
             margin={{ top: 20, right: 20, left: 60, bottom: 80 }}

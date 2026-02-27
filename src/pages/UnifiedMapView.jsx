@@ -608,6 +608,10 @@ const UnifiedMapView = () => {
   const [dataFilters, setDataFilters] = useState(DEFAULT_DATA_FILTERS);
   const [enableGrid, setEnableGrid] = useState(false);
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
+  const [lteGridEnabled, setLteGridEnabled] = useState(false);
+  const [lteGridSizeMeters, setLteGridSizeMeters] = useState(50);
+  const [lteGridAggregationMethod, setLteGridAggregationMethod] =
+    useState("median");
   const [durationTime, setDurationTime] = useState([]);
   const [techHandOver, setTechHandOver] = useState(false);
   const [bandHandover, setBandHandover] = useState(false);
@@ -674,8 +678,11 @@ const UnifiedMapView = () => {
   }, [searchParams]);
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
-  const { thresholds: baseThresholds, refetch: refetchColors } =
-    useColorForLog();
+  const {
+    thresholds: baseThresholds,
+    getMetricColor: getMetricColorForLog,
+    refetch: refetchColors,
+  } = useColorForLog();
   const shouldLoadProjectPolygons = showPolygons || enableSiteToggle || onlyInsidePolygons;
   const {
     polygons,
@@ -1795,6 +1802,12 @@ const uniquePcis = useMemo(() => {
         setEnableGrid={setEnableGrid}
         gridSizeMeters={gridSizeMeters}
         setGridSizeMeters={setGridSizeMeters}
+        lteGridEnabled={lteGridEnabled}
+        setLteGridEnabled={setLteGridEnabled}
+        lteGridSizeMeters={lteGridSizeMeters}
+        setLteGridSizeMeters={setLteGridSizeMeters}
+        lteGridAggregationMethod={lteGridAggregationMethod}
+        setLteGridAggregationMethod={setLteGridAggregationMethod}
         bestNetworkEnabled={bestNetworkEnabled}
         setBestNetworkEnabled={setBestNetworkEnabled}
         bestNetworkWeights={bestNetworkWeights}
@@ -1992,6 +2005,11 @@ const uniquePcis = useMemo(() => {
                   onDataLoaded={handleSitesLoaded}
                   colorMode={modeMethod}
                   viewport={viewport}
+                  lteGridEnabled={lteGridEnabled}
+                  lteGridSizeMeters={lteGridSizeMeters}
+                  lteGridAggregationMethod={lteGridAggregationMethod}
+                  thresholds={effectiveThresholds}
+                  getMetricColor={getMetricColorForLog}
                   options={{
                     scale: 0.2,
                     zIndex: 1000,

@@ -14,7 +14,7 @@ import { normalizeProviderName, normalizeTechName } from '@/utils/colorUtils';
 
 const SWR_CONFIG = {
   revalidateOnFocus: false,
-  revalidateOnReconnect: true,
+  revalidateOnReconnect: false,
   revalidateOnMount: true,
   shouldRetryOnError: true,       
   errorRetryCount: 2,              
@@ -30,6 +30,16 @@ const CACHE_TIME = {
   SHORT: 2 * 60 * 1000,
   MEDIUM: 5 * 60 * 1000,
   LONG: 15 * 60 * 1000,
+};
+
+const createRecentIsoRange = (days = 14) => {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(to.getDate() - days);
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
 };
 
 const METRIC_ENDPOINT_MAP = {
@@ -454,8 +464,22 @@ export const useMetricData = (metric, filters) => {
 };
 
 export const useOperatorMetrics = (metric, filters) => {
-  const cacheKey = useMemo(() => createCacheKey('operatorMetricsAll', filters), [filters]);
-  const query = useMemo(() => buildQueryString(filters), [filters]);
+  const defaultRangeRef = useRef(null);
+  if (!defaultRangeRef.current) {
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(to.getDate() - 30);
+    defaultRangeRef.current = { dateFrom: from, dateTo: to };
+  }
+
+  const effectiveFilters = useMemo(() => {
+    const hasDate = !!(filters?.dateFrom || filters?.dateTo);
+    if (hasDate) return filters;
+    return { ...(filters || {}), ...defaultRangeRef.current };
+  }, [filters]);
+
+  const cacheKey = useMemo(() => createCacheKey('operatorMetricsAll', effectiveFilters), [effectiveFilters]);
+  const query = useMemo(() => buildQueryString(effectiveFilters), [effectiveFilters]);
   
   const { data: rawData, ...rest } = useSWR(
     cacheKey,
@@ -482,8 +506,23 @@ export const useOperatorMetrics = (metric, filters) => {
 };
 
 export const useBandDistributionRaw = (filters) => {
-  const cacheKey = useMemo(() => createCacheKey('bandDistRaw', filters), [filters]);
-  const query = useMemo(() => buildQueryString(filters), [filters]);
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
+  const effectiveFilters = useMemo(() => {
+    const hasDate = !!(filters?.dateFrom || filters?.dateTo);
+    if (hasDate) return filters;
+    return {
+      ...(filters || {}),
+      dateFrom: rangeRef.current.from,
+      dateTo: rangeRef.current.to,
+    };
+  }, [filters]);
+
+  const cacheKey = useMemo(() => createCacheKey('bandDistRaw', effectiveFilters), [effectiveFilters]);
+  const query = useMemo(() => buildQueryString(effectiveFilters), [effectiveFilters]);
   
   return useSWR(
     cacheKey,
@@ -493,8 +532,23 @@ export const useBandDistributionRaw = (filters) => {
 };
 
 export const useBandDistribution = (filters) => {
-  const cacheKey = useMemo(() => createCacheKey('bandDist', filters), [filters]);
-  const query = useMemo(() => buildQueryString(filters), [filters]);
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
+  const effectiveFilters = useMemo(() => {
+    const hasDate = !!(filters?.dateFrom || filters?.dateTo);
+    if (hasDate) return filters;
+    return {
+      ...(filters || {}),
+      dateFrom: rangeRef.current.from,
+      dateTo: rangeRef.current.to,
+    };
+  }, [filters]);
+
+  const cacheKey = useMemo(() => createCacheKey('bandDist', effectiveFilters), [effectiveFilters]);
+  const query = useMemo(() => buildQueryString(effectiveFilters), [effectiveFilters]);
   
   const { data: rawData, ...rest } = useSWR(
     cacheKey,
@@ -511,9 +565,21 @@ export const useBandDistribution = (filters) => {
 };
 
 export const useBandCount = () => {
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
   const { data: rawData, ...rest } = useSWR(
-    'bandCount',
-    createFetcher(() => adminApi.getBandDistributionV2?.(''), []),
+    `bandCount:${rangeRef.current.from.slice(0, 10)}:${rangeRef.current.to.slice(0, 10)}`,
+    createFetcher(
+      () =>
+        adminApi.getBandDistributionV2?.({
+          from: rangeRef.current.from,
+          to: rangeRef.current.to,
+        }),
+      []
+    ),
     { ...SWR_CONFIG, dedupingInterval: CACHE_TIME.MEDIUM, fallbackData: [] }
   );
   
@@ -573,18 +639,38 @@ export const useOutdoorCount = (filters = {}) => {
 };
 
 export const useCoverageRanking = (rsrpMin = -95, rsrpMax = 0) => {
-  const cacheKey = useMemo(
-    () => createCacheKey('coverageRank', { min: rsrpMin, max: rsrpMax }), 
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
+  const query = useMemo(
+    () => ({
+      min: rsrpMin,
+      max: rsrpMax,
+      from: rangeRef.current.from,
+      to: rangeRef.current.to,
+    }),
     [rsrpMin, rsrpMax]
+  );
+
+  const cacheKey = useMemo(
+    () => createCacheKey('coverageRank', query), 
+    [query]
   );
   
   const { data: rawData, ...rest } = useSWR(
     cacheKey,
     createFetcher(
-      () => adminApi.getOperatorCoverageRanking({ min: rsrpMin, max: rsrpMax }),
+      () => adminApi.getOperatorCoverageRanking(query),
       []
     ),
-    { ...SWR_CONFIG, dedupingInterval: CACHE_TIME.MEDIUM, fallbackData: [] }
+    {
+      ...SWR_CONFIG,
+      dedupingInterval: CACHE_TIME.MEDIUM,
+      fallbackData: [],
+      shouldRetryOnError: false,
+    }
   );
   
   const ranking = useMemo(
@@ -596,18 +682,38 @@ export const useCoverageRanking = (rsrpMin = -95, rsrpMax = 0) => {
 };
 
 export const useQualityRanking = (rsrqMin = -10, rsrqMax = 0) => {
-  const cacheKey = useMemo(
-    () => createCacheKey('qualityRank', { min: rsrqMin, max: rsrqMax }), 
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
+  const query = useMemo(
+    () => ({
+      min: rsrqMin,
+      max: rsrqMax,
+      from: rangeRef.current.from,
+      to: rangeRef.current.to,
+    }),
     [rsrqMin, rsrqMax]
+  );
+
+  const cacheKey = useMemo(
+    () => createCacheKey('qualityRank', query), 
+    [query]
   );
   
   const { data: rawData, ...rest } = useSWR(
     cacheKey,
     createFetcher(
-      () => adminApi.getOperatorQualityRanking({ min: rsrqMin, max: rsrqMax }),
+      () => adminApi.getOperatorQualityRanking(query),
       []
     ),
-    { ...SWR_CONFIG, dedupingInterval: CACHE_TIME.MEDIUM, fallbackData: [] }
+    {
+      ...SWR_CONFIG,
+      dedupingInterval: CACHE_TIME.MEDIUM,
+      fallbackData: [],
+      shouldRetryOnError: false,
+    }
   );
   
   const ranking = useMemo(
@@ -619,11 +725,19 @@ export const useQualityRanking = (rsrqMin = -10, rsrqMax = 0) => {
 };
 
 export const useIndOut =() =>{
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
   const {data:rawData, ...rest} =useSWR(
-    "IndoorOutdoor",
+    ["IndoorOutdoor", rangeRef.current.from, rangeRef.current.to],
     async() => {
       try {
-        const response  = await adminApi.getIndoorOutdoor();
+        const response  = await adminApi.getIndoorOutdoor({
+          from: rangeRef.current.from,
+          to: rangeRef.current.to,
+        });
         return extractData(response, []);
       } catch (error) {
         throw error;
@@ -633,7 +747,8 @@ export const useIndOut =() =>{
       ...SWR_CONFIG,
       dedupingInterval: CACHE_TIME.MEDIUM,
       revalidateOnMount: true,
-      fallbackData: []
+      fallbackData: [],
+      shouldRetryOnError: false,
     }
   );
 
@@ -699,11 +814,19 @@ export const useHoles = () => {
 };
 
 export const useHandsetPerformance = () => {
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
   const { data: rawData, ...rest } = useSWR(
-    'handsetAvg',
+    ['handsetAvg', rangeRef.current.from, rangeRef.current.to],
     async () => {
       try {
-        const response = await adminApi.getHandsetDistributionV2();
+        const response = await adminApi.getHandsetDistributionV2({
+          from: rangeRef.current.from,
+          to: rangeRef.current.to,
+        });
         
         return extractData(response, []);
       } catch (error) {
@@ -714,7 +837,8 @@ export const useHandsetPerformance = () => {
       ...SWR_CONFIG, 
       dedupingInterval: CACHE_TIME.MEDIUM,
       revalidateOnMount: true,
-      fallbackData: [] 
+      fallbackData: [],
+      shouldRetryOnError: false,
     }
   );
   
@@ -944,15 +1068,26 @@ export const useParallelMetrics = (metrics = [], filters) => {
 };
 
 export const useAppData = () => {
+  const defaultRangeRef = useRef(null);
+  if (!defaultRangeRef.current) {
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(to.getDate() - 30);
+    defaultRangeRef.current = { from, to };
+  }
+
   const { data: rawData, isLoading, error, isValidating, mutate, ...rest } = useSWR(
-    'appData',
+    'appData:last30',
     async () => {
       try {
         if (!adminApi.getAppValue) {
           throw new Error('API method getAppValue not found');
         }
-        
-        const response = await adminApi.getAppValue();
+
+        const response = await adminApi.getAppValue(
+          defaultRangeRef.current.from.toISOString(),
+          defaultRangeRef.current.to.toISOString()
+        );
         
         if (response === null || response === undefined) {
           return [];
@@ -1119,16 +1254,30 @@ export const useRefreshDashboard = () => {
 // hooks/useDashboardData.js
 
 export const useBoxData = (options = {}) => {
-  const metric =
-    typeof options === 'string'
-      ? options
-      : options?.metric || 'rsrp';
+  const normalizedOptions = typeof options === 'string'
+    ? { metric: options }
+    : (options || {});
+  const metric = normalizedOptions?.metric || 'rsrp';
+
+  const rangeRef = useRef(null);
+  if (!rangeRef.current) {
+    rangeRef.current = createRecentIsoRange(14);
+  }
+
+  const fromDate = normalizedOptions?.dateFrom ? new Date(normalizedOptions.dateFrom) : null;
+  const toDate = normalizedOptions?.dateTo ? new Date(normalizedOptions.dateTo) : null;
+  const from = fromDate && !Number.isNaN(fromDate.getTime())
+    ? fromDate.toISOString()
+    : rangeRef.current.from;
+  const to = toDate && !Number.isNaN(toDate.getTime())
+    ? toDate.toISOString()
+    : rangeRef.current.to;
 
   const { data: rawData, ...rest } = useSWR(
-    ['boxData', metric],
+    ['boxData', metric, from, to],
     async () => {
       try {
-        const response = await adminApi.getBoxData?.(metric);
+        const response = await adminApi.getBoxData?.(metric, { from, to });
         const extractedData = extractData(response, []);
         return extractedData;
       } catch (error) {
@@ -1139,7 +1288,8 @@ export const useBoxData = (options = {}) => {
     {
       ...SWR_CONFIG,
       dedupingInterval: CACHE_TIME.MEDIUM,
-      fallbackData: []
+      fallbackData: [],
+      shouldRetryOnError: false,
     }
   );
 
