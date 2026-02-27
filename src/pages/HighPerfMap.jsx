@@ -133,28 +133,45 @@ const getMetricValue = (log, metric) => {
   }
 };
 
+const normalizeMetric = (metric) => {
+  if (!metric) return "rsrp";
+  const lower = metric.toLowerCase();
+  if (["dl_tpt", "dl_throughput", "tpt_dl", "throughput_dl"].includes(lower)) return "dl_thpt";
+  if (["ul_tpt", "ul_throughput", "tpt_ul", "throughput_ul"].includes(lower)) return "ul_thpt";
+  return lower;
+};
+
 const getColorForMetricValue = (value, metric, thresholds) => {
   if (value === null || value === undefined || isNaN(value)) return '#9CA3AF';
-  const metricKey = metric.toLowerCase().replace('_thpt', '_thpt').replace('_tpt', '_thpt');
+  const metricKey = normalizeMetric(metric);
   const thresholdArray = thresholds[metricKey] || thresholds[metric] || [];
   if (!Array.isArray(thresholdArray) || thresholdArray.length === 0) return '#3B82F6';
   
   const sortedThresholds = [...thresholdArray].sort((a, b) => {
     const aMin = parseFloat(a.min ?? a.Min ?? -Infinity);
     const bMin = parseFloat(b.min ?? b.Min ?? -Infinity);
-    return bMin - aMin;
+    return aMin - bMin;
   });
   
-  for (const threshold of sortedThresholds) {
+  for (let i = 0; i < sortedThresholds.length; i++) {
+    const threshold = sortedThresholds[i];
     const min = parseFloat(threshold.min ?? threshold.Min ?? -Infinity);
     const max = parseFloat(threshold.max ?? threshold.Max ?? Infinity);
-    if (value >= min && value <= max) {
+    const isLast = i === sortedThresholds.length - 1;
+    if (value >= min && (isLast ? value <= max : value < max)) {
       return threshold.color || threshold.Color || '#3B82F6';
     }
   }
+  
   if (sortedThresholds.length > 0) {
-    const lastThreshold = sortedThresholds[sortedThresholds.length - 1];
-    return lastThreshold.color || lastThreshold.Color || '#EF4444';
+    if (value < parseFloat(sortedThresholds[0].min ?? sortedThresholds[0].Min ?? -Infinity)) {
+      return sortedThresholds[0].color || sortedThresholds[0].Color || '#EF4444';
+    }
+    const last = sortedThresholds[sortedThresholds.length - 1];
+    if (value > parseFloat(last.max ?? last.Max ?? Infinity)) {
+      return last.color || last.Color || '#EF4444';
+    }
+    return sortedThresholds[0].color || sortedThresholds[0].Color || '#EF4444';
   }
   return '#9CA3AF';
 };

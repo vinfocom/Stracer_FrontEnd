@@ -79,14 +79,14 @@ const SideBar = ({ collapsed }) => {
             icon: Users, 
             text: 'Manage Users', 
             path: '/manage-users',
-            allowedRoles: [ROLES.SUPER_ADMIN] 
+            allowedRoles: [ROLES.SUPER_ADMIN,ROLES.ADMIN] 
         },
-        { 
-            icon: ReceiptPoundSterling, 
-            text: 'Get Reports', 
-            path: '/getreport',
-            allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN]
-        },
+        // { 
+        //     icon: ReceiptPoundSterling, 
+        //     text: 'Get Reports', 
+        //     path: '/getreport',
+        //     allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN]
+        // },
         { 
             icon: Settings, 
             text: 'Settings', 

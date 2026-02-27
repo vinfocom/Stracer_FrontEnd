@@ -226,10 +226,12 @@ const getColorFromThresholds = (value, metricThresholds) => {
 
   const sorted = [...metricThresholds].sort((a, b) => parseFloat(a.min) - parseFloat(b.min));
 
-  for (const t of sorted) {
+  for (let i = 0; i < sorted.length; i++) {
+    const t = sorted[i];
     const min = parseFloat(t.min);
     const max = parseFloat(t.max);
-    if (value >= min && value <= max) {
+    const isLast = i === sorted.length - 1;
+    if (value >= min && (isLast ? value <= max : value < max)) {
       return t.color;
     }
   }
@@ -403,9 +405,17 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor, select
 });
 NeighborInfoWindow.displayName = 'NeighborInfoWindow';
 
+const normalizeMetric = (metric) => {
+  if (!metric) return "rsrp";
+  const lower = metric.toLowerCase();
+  if (["dl_tpt", "dl_throughput", "tpt_dl", "throughput_dl"].includes(lower)) return "dl_thpt";
+  if (["ul_tpt", "ul_throughput", "tpt_ul", "throughput_ul"].includes(lower)) return "ul_thpt";
+  return lower;
+};
+
 const PrimaryLogInfoWindow = React.memo(({ log, onClose, resolveColor, selectedMetric }) => {
   if (!log) return null;
-  const metricValue = log[selectedMetric];
+  const metricValue = log[normalizeMetric(selectedMetric)];
   const metricColor = resolveColor(metricValue, selectedMetric);
 
   return (
@@ -792,7 +802,8 @@ const MapWithMultipleCircles = ({
         const value = loc?.[key];
         return resolveColor(value, colorBy);
     }
-    const value = loc?.[selectedMetric];
+    const normalizedKey = normalizeMetric(selectedMetric);
+    const value = loc?.[normalizedKey];
     return resolveColor(value, selectedMetric);
   }, [selectedMetric, colorBy, resolveColor]);
 

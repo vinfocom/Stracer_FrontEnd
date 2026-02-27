@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { adminApi, companyApi } from '../api/apiEndpoints';
 import { toast } from 'react-toastify';
 import DataTable from '../components/common/DataTable';
@@ -18,6 +19,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from '@/components/ui/label';
 
 const ManageUsersPage = () => {
+    const [searchParams] = useSearchParams();
+    const companyIdQuery = searchParams.get('companyId');
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -31,11 +34,12 @@ const ManageUsersPage = () => {
         setLoading(true);
         try {
             const apiFilters = {
-                UserName: filters.UserName,
-                Mobile: filters.MobileNo,
-                Email: filters.EmailId,
+                name: filters.UserName,
+                mobile: filters.MobileNo,
+                email: filters.EmailId,
+                ...(companyIdQuery ? { companyId: companyIdQuery } : {})
             };
-            const response = await companyApi.licensesDetails();
+            const response = await companyApi.licensesDetails(apiFilters);
             const userData = response.Data || [];
             setUsers(Array.isArray(userData) ? userData : []);
         } catch (error) {
@@ -44,7 +48,7 @@ const ManageUsersPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [filters]);
+    }, [filters, companyIdQuery]);
 
     useEffect(() => {
         fetchUsers();
@@ -52,10 +56,12 @@ const ManageUsersPage = () => {
 
     const handleOpenDialog = async (user = null) => {
         if (user) {
+            console.log("handleOpenDialog user:", user);
             setIsDialogOpen(true);
             setIsFetchingDetails(true);
             try {
-                const response = await adminApi.getUserById(user.id);
+                const userId = user.id ?? user.user_id ?? user.UserId;
+                const response = await adminApi.getUserById(userId);
                 const userData = response.Data?.ob_user || response.Data || response;
                 setCurrentUser(userData);
             } catch (error) {
@@ -81,8 +87,9 @@ const ManageUsersPage = () => {
     };
 
     const handleDeleteUser = async (userOrId) => {
+        console.log("handleDeleteUser item:", userOrId);
         const userId = typeof userOrId === 'object'
-            ? (userOrId.id ?? userOrId.UserId ?? userOrId.user_id ?? userOrId.userId)
+            ? (userOrId.user_id ?? userOrId.id ?? userOrId.UserId ?? userOrId.userId)
             : userOrId;
 
         if (!userId) {
@@ -119,9 +126,51 @@ const ManageUsersPage = () => {
         }
     };
 
+    const handleActivateUser = async (userOrId) => {
+        const userId = typeof userOrId === 'object'
+            ? (userOrId.user_id ?? userOrId.id ?? userOrId.UserId ?? userOrId.userId)
+            : userOrId;
+
+        if (!userId) {
+            toast.error('Cannot determine user id for activation.');
+            return;
+        }
+
+        if (!window.confirm('Are you sure you want to activate this user?')) {
+            return;
+        }
+
+        try {
+            const response = await adminApi.activateUser(userId);
+            const ok =
+                response?.Status === 1 ||
+                response?.Status === '1' ||
+                response?.status === 200 ||
+                response?.status === '200' ||
+                response?.Success === true ||
+                response?.success === true ||
+                response?.IsSuccess === true ||
+                (typeof response?.Message === 'string' && /success/i.test(response.Message));
+
+            if (ok) {
+                const successMsg = response?.Message || 'User activated successfully!';
+                toast.success(successMsg);
+                fetchUsers();
+                if (typeof window !== 'undefined' && window.fetchCompanies) {
+                    window.fetchCompanies(); // Try to poke SuperAdmin to update if it exists globally, though usually not possible, we will just rely on standard fetchUsers.
+                }
+            } else {
+                const msg = response?.Message || response?.message || 'Failed to activate user.';
+                toast.error(msg);
+            }
+        } catch (error) {
+            toast.error(error?.message || 'Failed to activate user.');
+        }
+    };
+
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [user_name]: value }));
+        setFilters(prev => ({ ...prev, [name]: value }));
     };
 
     const handleReset = () => {
@@ -156,8 +205,8 @@ const ManageUsersPage = () => {
     const getStatusBadge = (isActive) => {
         const statusConfig = {
             1: { label: 'Active', className: 'bg-green-100 text-green-700 border border-green-300' },
-            2: { label: 'Pending', className: 'bg-yellow-100 text-yellow-700 border border-yellow-300' },
-            0: { label: 'Inactive', className: 'bg-red-100 text-red-700 border border-red-300' },
+            0: { label: 'Inactive', className: 'bg-yellow-100 text-yellow-700 border border-yellow-300' },
+            2: { label: 'Deleted', className: 'bg-red-100 text-red-700 border border-red-300' },
         };
         const config = statusConfig[isActive] || { label: 'Unknown', className: 'bg-gray-100 text-gray-700 border border-gray-300' };
         return (
@@ -206,6 +255,11 @@ const ManageUsersPage = () => {
             render: (row) => <span className="text-gray-700">{row.license_code || '-'}</span>
         },
         {
+            header: 'Status',
+            accessor: 'user_isactive',
+            render: (row) => getStatusBadge(row.user_isactive)
+        },
+        {
             header: 'Action',
             render: (user) => (
                 <DropdownMenu>
@@ -217,18 +271,29 @@ const ManageUsersPage = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-white border border-gray-200 shadow-lg">
                         <DropdownMenuLabel className="text-gray-800">Actions</DropdownMenuLabel>
-                        <DropdownMenuItem 
-                            onClick={() => handleOpenDialog(user)}
-                            className="text-gray-700 hover:bg-gray-100 cursor-pointer"
-                        >
-                            Edit
-                        </DropdownMenuItem>
-                        {/* <DropdownMenuItem
-                            onClick={() => handleDeleteUser(user)}
-                            className="text-red-600 hover:bg-red-50 cursor-pointer"
-                        >
-                            Delete
-                        </DropdownMenuItem> */}
+                        {(user.user_isactive === 1) ? (
+                            <>
+                                <DropdownMenuItem 
+                                    onClick={() => handleOpenDialog(user)}
+                                    className="text-gray-700 hover:bg-gray-100 cursor-pointer"
+                                >
+                                    Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => handleDeleteUser(user)}
+                                    className="text-red-600 hover:bg-red-50 cursor-pointer"
+                                >
+                                    Delete
+                                </DropdownMenuItem> 
+                            </>
+                        ) : (
+                            <DropdownMenuItem
+                                onClick={() => handleActivateUser(user)}
+                                className="text-green-600 hover:bg-green-50 cursor-pointer"
+                            >
+                                Make Active
+                            </DropdownMenuItem>
+                        )}
                     </DropdownMenuContent>
                 </DropdownMenu>
             ),

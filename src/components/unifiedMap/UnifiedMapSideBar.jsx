@@ -357,12 +357,21 @@ const UnifiedMapSidebar = ({
   setEnableGrid,
   gridSizeMeters,
   setGridSizeMeters,
+<<<<<<< HEAD
   lteGridEnabled,
   setLteGridEnabled,
   lteGridSizeMeters,
   setLteGridSizeMeters,
   lteGridAggregationMethod,
   setLteGridAggregationMethod,
+=======
+  mlGridEnabled,
+  setMlGridEnabled,
+  mlGridSize,
+  setMlGridSize,
+  mlGridAggregation,
+  setMlGridAggregation,
+>>>>>>> 9937a50b18f2f2f0835a3afe4a59efe8bdd01289
   coverageViolationThreshold,
   setCoverageViolationThreshold,
   onAddSiteClick,
@@ -690,7 +699,7 @@ const UnifiedMapSidebar = ({
                 </div>
 
                 {/* Add Site Button */}
-                <div className="mt-3 pt-3 border-t border-slate-700/50">
+                <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-2">
                   <button
                     onClick={() => onAddSiteClick?.()}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-lg hover:shadow-blue-500/25 transition-all duration-200"
@@ -698,6 +707,66 @@ const UnifiedMapSidebar = ({
                     <PlusCircle className="h-4 w-4" />
                     Add Site
                   </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('map:selectAllSites'))}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all duration-200 shadow-sm"
+                    >
+                      <Layers className="h-3.5 w-3.5" />
+                      Select All Sites
+                    </button>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('map:clearSelectedSites'))}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium bg-slate-700 hover:bg-slate-600 text-white transition-all duration-200 shadow-sm"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Clear Selected
+                    </button>
+                  </div>
+
+                  <div className="pt-3 mt-3 border-t border-slate-700/50 space-y-3">
+                    <ToggleRow
+                      label="Enable ML Grid"
+                      description="Aggregate points into geographic cells"
+                      checked={mlGridEnabled}
+                      onChange={setMlGridEnabled}
+                      useSwitch={true}
+                    />
+
+                    {mlGridEnabled && (
+                      <>
+                        <div className="bg-slate-800/50 rounded-lg p-2">
+                          <div className="flex items-center justify-between text-xs mb-2">
+                            <span className="text-slate-400">Grid Size</span>
+                            <span className="text-blue-400 font-semibold">{mlGridSize}m</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="10"
+                            max="500"
+                            step="10"
+                            value={mlGridSize || 50}
+                            onChange={(e) => setMlGridSize?.(parseInt(e.target.value))}
+                            className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                          />
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] font-medium text-slate-400">Aggregation Method</Label>
+                          <SegmentedControl
+                            value={mlGridAggregation}
+                            onChange={setMlGridAggregation}
+                            options={[
+                              { value: "mean", label: "Mean" },
+                              { value: "median", label: "Median" },
+                              { value: "mode", label: "Mode" },
+                            ]}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </>
             )}

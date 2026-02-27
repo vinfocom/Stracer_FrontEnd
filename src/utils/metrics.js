@@ -37,31 +37,31 @@ const generateColorFromHash = (str) => {
 
 export const getProviderColor = (providerName) => {
   if (!providerName) return "#6B7280";
-  
+
   const normalized = String(providerName).toLowerCase().trim();
-  
+
   const scheme = COLOR_SCHEMES.provider;
   const directMatch = Object.keys(scheme).find(
     (k) => k.toLowerCase() === normalized
   );
-  
+
   if (directMatch) {
     return scheme[directMatch];
   }
-  
+
   if (dynamicProviderColors.has(normalized)) {
     return dynamicProviderColors.get(normalized);
   }
-  
+
   const newColor = generateColorFromHash(normalized);
   dynamicProviderColors.set(normalized, newColor);
-  
+
   return newColor;
 };
 
 export const COLOR_SCHEMES = {
   provider: {
-    JIO: "#3B82F6", 
+    JIO: "#3B82F6",
     Jio: "#3B82F6",
     jio: "#3B82F6",
     "Far Eastone": "#00b4d8ff",
@@ -69,9 +69,9 @@ export const COLOR_SCHEMES = {
     "far eastone": "#00b4d8ff",
     "TW Mobile": "#f77f00ff",
     "FAR EASTONE": "#00b4d8ff",
-    "(466001)IR": "#6b705c", 
+    "(466001)IR": "#6b705c",
     "TW MOBILE": "#f77f00ff",
-    
+
     Airtel: "#EF4444",
     "IND airtel": "#EF4444",
     "Vi India": "#22C55E",
@@ -146,24 +146,24 @@ export const getColorByValue = (colorBy, value) => {
   if (colorBy === 'provider') {
     return getProviderColor(value);
   }
-  
+
   const scheme = COLOR_SCHEMES[colorBy];
   if (!scheme) return "#6B7280";
-  
+
   if (scheme[value]) return scheme[value];
-  
+
   const match = Object.keys(scheme).find(
     (k) => k.toLowerCase() === String(value || "").toLowerCase()
   );
-  
+
   if (match) return scheme[match];
-  
+
   if (colorBy === 'technology' || colorBy === 'band') {
     const hash = hashString(value);
     const index = hash % DYNAMIC_PROVIDER_PALETTE.length;
     return DYNAMIC_PROVIDER_PALETTE[index];
   }
-  
+
   return scheme["Unknown"] || "#6B7280";
 };
 
@@ -209,13 +209,13 @@ export const METRIC_CONFIG = {
     thresholdKey: 'dl_thpt',
     label: 'DL Throughput',
     unit: 'Mbps',
-    fields: ['dl_tpt', 'DL_TPT', 'dl_thpt', 'DL_THPT', 'dl_throughput', 'download'],
+    fields: ['dl_tpt', 'DL_TPT', 'dl_thpt', 'DL_THPT', 'dl_throughput', 'download', 'throughput_dl', 'throughput_DL', 'tpt_dl', 'tpt_DL'],
   },
   ul_thpt: {
     thresholdKey: 'ul_thpt',
     label: 'UL Throughput',
     unit: 'Mbps',
-    fields: ['ul_thpt', 'UL_THPT', 'ul_tpt', 'UL_TPT', 'ul_throughput', 'upload'],
+    fields: ['ul_thpt', 'UL_THPT', 'ul_tpt', 'UL_TPT', 'ul_throughput', 'upload', 'throughput_ul', 'throughput_UL', 'tpt_ul', 'tpt_UL'],
   },
   mos: {
     thresholdKey: 'mos',
@@ -227,7 +227,7 @@ export const METRIC_CONFIG = {
     thresholdKey: 'lte_bler',
     label: 'LTE BLER',
     unit: '%',
-    fields: ['lte_bler','lte_bler_json', 'LTE_BLER', 'bler', 'BLER'],
+    fields: ['lte_bler', 'lte_bler_json', 'LTE_BLER', 'bler', 'BLER'],
   },
   pci: {
     thresholdKey: 'pci',
@@ -286,8 +286,14 @@ export const METRIC_CONFIG = {
 };
 
 const METRIC_ALIASES = {
-  'dl_tpt': 'dl_thpt',     
-  'ul_tpt': 'ul_thpt',     
+  'dl_tpt': 'dl_thpt',
+  'ul_tpt': 'ul_thpt',
+  'dl_throughput': 'dl_thpt',
+  'ul_throughput': 'ul_thpt',
+  'throughput_dl': 'dl_thpt',
+  'throughput_ul': 'ul_thpt',
+  'tpt_dl': 'dl_thpt',
+  'tpt_ul': 'ul_thpt',
   'bler': 'lte_bler',
   'lte-bler': 'lte_bler',
   'mos_score': 'mos',
@@ -360,10 +366,12 @@ export const getColorForMetric = (metric, value, thresholds) => {
     return "#808080";
   }
 
-  const match = metricThresholds.find((t) => {
+  const sortedThresholds = [...metricThresholds].sort((a, b) => parseFloat(a.min) - parseFloat(b.min));
+  const match = sortedThresholds.find((t, i) => {
     const min = parseFloat(t.min);
     const max = parseFloat(t.max);
-    return Number.isFinite(min) && Number.isFinite(max) && numValue >= min && numValue <= max;
+    const isLast = i === sortedThresholds.length - 1;
+    return Number.isFinite(min) && Number.isFinite(max) && numValue >= min && (isLast ? numValue <= max : numValue < max);
   });
 
   return match?.color || "#808080";

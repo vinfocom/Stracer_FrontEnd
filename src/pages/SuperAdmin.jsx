@@ -34,6 +34,7 @@ const SuperAdminCompanies = () => {
       const res = await companyApi.deleteCompany(id);
       if(res?.Status === 1 ){
         toast.success("status updated Successfully")
+        fetchCompanies();
       }
     } catch(err){
       console.error("Error deleting company:", err);
@@ -43,13 +44,14 @@ const SuperAdminCompanies = () => {
 
   const handleDeleteUser = async (id) => {
     try{
-      const res = await companyApi.revokeLicense(id);
+      const res = await companyApi.deleteCompany(id);
       if(res?.Status === 1 ){
-        toast.success("License revoked Successfully")
+        toast.success("Company deleted Successfully")
+        fetchCompanies();
       }
     }catch(err){
-      console.error("Error revoking license:", err);
-      toast.error("Failed to revoke license. Please try again.");
+      console.error("Error deleting company:", err);
+      toast.error("Failed to delete company. Please try again.");
     }
   }
 
@@ -71,9 +73,13 @@ const SuperAdminCompanies = () => {
     { 
       header: "Licenses", 
       render: (row) => (
+        <Button onClick={()=>{
+          navigate(`/company-licenses?companyId=${row.id}`);
+        }}>
         <span className="text-sm">
           {row.total_used_licenses} / {row.total_granted_licenses}
         </span>
+        </Button>
       )
     },
     {
