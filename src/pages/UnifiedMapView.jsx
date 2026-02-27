@@ -28,11 +28,13 @@ import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 import LoadingProgress from "@/components/LoadingProgress";
 import TechHandoverMarkers from "@/components/unifiedMap/TechHandoverMarkers";
 import AddSiteFormDialog from "@/components/unifiedMap/AddSiteFormDialog";
+import LtePredictionLocationLayer from "@/components/unifiedMap/LtePredictionLocationLayer";
 import { normalizeBandName } from "@/utils/colorUtils";
 
 // Hooks
 import { useSiteData } from "@/hooks/useSiteData";
 import { useNeighborCollisions } from "@/hooks/useNeighborCollisions";
+import { useLtePrediction } from "@/hooks/useLtePrediction";
 import useColorForLog from "@/hooks/useColorForLog";
 import {
   useBestNetworkCalculation,
@@ -565,6 +567,7 @@ const UnifiedMapView = () => {
   const [dominanceThreshold, setDominanceThreshold] = useState(null);
   const [hoveredCellId, setHoveredCellId] = useState(null);
   const [hoveredLog, setHoveredLog] = useState(null);
+  const [selectedSites, setSelectedSites] = useState([]);
 
   const [ui, setUi] = useState({
     basemapStyle: "roadmap",
@@ -626,6 +629,7 @@ const UnifiedMapView = () => {
   useEffect(() => {
     if (!enableSiteToggle) {
       setManualSiteData([]);
+      setSelectedSites([]);
     }
   }, [enableSiteToggle]);
 
@@ -634,6 +638,17 @@ const UnifiedMapView = () => {
     setManualSiteData(data);
     setManualSiteLoading(isLoading);
   }, []);
+
+  useEffect(() => {
+    if (dominanceThreshold !== null) {
+      setSelectedMetric("dominance");
+    } else if (coverageViolationThreshold !== null) {
+      setSelectedMetric("coverage_violation");
+    } else if (selectedMetric === "dominance" || selectedMetric === "coverage_violation") {
+      // Revert to default RSRP only if we just turned off dominance/violation
+      setSelectedMetric("rsrp");
+    }
+  }, [dominanceThreshold, coverageViolationThreshold]);
 
   const [dominanceSettings, setDominanceSettings] = useState({
     enabled: false,
@@ -740,6 +755,19 @@ const UnifiedMapView = () => {
     (enableDataToggle && dataToggle === "prediction") ||
       (enableSiteToggle && siteToggle === "sites-prediction"),
   );
+
+  // ✅ 2b. Use LTE Prediction Hook
+  const {
+    locations: ltePredictionLocations,
+    loading: ltePredictionLoading,
+  } = useLtePrediction({
+    projectId,
+    siteId: selectedSites.join(","),
+    metric: selectedMetric,
+    enabled: (enableDataToggle && dataToggle === "prediction") || Boolean(lteGridEnabled) || Boolean(enableSiteToggle),
+    filterEnabled: onlyInsidePolygons,
+    polygons: rawFilteringPolygons,
+  });
 
   // ✅ 3. Use Session Neighbors Hook
   const shouldFetchNeighbors = !passedNeighbors && showSessionNeighbors;
@@ -1578,15 +1606,12 @@ const handleMarkerHover = useCallback((hoverInfo) => {
      return;
   }
 
-  console.log("✅ [BOTTLENECK CHECK 2] UnifiedMapView received log:", log);
 
-  console.log("DEBUG: Actual Hovered Log Data:", log);
   
   // 2. Extract PCI from the unpacked log
   const pci = log?.pci ?? log?.PCI ?? log?.cell_id ?? log?.physical_cell_id;
   const normalizedPci = pci !== null && pci !== undefined ? String(pci).trim() : null;
   
-  console.log(`[UnifiedMapView] Hovered Log PCI: ${normalizedPci}`); 
   
   // 3. Set the corrected log object to state
   setHoveredLog(log);
@@ -1893,7 +1918,11 @@ const uniquePcis = useMemo(() => {
             <MapWithMultipleCircles
               isLoaded={isLoaded}
               loadError={loadError}
-              locations={finalDisplayLocations}
+              locations={
+                enableDataToggle && dataToggle === "prediction"
+                  ? []
+                  : finalDisplayLocations
+              }
               thresholds={effectiveThresholds}
               selectedMetric={selectedMetric}
               areaData={areaData}
@@ -1945,6 +1974,26 @@ const uniquePcis = useMemo(() => {
                 clearSignal={ui.drawClearSignal}
                 onDrawingsChange={handleDrawingsChange}
               />
+
+              {/* LTE Prediction Layer — renders when dataToggle === "prediction" or lteGridEnabled or sites are selected */}
+              {((enableDataToggle && dataToggle === "prediction") || lteGridEnabled || (enableSiteToggle && selectedSites.length > 0)) && (
+                <LtePredictionLocationLayer
+                  enabled={true}
+                  map={mapRef.current}
+                  locations={ltePredictionLocations || []}
+                  selectedMetric={selectedMetric}
+                  thresholds={effectiveThresholds}
+                  getMetricColor={getMetricColorForLog}
+                  filterPolygons={onlyInsidePolygons ? rawFilteringPolygons : []}
+                  filterInsidePolygons={onlyInsidePolygons}
+                  enableGrid={lteGridEnabled}
+                  gridSizeMeters={lteGridSizeMeters || 50}
+                  gridAggregationMethod={lteGridAggregationMethod || "median"}
+                  mlGridEnabled={mlGridEnabled}
+                  mlGridSize={mlGridSize}
+                  mlGridAggregation={mlGridAggregation}
+                />
+              )}
 
               {showPolygons &&
                 (visiblePolygons || []).map((poly) => (
@@ -2007,14 +2056,9 @@ const uniquePcis = useMemo(() => {
                   onDataLoaded={handleSitesLoaded}
                   colorMode={modeMethod}
                   viewport={viewport}
-                  lteGridEnabled={lteGridEnabled}
-                  lteGridSizeMeters={lteGridSizeMeters}
-                  lteGridAggregationMethod={lteGridAggregationMethod}
                   thresholds={effectiveThresholds}
                   getMetricColor={getMetricColorForLog}
-                  mlGridEnabled={mlGridEnabled}
-                  mlGridSize={mlGridSize}
-                  mlGridAggregation={mlGridAggregation}
+                  onSiteSelect={setSelectedSites}
                   options={{
                     scale: 0.2,
                     zIndex: 1000,
@@ -2058,7 +2102,7 @@ const uniquePcis = useMemo(() => {
       {/* Add Site Cursor Indicator */}
       {addSiteMode && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[2000] bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
-          📍 Click on the map to select a location
+           Click on the map to select a location
           <button
             onClick={() => { setAddSiteMode(false); addSiteModeRef.current = false; }}
             className="ml-2 bg-white/20 hover:bg-white/30 rounded-full px-2 py-0.5 text-xs"

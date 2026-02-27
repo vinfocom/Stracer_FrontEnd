@@ -421,8 +421,9 @@ const UnifiedMapSidebar = ({
   );
 
   const clearAllDataFilters = useCallback(() => {
-    setDataFilters?.({ providers: [], bands: [], technologies: [] });
-  }, [setDataFilters]);
+    setDataFilters?.({ providers: [], bands: [], technologies: [],indoorOutdoor: [] });
+    setPciThreshold(0);
+  }, [setDataFilters,setPciThreshold]);
 
   const activeDataFiltersCount = useMemo(() => {
     if (!dataFilters) return 0;
@@ -453,6 +454,7 @@ const UnifiedMapSidebar = ({
       enableDataToggle ||
       (enableSiteToggle && siteToggle === "sites-prediction") ||
       showPolygons,
+      onlyInsidePolygons,
     [enableDataToggle, enableSiteToggle, siteToggle, showPolygons],
   );
 
@@ -721,49 +723,7 @@ const UnifiedMapSidebar = ({
                       Clear Selected
                     </button>
                   </div>
-
-                  <div className="pt-3 mt-3 border-t border-slate-700/50 space-y-3">
-                    <ToggleRow
-                      label="Enable ML Grid"
-                      description="Aggregate points into geographic cells"
-                      checked={mlGridEnabled}
-                      onChange={setMlGridEnabled}
-                      useSwitch={true}
-                    />
-
-                    {mlGridEnabled && (
-                      <>
-                        <div className="bg-slate-800/50 rounded-lg p-2">
-                          <div className="flex items-center justify-between text-xs mb-2">
-                            <span className="text-slate-400">Grid Size</span>
-                            <span className="text-blue-400 font-semibold">{mlGridSize}m</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="10"
-                            max="500"
-                            step="10"
-                            value={mlGridSize || 50}
-                            onChange={(e) => setMlGridSize?.(parseInt(e.target.value))}
-                            className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
-                          />
-                        </div>
-                        
-                        <div className="space-y-1.5">
-                          <Label className="text-[11px] font-medium text-slate-400">Aggregation Method</Label>
-                          <SegmentedControl
-                            value={mlGridAggregation}
-                            onChange={setMlGridAggregation}
-                            options={[
-                              { value: "mean", label: "Mean" },
-                              { value: "median", label: "Median" },
-                              { value: "mode", label: "Mode" },
-                            ]}
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
+                  
                 </div>
               </>
             )}
@@ -1000,10 +960,10 @@ const UnifiedMapSidebar = ({
                     const newVal = checked ? 6 : null;
                     setDominanceThreshold(newVal);
 
-                    if (checked) 
-                      setMetric("dominance") 
-                      else 
-                        setMetric("rsrp");
+                    // if (checked) 
+                    //   setMetric("dominance") 
+                    //   else 
+                    //     setMetric("rsrp");
                   }}
                 />
               </div>
@@ -1045,11 +1005,12 @@ const UnifiedMapSidebar = ({
 
                     if (checked) {
                       setDominanceThreshold?.(null); // Mutually exclusive
-                      setMetric("coverage_violation"); // This triggers the layer update
-                    } else {
-                      // If disabling, reset metric to default
-                      setMetric("rsrp");
-                    }
+                      // setMetric("coverage_violation"); // This triggers the layer update
+                    } 
+                    // else {
+                    //   // If disabling, reset metric to default
+                    //   setMetric("rsrp");
+                    // }
 
                   }}
                 />

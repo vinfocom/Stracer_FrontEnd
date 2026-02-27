@@ -539,7 +539,7 @@ const LtePredictionLocationLayer = ({
   }, [zoomLevel]);
 
   const validMap = useMemo(() => {
-    return map && typeof map.getDiv === "function";
+    return map && typeof map.getDiv === "function" && Boolean(map.getDiv());
   }, [map]);
 
   useEffect(() => {
@@ -552,18 +552,37 @@ const LtePredictionLocationLayer = ({
       });
     }
 
-    overlayRef.current.setMap(map);
-    setZoomLevel(map.getZoom?.() ?? 13);
+    // Guard against cases where map exists but is mid-teardown (deck.gl google-maps overlay can call addListener on null)
+    try {
+      overlayRef.current.setMap(map);
+    } catch (e) {
+      // If map is not ready, avoid throwing and let next render attach again
+      return;
+    }
 
-    const listener = map.addListener("zoom_changed", () => {
-      setZoomLevel(map.getZoom?.() ?? 13);
-    });
+    // Only set zoom if it actually changed to avoid update loops
+    const nextZoom = map.getZoom?.() ?? 13;
+    setZoomLevel((prev) => (prev === nextZoom ? prev : nextZoom));
+
+    const listener =
+      typeof map.addListener === "function"
+        ? map.addListener("zoom_changed", () => {
+            const z = map.getZoom?.() ?? 13;
+            setZoomLevel((prev) => (prev === z ? prev : z));
+          })
+        : null;
 
     return () => {
-      if (listener) window.google.maps.event.removeListener(listener);
+      if (listener && window.google?.maps?.event?.removeListener) {
+        window.google.maps.event.removeListener(listener);
+      }
       if (overlayRef.current) {
-        overlayRef.current.setProps({ layers: [] });
-        overlayRef.current.setMap(null);
+        try {
+          overlayRef.current.setProps({ layers: [] });
+          overlayRef.current.setMap(null);
+        } catch (e) {
+          // ignore detach errors
+        }
       }
     };
   }, [enabled, validMap, map]);

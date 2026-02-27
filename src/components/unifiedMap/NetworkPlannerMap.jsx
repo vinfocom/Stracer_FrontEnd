@@ -9,7 +9,6 @@ import {
 } from "@/utils/colorUtils";
 import { useSiteData } from "@/hooks/useSiteData";
 import { mapViewApi } from "@/api/apiEndpoints";
-import LtePredictionLocationLayer from "@/components/unifiedMap/LtePredictionLocationLayer";
 
 function computeOffset(center, distanceMeters, headingDegrees) {
   const earthRadius = 6371000;
@@ -183,14 +182,9 @@ const NetworkPlannerMap = ({
   selectedMetric = "rsrp",
   onlyInsidePolygons = false,
   filterPolygons = [],
-  lteGridEnabled = false,
-  lteGridSizeMeters = 50,
-  lteGridAggregationMethod = "median",
   thresholds = {},
   getMetricColor = null,
-  mlGridEnabled = false,
-  mlGridSize = 50,
-  mlGridAggregation = "mean",
+  onSiteSelect = null,
 }) => {
   const { siteData, loading, error } = useSiteData({
     enableSiteToggle,
@@ -209,7 +203,6 @@ const NetworkPlannerMap = ({
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
   const [selectedSiteDataById, setSelectedSiteDataById] = useState({});
   const [loadingSitesQueue, setLoadingSitesQueue] = useState(new Set());
-  const [lteLoadingQueue, setLteLoadingQueue] = useState(new Set());
   const [selectedSectorInfo, setSelectedSectorInfo] = useState(null);
 
   const normalizedPolygonPaths = useMemo(() => {
@@ -311,7 +304,6 @@ const NetworkPlannerMap = ({
       setSelectedSectorInfo(null);
       siteFetchTokenRef.current = {};
       setLoadingSitesQueue(new Set());
-      setLteLoadingQueue(new Set());
     }
   }, [enableSiteToggle, clearMapOverlays, siteToggle]);
 
@@ -417,7 +409,8 @@ const NetworkPlannerMap = ({
             break;
           }
         } catch {
-          // continue trying other query param shapes
+          toast.error("Failed to fetch site data");
+          
         }
       }
 
@@ -429,83 +422,7 @@ const NetworkPlannerMap = ({
         .flatMap((site, idx) => generateSectorsFromSite(site, idx, colorMode))
         .filter((s) => pointInsideAnyPolygon({ lat: s.lat, lng: s.lng }));
 
-      const metricKey = String(selectedMetric || "rsrp").toLowerCase();
-      const siteIdStr = String(siteMarker.siteId).trim();
-      const siteIdComparable = normalizeComparableSiteId(siteIdStr);
-      const lteParamCandidates = [
-        { projectId: projectId || "", metric: metricKey, siteId: siteIdStr },
-        { projectId: projectId || "", metric: metricKey, site_id: siteIdStr },
-        { projectId: projectId || "", metric: metricKey, siteIdFiltered: siteIdStr },
-        { projectId: projectId || "", metric: metricKey, SiteIdFiltered: siteIdStr },
-        { projectId: projectId || "", metric: metricKey, SiteId: siteIdStr },
-        { projectId: projectId || "", metric: metricKey, site: siteIdStr },
-        { projectId: projectId || "", metric: metricKey },
-      ];
-
-      let lteRows = [];
-      for (const params of lteParamCandidates) {
-        try {
-          const lteRes = await mapViewApi.getLtePfrection(params);
-          const raw = Array.isArray(lteRes?.Data) ? lteRes.Data : [];
-          const normalized = raw
-            .map((row) => {
-              const lat = Number(row?.lat);
-              const lng = Number(row?.lon ?? row?.lng);
-              const value = Number(row?.value);
-              const sampleCount = Number(row?.sampleCount ?? 0);
-              const rowSiteId = String(row?.siteId ?? row?.site_id ?? "").trim();
-              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-              return {
-                lat,
-                lng,
-                value: Number.isFinite(value) ? value : null,
-                sampleCount: Number.isFinite(sampleCount) ? sampleCount : 0,
-                siteId: rowSiteId || siteIdStr,
-              };
-            })
-            .filter(Boolean);
-
-          const matched = normalized.filter((p) => {
-            const rowComparable = normalizeComparableSiteId(p.siteId);
-            return rowComparable && rowComparable === siteIdComparable;
-          });
-          if (matched.length > 0) {
-            lteRows = matched;
-            break;
-          }
-
-          const hasSiteFilterParam = Boolean(
-            params.siteId ||
-              params.site_id ||
-              params.siteIdFiltered ||
-              params.SiteIdFiltered ||
-              params.SiteId ||
-              params.site,
-          );
-          const hasRowSiteIds = normalized.some((p) => String(p.siteId || "").trim() !== "");
-          if (hasSiteFilterParam && normalized.length > 0 && !hasRowSiteIds) {
-            lteRows = normalized.map((row) => ({ ...row, siteId: siteIdStr }));
-            break;
-          }
-
-          if (
-            normalized.length > 0 &&
-            !params.siteId &&
-            !params.site_id &&
-            !params.siteIdFiltered &&
-            !params.SiteIdFiltered &&
-            !params.SiteId &&
-            !params.site
-          ) {
-            lteRows = normalized;
-            break;
-          }
-        } catch {
-          // continue trying
-        }
-      }
-
-      return { sectors, lteRows };
+      return { sectors, lteRows: [] };
     },
     [projectId, filteredSiteData, colorMode, selectedMetric, pointInsideAnyPolygon],
   );
@@ -528,11 +445,6 @@ const NetworkPlannerMap = ({
       const token = `${Date.now()}-${Math.random()}`;
       siteFetchTokenRef.current[siteId] = token;
       setLoadingSitesQueue((prev) => {
-        const next = new Set(prev);
-        next.add(siteId);
-        return next;
-      });
-      setLteLoadingQueue((prev) => {
         const next = new Set(prev);
         next.add(siteId);
         return next;
@@ -563,11 +475,6 @@ const NetworkPlannerMap = ({
             next.delete(siteId);
             return next;
           });
-          setLteLoadingQueue((prev) => {
-            const next = new Set(prev);
-            next.delete(siteId);
-            return next;
-          });
         }
       }
     },
@@ -581,27 +488,34 @@ const NetworkPlannerMap = ({
       setSelectedSectorInfo(null);
 
       if (selectedSiteIdSet.has(siteId)) {
-        setSelectedSiteIds((prev) => prev.filter((id) => id !== siteId));
+        const nextIds = selectedSiteIds.filter((id) => id !== siteId);
+        setSelectedSiteIds(nextIds);
+        if (onSiteSelect) onSiteSelect(nextIds);
         return;
       }
 
-      setSelectedSiteIds((prev) => [...prev, siteId]);
+      const nextIds = [...selectedSiteIds, siteId];
+      setSelectedSiteIds(nextIds);
+      if (onSiteSelect) onSiteSelect(nextIds);
       await loadSiteData(siteMarker);
     },
-    [loadSiteData, selectedSiteIdSet],
+    [loadSiteData, selectedSiteIdSet, selectedSiteIds, onSiteSelect],
   );
 
   const handleSelectAllSites = useCallback(async () => {
     if (!Array.isArray(siteMarkers) || siteMarkers.length === 0) return;
     setSelectedSectorInfo(null);
-    setSelectedSiteIds(siteMarkers.map((site) => site.siteId));
+    const allIds = siteMarkers.map((site) => site.siteId);
+    setSelectedSiteIds(allIds);
+    if (onSiteSelect) onSiteSelect(allIds);
     await Promise.all(siteMarkers.map((site) => loadSiteData(site)));
-  }, [loadSiteData, siteMarkers]);
+  }, [loadSiteData, siteMarkers, onSiteSelect]);
 
   const handleClearSelectedSites = useCallback(() => {
     setSelectedSectorInfo(null);
     setSelectedSiteIds([]);
-  }, []);
+    if (onSiteSelect) onSiteSelect([]);
+  }, [onSiteSelect]);
 
   useEffect(() => {
     if (!Array.isArray(siteMarkers) || siteMarkers.length === 0) return;
@@ -769,29 +683,6 @@ const NetworkPlannerMap = ({
           Loading {loadingSitesQueue.size} site(s)...
         </div>
       )}
-      {lteLoadingQueue.size > 0 && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[2100] rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white shadow-md">
-          Loading LTE prediction for {lteLoadingQueue.size} site(s)...
-        </div>
-      )}
-
-      <LtePredictionLocationLayer
-        enabled={Boolean(enableSiteToggle && selectedSiteIds.length > 0 && selectedSiteLteLocations.length > 0)}
-        map={map}
-        locations={selectedSiteLteLocations}
-        selectedMetric={selectedMetric}
-        thresholds={thresholds}
-        getMetricColor={getMetricColor}
-        filterPolygons={filterPolygons}
-        filterInsidePolygons={onlyInsidePolygons}
-        enableGrid={lteGridEnabled}
-        gridSizeMeters={lteGridSizeMeters}
-        gridAggregationMethod={lteGridAggregationMethod}
-        aggregateOverlaps={true}
-        mlGridEnabled={mlGridEnabled}
-        mlGridSize={mlGridSize}
-        mlGridAggregation={mlGridAggregation}
-      />
 
       {visibleSectors.map((sector, index) => {
         const p0 = { lat: sector.lat, lng: sector.lng };

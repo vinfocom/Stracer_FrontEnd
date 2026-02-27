@@ -27,6 +27,7 @@ const isPointInPolygon = (point, polygon) => {
 
 export const useLtePrediction = ({
   projectId,
+  siteId = null,
   metric = 'rsrp',
   stat = 'avg',
   enabled = true,
@@ -71,21 +72,80 @@ export const useLtePrediction = ({
     setError(null);
 
     try {
-      const response = await mapViewApi.getLtePfrection({
+      console.log(`[LTE PREDICTION FETCH] Attempting fetch for projectId: ${projectId}, siteId: ${siteId}, metric: ${metric}`);
+
+      const params = {
         projectId: Number(projectId),
         metric: String(metric || '').toLowerCase(),
         stat,
-      });
+      };
+
+      let rawData = [];
+      let combinedResponse = null;
+
+      if (siteId && siteId.includes(",")) {
+        const ids = siteId.split(",").map(id => id.trim()).filter(Boolean);
+        const promises = ids.map(id =>
+          mapViewApi.getLtePfrection({ ...params, siteId: id }).catch(e => null)
+        );
+        const responses = await Promise.all(promises);
+
+        responses.forEach((res) => {
+          if (res && Array.isArray(res.Data)) {
+            rawData = rawData.concat(res.Data);
+            if (!combinedResponse && res.Status === 1) {
+              combinedResponse = res;
+            }
+          }
+        });
+
+        if (!combinedResponse) {
+          combinedResponse = { Status: 1, TotalLocations: rawData.length };
+        }
+        console.log(`[LTE PREDICTION RESPONSE] MULTI-SITE`, { TotalData: rawData.length, Sample: rawData[0] });
+      } else {
+        if (siteId) {
+          params.siteId = siteId;
+        }
+        combinedResponse = await mapViewApi.getLtePfrection(params);
+        console.log(`[LTE PREDICTION RESPONSE]`, combinedResponse);
+        rawData = Array.isArray(combinedResponse?.Data) ? combinedResponse.Data : [];
+      }
 
       if (!isMountedRef.current) return;
 
-      const rawData = Array.isArray(response?.Data) ? response.Data : [];
       const normalized = rawData
         .map((item) => {
-          const lat = Number(item?.lat);
-          const lng = Number(item?.lon);
-          const value = Number(item?.value);
-          const sampleCount = Number(item?.sampleCount ?? 0);
+          const lat = Number(item?.latitude ?? item?.lat);
+          const lng = Number(item?.longitude ?? item?.lon ?? item?.lng);
+
+          let rawValue = item?.value;
+
+          if (rawValue === undefined || rawValue === null) {
+            // Check specifically for rsrp, rsrq, sinr keys common in these payloads
+            if (metric === "rsrp" && item.reference_signal_power !== undefined) {
+              rawValue = item.reference_signal_power;
+            } else if (metric === "rsrq" && item.reference_signal_quality !== undefined) {
+              rawValue = item.reference_signal_quality;
+            } else if (metric === "sinr" && item.signal_to_noise_ratio !== undefined) {
+              rawValue = item.signal_to_noise_ratio;
+            } else {
+              // generic fallback for matching the key names
+              if (item[metric] !== undefined) rawValue = item[metric];
+              else if (item[metric.toUpperCase()] !== undefined) rawValue = item[metric.toUpperCase()];
+              else if (item[metric.toLowerCase()] !== undefined) rawValue = item[metric.toLowerCase()];
+              else {
+                // brute force search
+                const foundKey = Object.keys(item).find(k => k.toLowerCase().includes(metric.toLowerCase()));
+                if (foundKey) rawValue = item[foundKey];
+              }
+            }
+          }
+
+          const value = Number(rawValue);
+          // Default to 1 if missing because predictions often don't have sample counts but DeckGL needs it
+          const sampleCount = Number(item?.sampleCount ?? item?.sample_count ?? 1);
+          const rowSiteId = String(item?.siteId ?? item?.site_id ?? item?.site ?? '').trim();
 
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
@@ -95,7 +155,8 @@ export const useLtePrediction = ({
             latitude: lat,
             longitude: lng,
             value: Number.isFinite(value) ? value : null,
-            sampleCount: Number.isFinite(sampleCount) ? sampleCount : 0,
+            sampleCount: Number.isFinite(sampleCount) ? sampleCount : 1,
+            siteId: rowSiteId,
           };
         })
         .filter(Boolean);
@@ -109,11 +170,11 @@ export const useLtePrediction = ({
 
       setLocations(finalLocations);
       setMeta({
-        status: response?.Status ?? null,
-        projectId: response?.ProjectId ?? Number(projectId),
-        metric: response?.Metric ?? String(metric || '').toUpperCase(),
-        statRequested: response?.StatRequested ?? stat,
-        totalLocations: response?.TotalLocations ?? finalLocations.length,
+        status: combinedResponse?.Status ?? null,
+        projectId: combinedResponse?.ProjectId ?? Number(projectId),
+        metric: combinedResponse?.Metric ?? String(metric || '').toUpperCase(),
+        statRequested: combinedResponse?.StatRequested ?? stat,
+        totalLocations: combinedResponse?.TotalLocations ?? finalLocations.length,
       });
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -131,7 +192,7 @@ export const useLtePrediction = ({
         setLoading(false);
       }
     }
-  }, [enabled, projectId, metric, stat, filterEnabled, polygons]);
+  }, [enabled, projectId, siteId, metric, stat, filterEnabled, polygons]);
 
   useEffect(() => {
     if (!autoFetch) return;

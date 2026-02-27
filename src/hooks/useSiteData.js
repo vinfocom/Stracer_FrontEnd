@@ -44,7 +44,6 @@ export const useSiteData = ({
 
   // DEBUG: Log current state on every render
   useEffect(() => {
-    console.log(`[useSiteData] Hook Rendered. enableSiteToggle: ${enableSiteToggle}, siteToggle: ${siteToggle}, Data Length: ${siteData.length}`);
   }, [enableSiteToggle, siteToggle, siteData.length]);
 
   useEffect(() => {
@@ -53,11 +52,9 @@ export const useSiteData = ({
   }, []);
 
   const fetchSiteData = useCallback(async () => {
-    console.log(`[useSiteData] fetchSiteData CALLED. enableSiteToggle: ${enableSiteToggle}`);
 
     // If the toggle is not enabled, we clear data and stop
     if (!enableSiteToggle) {
-      console.log("[useSiteData] Toggle is OFF. Clearing siteData and returning.");
       setSiteData([]);
       setLoading(false);
       lastFetchParams.current = null;
@@ -73,11 +70,9 @@ export const useSiteData = ({
       polygons,
     });
     if (lastFetchParams.current === currentParams && siteData.length > 0) {
-      console.log("[useSiteData] Params unchanged and data exists. Skipping fetch.");
       return;
     }
 
-    console.log(`[useSiteData] Starting API call for ${siteToggle}...`);
     setLoading(true);
     setError(null);
     lastFetchParams.current = currentParams;
@@ -96,7 +91,6 @@ export const useSiteData = ({
       if (!isMounted.current) return;
 
       const rawData = response?.data?.Data || response?.data?.data || response?.Data || response?.data || [];
-      console.log(`[useSiteData] API Response received. Raw items: ${rawData.length}`);
       
       const normalizedData = Array.isArray(rawData) 
         ? rawData.map((item, index) => ({
@@ -122,11 +116,9 @@ export const useSiteData = ({
         );
       }
 
-      console.log(`[useSiteData] Setting siteData. Normalized items: ${finalData.length}`);
       setSiteData(finalData);
 
     } catch (err) {
-      console.error("[useSiteData] API Error:", err);
       if (isMounted.current) {
         setError(err);
         setSiteData([]);

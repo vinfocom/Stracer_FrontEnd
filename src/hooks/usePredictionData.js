@@ -33,18 +33,19 @@ export const usePredictionData = (projectId, selectedMetric, enabled = true) => 
       if (res?.Status === 1 && res?.Data) {
         const { dataList = [], colorSetting = [] } = res.Data;
         const formatted = dataList.map((pt) => {
-            const lat = parseFloat(pt.lat);
-            const lng = parseFloat(pt.lon);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-            return {
-              lat,
-              lng,
-              latitude: lat,
-              longitude: lng,
-              [selectedMetric]: pt.prm,
-              isPrediction: true,
-            };
-          }).filter(Boolean);
+          const lat = parseFloat(pt.lat);
+          const lng = parseFloat(pt.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          return {
+            lat,
+            lng,
+            latitude: lat,
+            longitude: lng,
+            [selectedMetric]: pt.prm,
+            value: pt.prm,        // required by LtePredictionLocationLayer
+            isPrediction: true,
+          };
+        }).filter(Boolean);
 
         setLocations(formatted);
         setColorSettings(colorSetting);

@@ -4,7 +4,8 @@ import {
   ChevronDown,
   Activity,
   BarChart3,
-  TrendingUp,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   ComposedChart,
@@ -23,6 +24,7 @@ const MapChildFooter = ({
   thresholds = [],
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showCDF, setShowCDF] = useState(true);
 
   const { stats, mergedChartData } = useMemo(() => {
     if (!data.length) return { stats: null, mergedChartData: [] };
@@ -91,7 +93,7 @@ const MapChildFooter = ({
       bins[index].count += 1;
     });
 
-    // --- Merge CDF into histogram bins (cumulative from LEFT to RIGHT) ---
+    // --- Merge CDF into histogram bins ---
     let runningTotal = 0;
     const merged = bins.map((bin) => {
       runningTotal += bin.count;
@@ -122,7 +124,6 @@ const MapChildFooter = ({
         flex flex-col
       `}
     >
-      {/* --- Header / Collapsed Bar --- */}
       <div
         className="flex items-center justify-between px-4 h-12 cursor-pointer hover:bg-gray-50 transition-colors shrink-0 border-b border-gray-100"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -133,18 +134,10 @@ const MapChildFooter = ({
             <span className="text-sm">Analytics</span>
           </div>
           <div className="flex items-center gap-3 text-xs text-gray-600 border-l pl-3 ml-1 truncate">
-            <span className="font-medium text-gray-900">{stats.count}</span>{" "}
-            Samples
+            <span className="font-medium text-gray-900">{stats.count}</span> Samples
             <span className="w-px h-3 bg-gray-300 mx-1 hidden sm:block" />
-            <span className="hidden sm:inline">
-              Avg {metric.toUpperCase()}:{" "}
-            </span>
-            <span
-              className={`font-mono font-bold ${getMetricColorClass(
-                stats.avg,
-                metric
-              )}`}
-            >
+            <span className="hidden sm:inline">Avg {metric.toUpperCase()}: </span>
+            <span className={`font-mono font-bold ${getMetricColorClass(stats.avg, metric)}`}>
               {stats.avg.toFixed(1)}
             </span>
           </div>
@@ -154,166 +147,77 @@ const MapChildFooter = ({
         </button>
       </div>
 
-      {/* --- Expanded Content --- */}
-      <div
-        className={`flex-grow overflow-y-auto p-4 ${
-          isExpanded ? "opacity-100 visible" : "opacity-0 invisible h-0"
-        }`}
-      >
-        {/* KPI Cards */}
+      <div className={`flex-grow overflow-y-auto p-4 ${isExpanded ? "opacity-100 visible" : "opacity-0 invisible h-0"}`}>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <StatBox
-            label={`Avg ${metric}`}
-            value={stats.avg.toFixed(2)}
-            icon={<Activity size={14} />}
-          />
+          <StatBox label={`Avg ${metric}`} value={stats.avg.toFixed(2)} icon={<Activity size={14} />} />
           <StatBox label="Min Value" value={stats.min.toFixed(2)} />
           <StatBox label="Max Value" value={stats.max.toFixed(2)} />
           <StatBox label="Total Samples" value={stats.count} />
         </div>
 
-        {/* Color Distribution Bar */}
         <div className="space-y-2 mb-5">
           <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-            <span className="flex items-center gap-1">
-              <BarChart3 size={12} /> Signal Threshold Distribution
-            </span>
+            <span className="flex items-center gap-1"><BarChart3 size={12} /> Signal Threshold Distribution</span>
           </div>
           <div className="h-4 w-full flex rounded-full overflow-hidden bg-gray-100 border border-gray-200">
             {Object.entries(stats.distribution).map(([color, count]) => (
               <div
                 key={color}
-                style={{
-                  width: `${(count / stats.count) * 100}%`,
-                  backgroundColor: color,
-                }}
+                style={{ width: `${(count / stats.count) * 100}%`, backgroundColor: color }}
                 className="h-full hover:opacity-80 transition-opacity"
-                title={`Count: ${count} (${(
-                  (count / stats.count) *
-                  100
-                ).toFixed(1)}%)`}
               />
             ))}
           </div>
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            {Object.entries(stats.distribution)
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 5)
-              .map(([color, count]) => (
-                <div
-                  key={color}
-                  className="flex items-center gap-1 text-[10px] text-gray-600"
-                >
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span>{((count / stats.count) * 100).toFixed(0)}%</span>
-                </div>
-              ))}
-          </div>
         </div>
 
-        {/* ====== MERGED HISTOGRAM + CDF CHART ====== */}
         <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 flex flex-col h-[220px]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] text-gray-500 font-semibold flex items-center gap-1.5">
               <BarChart3 size={13} /> Histogram &amp; Cumulative Distribution
             </span>
-            {/* Legend */}
             <div className="flex items-center gap-4 text-[10px] text-gray-500">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowCDF(!showCDF); }}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors ${
+                  showCDF ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-gray-100 border-gray-200 text-gray-500"
+                }`}
+              >
+                {showCDF ? <Eye size={10} /> : <EyeOff size={10} />} CDF Line
+              </button>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-2.5 rounded-sm bg-blue-500 inline-block" />
-                Count
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-0.5 bg-emerald-500 inline-block rounded" />
-                CDF&nbsp;%
+                <span className="w-3 h-2.5 rounded-sm bg-blue-500 inline-block" /> Count
               </span>
             </div>
           </div>
 
           <div className="flex-grow w-full min-h-0">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={mergedChartData}
-                margin={{ top: 5, right: 10, left: -15, bottom: 0 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
+              <ComposedChart data={mergedChartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} interval="preserveStartEnd" tickLine={false} axisLine={false} />
+                <YAxis yAxisId="left" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
+                {showCDF && (
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                )}
 
-                {/* X Axis — bin labels */}
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: 9 }}
-                  interval="preserveStartEnd"
-                  tickLine={false}
-                  axisLine={false}
-                />
-
-                {/* Left Y — histogram count */}
-                <YAxis
-                  yAxisId="left"
-                  tick={{ fontSize: 9 }}
-                  tickLine={false}
-                  axisLine={false}
-                  label={{
-                    value: "Count",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 9,
-                    fill: "#64748b",
-                    offset: 20,
-                  }}
-                />
-
-                {/* Right Y — cumulative % (0‑100) */}
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  domain={[0, 100]}
-                  tick={{ fontSize: 9 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${v}%`}
-                  label={{
-                    value: "CDF %",
-                    angle: 90,
-                    position: "insideRight",
-                    fontSize: 9,
-                    fill: "#10b981",
-                    offset: 15,
-                  }}
-                />
-
-                {/* Custom Tooltip */}
                 <RechartsTooltip
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
                     const d = payload[0].payload;
                     return (
                       <div className="bg-white p-2.5 border border-gray-100 shadow-lg rounded-md text-xs min-w-[170px]">
-                        <p className="font-bold mb-1.5 border-b pb-1 text-gray-700">
-                          Range: {d.rangeLabel}
-                        </p>
+                        <p className="font-bold mb-1.5 border-b pb-1 text-gray-700">Range: {d.rangeLabel}</p>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                           <span className="text-gray-500">Bin Count:</span>
-                          <span className="font-mono font-semibold text-blue-600">
-                            {d.count}
-                          </span>
-
+                          <span className="font-mono font-semibold text-blue-600">{d.count}</span>
                           <span className="text-gray-500">Cumulative:</span>
-                          <span className="font-mono font-semibold text-gray-800">
-                            {d.cumulativeCount}
-                          </span>
-
-                          <span className="text-gray-500">CDF:</span>
-                          <span className="font-mono font-semibold text-emerald-600">
-                            {d.cumulativePercent}%
-                          </span>
+                          <span className="font-mono font-semibold text-gray-800">{d.cumulativeCount}</span>
+                          {showCDF && (
+                            <>
+                              <span className="text-gray-500">CDF:</span>
+                              <span className="font-mono font-semibold text-emerald-600">{d.cumulativePercent}%</span>
+                            </>
+                          )}
                         </div>
                       </div>
                     );
@@ -321,27 +225,23 @@ const MapChildFooter = ({
                   cursor={{ fill: "rgba(0,0,0,0.04)" }}
                 />
 
-                {/* Histogram Bars */}
-                <Bar
-                  yAxisId="left"
-                  dataKey="count"
-                  fill="#3b82f6"
-                  radius={[3, 3, 0, 0]}
-                  name="Count"
-                  barSize={20}
-                />
+                {/* Bars rendered first (background) */}
+                <Bar yAxisId="left" dataKey="count" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Count" barSize={20} />
 
-                {/* CDF Line */}
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="cumulativePercent"
-                  stroke="#10b981"
-                  strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{ r: 4, strokeWidth: 0, fill: "#10b981" }}
-                  name="CDF %"
-                />
+                {/* Line rendered second (foreground) */}
+                {showCDF && (
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="cumulativePercent"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: "#10b981", strokeWidth: 0 }}
+                    activeDot={{ r: 5, strokeWidth: 0, fill: "#10b981" }}
+                    name="CDF %"
+                    isAnimationActive={false}
+                  />
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -351,12 +251,9 @@ const MapChildFooter = ({
   );
 };
 
-// --- Helpers ---
 const StatBox = ({ label, value, icon }) => (
   <div className="bg-slate-50 p-2 rounded border border-slate-100 flex flex-col items-center justify-center shadow-sm">
-    <span className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5 flex items-center gap-1">
-      {icon} {label}
-    </span>
+    <span className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5 flex items-center gap-1">{icon} {label}</span>
     <span className="text-sm font-bold text-slate-800">{value}</span>
   </div>
 );
@@ -370,4 +267,4 @@ const getMetricColorClass = (val, metric) => {
   return "text-blue-600";
 };
 
-export default MapChildFooter;  
+export default MapChildFooter;
