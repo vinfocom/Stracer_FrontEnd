@@ -219,6 +219,44 @@ const getPolygonBounds = (path) => {
   return { north: maxLat, south: minLat, east: maxLng, west: minLng };
 };
 
+const normalizeExternalPathPoint = (point) => {
+  if (!point) return null;
+
+  const rawLat = point.lat ?? point.Lat ?? point.latitude;
+  const rawLng = point.lng ?? point.Lng ?? point.longitude ?? point.lon;
+
+  const lat = typeof rawLat === "function" ? Number(rawLat()) : Number(rawLat);
+  const lng = typeof rawLng === "function" ? Number(rawLng()) : Number(rawLng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+};
+
+const normalizeExternalPolygonData = (polygons = []) => {
+  if (!Array.isArray(polygons) || polygons.length === 0) return [];
+
+  return polygons
+    .map((poly, idx) => {
+      const rawPath = Array.isArray(poly?.paths?.[0])
+        ? poly.paths[0]
+        : Array.isArray(poly?.paths)
+          ? poly.paths
+          : Array.isArray(poly?.path)
+            ? poly.path
+            : [];
+
+      const path = rawPath.map(normalizeExternalPathPoint).filter(Boolean);
+      if (path.length < 3) return null;
+
+      return {
+        id: poly?.id ?? poly?.uid ?? `external-${idx}`,
+        path,
+        bbox: poly?.bbox || getPolygonBounds(path),
+      };
+    })
+    .filter(Boolean);
+};
+
 // ============== Helper: Color Resolution ==============
 const getColorFromThresholds = (value, metricThresholds) => {
   if (value == null || isNaN(value)) return "#808080";
@@ -471,6 +509,8 @@ const MapWithMultipleCircles = ({
   projectId = null,
   polygonSource = "map",
   enablePolygonFilter = true,
+  filterInsidePolygons = false,
+  filterPolygons = [],
   showPolygonBoundary = true,
   enableGrid = false,
   gridSizeMeters = 50,
@@ -511,7 +551,6 @@ const MapWithMultipleCircles = ({
   
   const onFilteredLocationsChangeRef = useRef(onFilteredLocationsChange);
   const onFilteredNeighborsChangeRef = useRef(onFilteredNeighborsChange);
-  const polygonCheckerRef = useRef(null);
   const spatialIndexRef = useRef(null);
   const onMarkerClickRef = useRef(onMarkerClick);
   const onNeighborClickRef = useRef(onNeighborClick);
@@ -557,6 +596,13 @@ const MapWithMultipleCircles = ({
   // Fetch polygons
   useEffect(() => {
     const fetchPolygons = async () => {
+      if (Array.isArray(filterPolygons) && filterPolygons.length > 0) {
+        setPolygonData([]);
+        setPolygonsFetched(true);
+        setFetchError(null);
+        return;
+      }
+
       if (!projectId || !enablePolygonFilter) {
         setPolygonData([]);
         setPolygonsFetched(true);
@@ -585,7 +631,6 @@ const MapWithMultipleCircles = ({
         }
         
         setPolygonData(allPaths);
-        polygonCheckerRef.current = new PolygonChecker(allPaths);
         setPolygonsFetched(true);
         setFetchError(null);
       } catch (err) {
@@ -596,7 +641,25 @@ const MapWithMultipleCircles = ({
     };
     
     fetchPolygons();
-  }, [projectId, polygonSource, enablePolygonFilter]);
+  }, [projectId, polygonSource, enablePolygonFilter, filterPolygons]);
+
+  const externalPolygonData = useMemo(
+    () => normalizeExternalPolygonData(filterPolygons),
+    [filterPolygons],
+  );
+
+  const activePolygonData = useMemo(() => {
+    if (externalPolygonData.length > 0) return externalPolygonData;
+    return polygonData;
+  }, [externalPolygonData, polygonData]);
+
+  const activePolygonChecker = useMemo(
+    () => new PolygonChecker(activePolygonData),
+    [activePolygonData],
+  );
+
+  const hasActivePolygons = activePolygonData.length > 0;
+  const activePolygonsReady = externalPolygonData.length > 0 || polygonsFetched;
 
   // Filter primary locations by polygon & Legend
   const locationsToRender = useMemo(() => {
@@ -605,9 +668,9 @@ const MapWithMultipleCircles = ({
     let filtered = locations;
 
     // A. Apply Polygon Filter
-    if (enablePolygonFilter && polygonsFetched && polygonData.length > 0) {
-      const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
-      filtered = checker.filterLocations(filtered);
+    if (filterInsidePolygons && enablePolygonFilter) {
+      if (!activePolygonsReady || !hasActivePolygons) return [];
+      filtered = activePolygonChecker.filterLocations(filtered);
     }
 
     // B. Apply Legend Filter (Highlight)
@@ -650,7 +713,16 @@ const MapWithMultipleCircles = ({
     }
 
     return filtered;
-  }, [locations, polygonData, polygonsFetched, enablePolygonFilter, legendFilter, selectedMetric]);
+  }, [
+    locations,
+    enablePolygonFilter,
+    filterInsidePolygons,
+    legendFilter,
+    selectedMetric,
+    activePolygonChecker,
+    activePolygonsReady,
+    hasActivePolygons,
+  ]);
 
   const handleHover = useCallback((info) => {
     if (info.object) {
@@ -727,9 +799,9 @@ const MapWithMultipleCircles = ({
         };
       });
 
-    if (enablePolygonFilter && polygonsFetched && polygonData.length > 0) {
-      const checker = polygonCheckerRef.current || new PolygonChecker(polygonData);
-      parsed = checker.filterLocations(parsed);
+    if (filterInsidePolygons && enablePolygonFilter) {
+      if (!activePolygonsReady || !hasActivePolygons) return [];
+      parsed = activePolygonChecker.filterLocations(parsed);
     }
 
     if (legendFilter) {
@@ -760,7 +832,18 @@ const MapWithMultipleCircles = ({
     }
 
     return parsed;
-  }, [neighborData, showNeighbors, enablePolygonFilter, polygonsFetched, polygonData, selectedMetric, getThresholdInfo, legendFilter]);
+  }, [
+    neighborData,
+    showNeighbors,
+    enablePolygonFilter,
+    filterInsidePolygons,
+    selectedMetric,
+    getThresholdInfo,
+    legendFilter,
+    activePolygonChecker,
+    activePolygonsReady,
+    hasActivePolygons,
+  ]);
 
   useEffect(() => {
     if (locationsToRender.length > 1000) {
@@ -783,10 +866,10 @@ const MapWithMultipleCircles = ({
   }, [processedNeighbors]);
 
   const gridCells = useMemo(() => {
-    if (!enableGrid || !polygonData.length || !locationsToRender.length) return [];
+    if (!enableGrid || !activePolygonData.length || !locationsToRender.length) return [];
     
     return generateGridCellsOptimized(
-      polygonData, 
+      activePolygonData, 
       gridSizeMeters, 
       locationsToRender, 
       selectedMetric, 
@@ -794,7 +877,7 @@ const MapWithMultipleCircles = ({
       gridAggregationMethod,
       spatialIndexRef.current
     );
-  }, [enableGrid, gridSizeMeters, polygonData, locationsToRender, selectedMetric, gridAggregationMethod, resolveColor]);
+  }, [enableGrid, gridSizeMeters, activePolygonData, locationsToRender, selectedMetric, gridAggregationMethod, resolveColor]);
 
   const getPrimaryColor = useCallback((loc) => {
     if (colorBy && colorBy !== 'metric') {
@@ -889,7 +972,7 @@ const MapWithMultipleCircles = ({
         defaultCenter={computedCenter}
         zoom={defaultZoom}
       >
-        {showPolygonBoundary && polygonData.map(({ path }, idx) => (
+        {showPolygonBoundary && activePolygonData.map(({ path }, idx) => (
           <PolygonF
             key={`polygon-${idx}`}
             paths={path}

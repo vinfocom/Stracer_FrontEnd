@@ -246,6 +246,134 @@ const isPointInPolygon = (point, polygon) => {
   return inside;
 };
 
+const filterPointsInsidePolygons = (points = [], polygons = []) => {
+  if (!Array.isArray(points) || points.length === 0) return [];
+  if (!Array.isArray(polygons) || polygons.length === 0) return points;
+  return points.filter((point) =>
+    polygons.some((poly) => isPointInPolygon(point, poly)),
+  );
+};
+
+const normalizeKey = (value) => {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const num = Number(raw);
+  if (Number.isFinite(num) && Number.isInteger(num)) return String(num);
+  return raw;
+};
+
+const getLocationIdKey = (loc) =>
+  normalizeKey(loc?.id ?? loc?.Id ?? loc?.log_id ?? loc?.LogId);
+
+const getLocationPciKey = (loc) =>
+  normalizeKey(
+    loc?.pci ??
+      loc?.Pci ??
+      loc?.PCI ??
+      loc?.cell_id ??
+      loc?.CellId ??
+      loc?.physical_cell_id,
+  );
+
+const buildHandoverTransitions = (logs = []) => {
+  if (!Array.isArray(logs) || logs.length < 2) {
+    return {
+      technologyTransitions: [],
+      bandTransitions: [],
+      pciTransitions: [],
+    };
+  }
+
+  const technologyTransitions = [];
+  const bandTransitions = [];
+  const pciTransitions = [];
+
+  let prevTech = normalizeTechName(logs[0]?.technology);
+  let prevBand = logs[0]?.band;
+  let prevPci = logs[0]?.pci;
+  let prevSession = logs[0]?.session_id ?? null;
+
+  for (let i = 1; i < logs.length; i++) {
+    const loc = logs[i];
+    if (!loc) continue;
+
+    const currSession = loc.session_id ?? null;
+    if (currSession !== prevSession) {
+      prevTech = normalizeTechName(loc.technology);
+      prevBand = loc.band;
+      prevPci = loc.pci;
+      prevSession = currSession;
+      continue;
+    }
+
+    const lat = Number(loc.lat ?? loc.latitude);
+    const lng = Number(loc.lng ?? loc.longitude);
+    const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng);
+
+    const currTech = normalizeTechName(loc.technology);
+    if (hasCoordinates && currTech && prevTech && currTech !== prevTech) {
+      technologyTransitions.push({
+        from: prevTech,
+        to: currTech,
+        atIndex: i,
+        lat,
+        lng,
+        timestamp: loc.timestamp,
+        session_id: currSession,
+        type: "technology",
+      });
+    }
+    prevTech = currTech;
+
+    const currBand = loc.band;
+    if (
+      hasCoordinates &&
+      currBand &&
+      prevBand &&
+      String(currBand) !== String(prevBand)
+    ) {
+      bandTransitions.push({
+        from: String(prevBand),
+        to: String(currBand),
+        atIndex: i,
+        lat,
+        lng,
+        timestamp: loc.timestamp,
+        session_id: currSession,
+        type: "band",
+      });
+    }
+    prevBand = currBand;
+
+    const currPci = loc.pci;
+    if (
+      hasCoordinates &&
+      currPci !== "" &&
+      currPci !== null &&
+      currPci !== undefined &&
+      prevPci !== "" &&
+      prevPci !== null &&
+      prevPci !== undefined &&
+      String(currPci) !== String(prevPci)
+    ) {
+      pciTransitions.push({
+        from: String(prevPci),
+        to: String(currPci),
+        atIndex: i,
+        lat,
+        lng,
+        timestamp: loc.timestamp,
+        session_id: currSession,
+        type: "pci",
+      });
+    }
+    prevPci = currPci;
+  }
+
+  return { technologyTransitions, bandTransitions, pciTransitions };
+};
+
 const calculateMedian = (values) => {
   if (!values?.length) return null;
   const validValues = values.filter((v) => v != null && !isNaN(v));
@@ -556,7 +684,7 @@ const UnifiedMapView = () => {
 
   const [showPolygons, setShowPolygons] = useState(false);
   const [polygonSource, setPolygonSource] = useState("map");
-  const [onlyInsidePolygons, setOnlyInsidePolygons] = useState(false);
+  const [onlyInsidePolygons] = useState(true);
   const [areaEnabled, setAreaEnabled] = useState(false);
   const [coverageViolationThreshold, setCoverageViolationThreshold] =
     useState(null);
@@ -648,7 +776,7 @@ const UnifiedMapView = () => {
       // Revert to default RSRP only if we just turned off dominance/violation
       setSelectedMetric("rsrp");
     }
-  }, [dominanceThreshold, coverageViolationThreshold]);
+  }, [dominanceThreshold, coverageViolationThreshold, selectedMetric]);
 
   const [dominanceSettings, setDominanceSettings] = useState({
     enabled: false,
@@ -729,9 +857,6 @@ const UnifiedMapView = () => {
     progress: sampleProgress,
     error: sampleError,
     refetch: refetchSample,
-    bandTransitions,
-    pciTransitions,
-    technologyTransitions: technologyTransitions,
   } = useNetworkSamples(
     sessionIds,
     shouldFetchSamples,
@@ -911,24 +1036,35 @@ const UnifiedMapView = () => {
   }, [sessionIds]);
 
   // ... (Rest of Derived State & Computations logic is same) ...
-  const pciRange = useMemo(() => {
-    if (!pciDistData || Object.keys(pciDistData).length === 0) {
-      return { min: 0, max: 100 };
-    }
-    const percentages = Object.values(pciDistData).map((pciGroup) => {
+  const pciAppearanceByKey = useMemo(() => {
+    const result = new Map();
+    if (!pciDistData || typeof pciDistData !== "object") return result;
+    Object.entries(pciDistData).forEach(([rawPci, pciGroup]) => {
+      const key = normalizeKey(rawPci);
+      if (!key || !pciGroup || typeof pciGroup !== "object") return;
       const totalWeight = Object.values(pciGroup).reduce(
         (sum, value) => sum + (parseFloat(value) || 0),
         0,
       );
-      return totalWeight * 100;
+      result.set(key, totalWeight * 100);
     });
+    return result;
+  }, [pciDistData]);
+
+  const pciRange = useMemo(() => {
+    const percentages = [...pciAppearanceByKey.values()].filter((v) =>
+      Number.isFinite(v),
+    );
+    if (!percentages.length) {
+      return { min: 0, max: 100 };
+    }
     const min = Math.min(...percentages);
     const max = Math.max(...percentages);
     return {
-      min: isFinite(min) ? Math.floor(min) : 0,
-      max: isFinite(max) ? Math.ceil(max) : 100,
+      min: Number.isFinite(min) ? Math.floor(min) : 0,
+      max: Number.isFinite(max) ? Math.ceil(max) : 100,
     };
-  }, [pciDistData]);
+  }, [pciAppearanceByKey]);
 
   const locations = useMemo(() => {
     if (!enableDataToggle && !enableSiteToggle) return [];
@@ -941,7 +1077,10 @@ const UnifiedMapView = () => {
     } else if (enableSiteToggle && siteToggle === "sites-prediction") {
       mainLogs = predictionLocations || [];
     }
-    return mainLogs;
+
+    if (!onlyInsidePolygons) return mainLogs;
+    if (!rawFilteringPolygons?.length) return [];
+    return filterPointsInsidePolygons(mainLogs, rawFilteringPolygons);
   }, [
     enableDataToggle,
     enableSiteToggle,
@@ -949,6 +1088,8 @@ const UnifiedMapView = () => {
     siteToggle,
     sampleLocations,
     predictionLocations,
+    onlyInsidePolygons,
+    rawFilteringPolygons,
   ]);
 
   const isLoading =
@@ -961,6 +1102,13 @@ const UnifiedMapView = () => {
     (shouldFetchNeighbors && sessionNeighborLoading);
 
   const error = sampleError || predictionError || sessionNeighborError;
+
+  const polygonFilteredNeighborData = useMemo(() => {
+    const data = sessionNeighborData || [];
+    if (!onlyInsidePolygons) return data;
+    if (!rawFilteringPolygons?.length) return [];
+    return filterPointsInsidePolygons(data, rawFilteringPolygons);
+  }, [sessionNeighborData, onlyInsidePolygons, rawFilteringPolygons]);
 
   const effectiveThresholds = useMemo(() => {
     if (predictionColorSettings?.length && dataToggle === "prediction") {
@@ -1002,7 +1150,7 @@ const UnifiedMapView = () => {
       if (loc.technology) technologies.add(normalizeTechName(loc.technology));
     });
 
-    (sessionNeighborData || []).forEach((n) => {
+    (polygonFilteredNeighborData || []).forEach((n) => {
       if (n.provider) providers.add(n.provider);
       if (n.primaryBand) {
         const norm = normalizeBandName(n.primaryBand);
@@ -1025,9 +1173,9 @@ const UnifiedMapView = () => {
       }),
       technologies: [...technologies].sort(),
     };
-  }, [locations, sessionNeighborData]);
+  }, [locations, polygonFilteredNeighborData]);
 
-  const problematicLogIds = useMemo(() => {
+  const dominanceByLogId = useMemo(() => {
     if (
       dominanceThreshold === null ||
       !dominanceData ||
@@ -1036,13 +1184,17 @@ const UnifiedMapView = () => {
       return null;
     }
     const idMap = new Map();
-    const limit = Math.abs(dominanceThreshold);
+    const limit = Math.abs(Number(dominanceThreshold));
+    if (!Number.isFinite(limit)) return null;
     dominanceData.forEach((item) => {
-      const logId = String(item.LogId || item.log_id);
-      const values = item.dominance || [];
+      const logId = normalizeKey(
+        item?.LogId ?? item?.log_id ?? item?.id ?? item?.Id,
+      );
+      if (!logId) return;
+      const values = Array.isArray(item?.dominance) ? item.dominance : [];
       const countInRange = values.filter((val) => {
         const num = parseFloat(val);
-        return num >= -limit && num <= limit;
+        return Number.isFinite(num) && num >= -limit && num <= limit;
       }).length;
       if (countInRange > 0) {
         idMap.set(logId, countInRange);
@@ -1051,7 +1203,7 @@ const UnifiedMapView = () => {
     return idMap;
   }, [dominanceData, dominanceThreshold]);
 
-  const coverageViolationLogIds = useMemo(() => {
+  const coverageViolationByLogId = useMemo(() => {
     if (
       coverageViolationThreshold === null ||
       !dominanceData ||
@@ -1059,13 +1211,18 @@ const UnifiedMapView = () => {
     ) {
       return null;
     }
+    const start = Number(coverageViolationThreshold);
+    if (!Number.isFinite(start)) return null;
     const idMap = new Map();
     dominanceData.forEach((item) => {
-      const logId = String(item.LogId || item.log_id);
-      const values = item.dominance || [];
+      const logId = normalizeKey(
+        item?.LogId ?? item?.log_id ?? item?.id ?? item?.Id,
+      );
+      if (!logId) return;
+      const values = Array.isArray(item?.dominance) ? item.dominance : [];
       const countInRange = values.filter((val) => {
         const num = parseFloat(val);
-        return num >= coverageViolationThreshold && num <= 0;
+        return Number.isFinite(num) && num >= start && num <= 0;
       }).length;
       if (countInRange > 0) {
         idMap.set(logId, countInRange);
@@ -1104,43 +1261,41 @@ const UnifiedMapView = () => {
           lowerFilters.includes(l.indoor_outdoor.toLowerCase()),
       );
     }
-    if (pciDistData && pciThreshold > 0) {
+    if (pciAppearanceByKey.size > 0 && pciThreshold > 0) {
       result = result.filter((loc) => {
-        const logPci = String(loc.pci || loc.PCI || "");
+        const logPci = getLocationPciKey(loc);
         if (!logPci) return true;
-        const pciGroup = pciDistData[logPci];
-        if (pciGroup) {
-          const totalWeight = Object.values(pciGroup).reduce(
-            (sum, value) => sum + (parseFloat(value) || 0),
-            0,
-          );
-          const totalPercentage = totalWeight * 100;
+        const totalPercentage = pciAppearanceByKey.get(logPci);
+        if (totalPercentage !== undefined) {
           return totalPercentage >= pciThreshold;
         }
         return true;
       });
     }
-    if (dominanceThreshold !== null && problematicLogIds) {
+    if (dominanceThreshold !== null && dominanceByLogId instanceof Map) {
       result = result
         .filter((loc) => {
-          const logId = String(loc.id || loc.LogId || "");
-          return problematicLogIds.has(logId);
+          const logId = getLocationIdKey(loc);
+          return logId ? dominanceByLogId.has(logId) : false;
         })
         .map((loc) => ({
           ...loc,
-          dominance: problematicLogIds.get(String(loc.id || loc.LogId || "")),
+          dominance: dominanceByLogId.get(getLocationIdKey(loc)),
         }));
     }
-    if (coverageViolationThreshold !== null && coverageViolationLogIds) {
+    if (
+      coverageViolationThreshold !== null &&
+      coverageViolationByLogId instanceof Map
+    ) {
       result = result
         .filter((loc) => {
-          const logId = String(loc.id || loc.LogId || "");
-          return coverageViolationLogIds.has(logId);
+          const logId = getLocationIdKey(loc);
+          return logId ? coverageViolationByLogId.has(logId) : false;
         })
         .map((loc) => ({
           ...loc,
-          coverage_violation: coverageViolationLogIds.get(
-            String(loc.id || loc.LogId || ""),
+          coverage_violation: coverageViolationByLogId.get(
+            getLocationIdKey(loc),
           ),
         }));
     }
@@ -1149,21 +1304,46 @@ const UnifiedMapView = () => {
     locations,
     coverageHoleFilters,
     dataFilters,
-    pciDistData,
+    pciAppearanceByKey,
     pciThreshold,
-    problematicLogIds,
+    dominanceByLogId,
     dominanceThreshold,
-    coverageViolationLogIds,
+    coverageViolationByLogId,
     coverageViolationThreshold,
   ]);
 
   const finalDisplayLocations = useMemo(() => {
+    let prioritized = filteredLocations;
     if (drawnPoints !== null) {
-      return drawnPoints;
+      prioritized = drawnPoints;
+    } else if (highlightedLogs) {
+      prioritized = highlightedLogs;
     }
-    if (highlightedLogs) return highlightedLogs;
-    return filteredLocations;
-  }, [drawnPoints, highlightedLogs, filteredLocations]);
+    if (!onlyInsidePolygons) return prioritized;
+    if (!rawFilteringPolygons?.length) return [];
+    return filterPointsInsidePolygons(prioritized, rawFilteringPolygons);
+  }, [
+    drawnPoints,
+    highlightedLogs,
+    filteredLocations,
+    onlyInsidePolygons,
+    rawFilteringPolygons,
+  ]);
+
+  const {
+    technologyTransitions,
+    bandTransitions,
+    pciTransitions,
+  } = useMemo(() => {
+    if (!finalDisplayLocations?.length) {
+      return {
+        technologyTransitions: [],
+        bandTransitions: [],
+        pciTransitions: [],
+      };
+    }
+    return buildHandoverTransitions(finalDisplayLocations);
+  }, [finalDisplayLocations]);
 
   const polygonsWithColors = useMemo(() => {
     if (!showPolygons || !polygons?.length) return [];
@@ -1531,13 +1711,8 @@ const UnifiedMapView = () => {
   ]);
 
   const filteredNeighbors = useMemo(() => {
-    let data = sessionNeighborData || [];
+    let data = polygonFilteredNeighborData || [];
     if (!data.length) return [];
-    if (onlyInsidePolygons && showPolygons && polygons?.length) {
-      data = data.filter((point) =>
-        polygons.some((poly) => isPointInPolygon(point, poly)),
-      );
-    }
     const { providers, bands, technologies } = dataFilters;
     const hasProviderFilter = providers?.length > 0;
     const hasBandFilter = bands?.length > 0;
@@ -1561,10 +1736,7 @@ const UnifiedMapView = () => {
     }
     return data;
   }, [
-    sessionNeighborData,
-    onlyInsidePolygons,
-    showPolygons,
-    polygons,
+    polygonFilteredNeighborData,
     dataFilters,
   ]);
 
@@ -1586,8 +1758,8 @@ const UnifiedMapView = () => {
     const url = `/multi-map?session=${sessionIds.join(",")}&project_id=${projectId || ""}`;
     navigate(url, {
       state: {
-        locations: locations,
-        neighborData: sessionNeighborData,
+        locations: finalDisplayLocations,
+        neighborData: filteredNeighbors,
         thresholds: effectiveThresholds,
         project: project,
       },
@@ -1657,9 +1829,9 @@ const uniquePcis = useMemo(() => {
       }
     };
     (locations || []).forEach(processItem);
-    (sessionNeighborData || []).forEach(processItem);
+    (polygonFilteredNeighborData || []).forEach(processItem);
     return pciSet;
-  }, [locations, sessionNeighborData]);
+  }, [locations, polygonFilteredNeighborData]);
 
   const combinedBands = useMemo(() => {
     // Merge bands from logs (availableFilterOptions) and sites (uniqueBands)
@@ -1806,7 +1978,6 @@ const uniquePcis = useMemo(() => {
         polygonSource={polygonSource}
         setPolygonSource={setPolygonSource}
         onlyInsidePolygons={onlyInsidePolygons}
-        setOnlyInsidePolygons={setOnlyInsidePolygons}
         polygonCount={polygons?.length || 0}
         showSiteMarkers={showSiteMarkers}
         setShowSiteMarkers={setShowSiteMarkers}
@@ -1944,10 +2115,12 @@ const uniquePcis = useMemo(() => {
               projectId={projectId}
               polygonSource={polygonSource}
               enablePolygonFilter={true}
+              filterPolygons={rawFilteringPolygons}
               showPolygonBoundary={true}
               enableGrid={enableGrid}
               gridSizeMeters={gridSizeMeters}
               areaEnabled={areaEnabled}
+              filterInsidePolygons={onlyInsidePolygons}
               onFilteredLocationsChange={setMapVisibleLocations}
               opacity={opacity}
               neighborData={filteredNeighbors}
@@ -1962,7 +2135,7 @@ const uniquePcis = useMemo(() => {
               <DrawingToolsLayer
                 map={mapRef.current}
                 enabled={ui.drawEnabled}
-                logs={filteredLocations}
+                logs={finalDisplayLocations}
                 sessions={[]}
                 selectedMetric={selectedMetric}
                 thresholds={effectiveThresholds}
@@ -2070,21 +2243,25 @@ const uniquePcis = useMemo(() => {
               {/* Handover Layers - New Implementation */}
               <TechHandoverMarkers
                 transitions={technologyTransitions}
-                show={enableSiteToggle && techHandOver}
+                show={techHandOver}
                 type="technology"
+                showConnections={true}
               />
 
               <TechHandoverMarkers
                 transitions={bandTransitions}
-                show={enableSiteToggle && bandHandover}
+                show={bandHandover}
                 type="band"
+                showConnections={false}
               />
 
               <TechHandoverMarkers
                 transitions={pciTransitions}
-                show={enableSiteToggle && pciHandover}
+                show={pciHandover}
                 type="pci"
+                showConnections={false}
               />
+
             </MapWithMultipleCircles>
           )}
         </div>

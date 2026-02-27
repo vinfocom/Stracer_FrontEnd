@@ -1,5 +1,5 @@
 // src/components/unifiedMap/TechHandoverMarkers.jsx
-import React, { useMemo, memo, useState, useCallback } from "react";
+import React, { useMemo, memo, useState, useCallback, useEffect, useRef } from "react";
 import { OverlayView, Polyline } from "@react-google-maps/api";
 import { ArrowRightLeft, Zap, Download } from "lucide-react";
 import { COLOR_SCHEMES, normalizeTechName, getBandColor } from "@/utils/colorUtils";
@@ -188,8 +188,64 @@ HandoverPopup.displayName = "HandoverPopup";
 // Main Component
 const TechHandoverMarkers = ({ transitions = [], show = false, compactMode = false, showConnections = true, type = 'technology', onTransitionClick }) => {
   const [selectedTransition, setSelectedTransition] = useState(null);
+  const connectionRefs = useRef(new Map());
   const handleMarkerClick = (transition) => { setSelectedTransition(transition); onTransitionClick?.(transition); };
   const handlePopupClose = () => setSelectedTransition(null);
+
+  const clearConnectionPolylines = useCallback(() => {
+    connectionRefs.current.forEach((polyline) => {
+      try {
+        polyline?.setMap?.(null);
+      } catch (e) {
+        // Ignore map cleanup errors from stale instances
+      }
+    });
+    connectionRefs.current.clear();
+  }, []);
+
+  const registerConnection = useCallback((id, polyline) => {
+    if (!polyline) return;
+    const existing = connectionRefs.current.get(id);
+    if (existing && existing !== polyline) {
+      try {
+        existing.setMap(null);
+      } catch (e) {
+        // Ignore stale map cleanup errors
+      }
+    }
+    connectionRefs.current.set(id, polyline);
+  }, []);
+
+  const unregisterConnection = useCallback((id, polyline) => {
+    const current = connectionRefs.current.get(id);
+    if (current) {
+      try {
+        current.setMap(null);
+      } catch (e) {
+        // Ignore stale map cleanup errors
+      }
+    } else if (polyline) {
+      try {
+        polyline.setMap(null);
+      } catch (e) {
+        // Ignore stale map cleanup errors
+      }
+    }
+    connectionRefs.current.delete(id);
+  }, []);
+
+  useEffect(() => {
+    if (!show || !showConnections) {
+      clearConnectionPolylines();
+      if (!show) setSelectedTransition(null);
+    }
+  }, [show, showConnections, clearConnectionPolylines]);
+
+  useEffect(() => {
+    return () => {
+      clearConnectionPolylines();
+    };
+  }, [clearConnectionPolylines]);
 
   const connectionPaths = useMemo(() => {
   if (!showConnections || transitions.length < 2) return [];
@@ -219,6 +275,8 @@ const TechHandoverMarkers = ({ transitions = [], show = false, compactMode = fal
         <Polyline 
             key={c.id} 
             path={c.path} 
+            onLoad={(polyline) => registerConnection(c.id, polyline)}
+            onUnmount={(polyline) => unregisterConnection(c.id, polyline)}
             options={{ strokeColor: "#F59E0B", strokeOpacity: 0.5, strokeWeight: 2, geodesic: true, icons: [{ icon: { path: window.google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW, scale: 3, fillColor: "#F59E0B", fillOpacity: 1, strokeWeight: 0 }, offset: "50%" }] }} 
         />
       ))}

@@ -1,5 +1,5 @@
 // src/components/UnifiedMapSidebar.jsx
-import React, { useMemo, useCallback, memo, useState } from "react";
+import React, { useMemo, useCallback, memo, useState, useEffect } from "react";
 import {
   X,
   RefreshCw,
@@ -340,7 +340,6 @@ const UnifiedMapSidebar = ({
   polygonSource,
   setPolygonSource,
   onlyInsidePolygons,
-  setOnlyInsidePolygons,
   polygonCount,
   showSiteMarkers,
   setShowSiteMarkers,
@@ -449,13 +448,39 @@ const UnifiedMapSidebar = ({
     return Object.values(coverageHoleFilters).filter((f) => f.enabled).length;
   }, [coverageHoleFilters]);
 
+  const normalizedPciRange = useMemo(() => {
+    const rawMin = Number(pciRange?.min);
+    const rawMax = Number(pciRange?.max);
+    const min = Number.isFinite(rawMin) ? rawMin : 0;
+    const max = Number.isFinite(rawMax) ? rawMax : 100;
+    if (max <= min) return { min: 0, max: 100 };
+    return { min, max };
+  }, [pciRange]);
+
+  const clampedPciThreshold = useMemo(() => {
+    const numericThreshold = Number(pciThreshold);
+    const safeThreshold = Number.isFinite(numericThreshold)
+      ? numericThreshold
+      : normalizedPciRange.min;
+    return Math.min(
+      normalizedPciRange.max,
+      Math.max(normalizedPciRange.min, safeThreshold),
+    );
+  }, [pciThreshold, normalizedPciRange]);
+
+  useEffect(() => {
+    if (clampedPciThreshold !== pciThreshold) {
+      setPciThreshold(clampedPciThreshold);
+    }
+  }, [clampedPciThreshold, pciThreshold, setPciThreshold]);
+
   const shouldShowMetricSelector = useMemo(
     () =>
       enableDataToggle ||
       (enableSiteToggle && siteToggle === "sites-prediction") ||
-      showPolygons,
+      showPolygons ||
       onlyInsidePolygons,
-    [enableDataToggle, enableSiteToggle, siteToggle, showPolygons],
+    [enableDataToggle, enableSiteToggle, siteToggle, showPolygons, onlyInsidePolygons],
   );
 
   const toggleEnvironment = useCallback(
@@ -757,11 +782,13 @@ const UnifiedMapSidebar = ({
                   <span className="text-sm text-slate-300">
                     Filter Inside Only
                   </span>
-                  <ToggleSwitch
-                    checked={onlyInsidePolygons}
-                    onChange={setOnlyInsidePolygons}
-                  />
+                  <span className="rounded border border-emerald-500/40 bg-emerald-600/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    Always On
+                  </span>
                 </div>
+                <p className="text-[10px] text-slate-500">
+                  Logs and calculations are restricted to polygon boundaries.
+                </p>
 
                 {polygonCount > 0 && (
                   <div className="bg-slate-800/50 rounded p-2 text-xs">
@@ -886,30 +913,30 @@ const UnifiedMapSidebar = ({
                       PCI Appearance Filter
                     </span>
                     <span className="text-xs font-mono text-blue-400">
-                      {pciThreshold}%
+                      {clampedPciThreshold}%
                     </span>
                   </div>
 
                   <div className="px-1">
                     <input
                       type="range"
-                      min={pciRange.min} // Updated to use dynamic min
-                      max={pciRange.max} // Updated to use dynamic max
+                      min={normalizedPciRange.min}
+                      max={normalizedPciRange.max}
                       step="0.1"
-                      value={pciThreshold}
+                      value={clampedPciThreshold}
                       onChange={(e) =>
                         setPciThreshold(parseFloat(e.target.value))
                       }
                       className="w-full h-1.5 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
                     />
                     <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                      <span>{pciRange.min}%</span>
-                      <span>{pciRange.max}%</span>
+                      <span>{normalizedPciRange.min}%</span>
+                      <span>{normalizedPciRange.max}%</span>
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-500 mt-2 italic">
-                    Hides PCIs that appear less than {pciThreshold}% of the time
-                    in this session.
+                    Hides PCIs that appear less than {clampedPciThreshold}% of
+                    the time in this session.
                   </p>
                 </div>
 
@@ -959,6 +986,9 @@ const UnifiedMapSidebar = ({
                   onChange={(checked) => {
                     const newVal = checked ? 6 : null;
                     setDominanceThreshold(newVal);
+                    if (checked) {
+                      setCoverageViolationThreshold?.(null);
+                    }
 
                     // if (checked) 
                     //   setMetric("dominance") 
@@ -977,9 +1007,12 @@ const UnifiedMapSidebar = ({
                     type="number"
                     value={dominanceThreshold}
                     min={0}
-                    onChange={(e) =>
-                      setDominanceThreshold(parseInt(e.target.value))
-                    }
+                    onChange={(e) => {
+                      const parsed = Number(e.target.value);
+                      if (Number.isFinite(parsed)) {
+                        setDominanceThreshold(Math.max(0, parsed));
+                      }
+                    }}
                     className="bg-slate-800 border-slate-600 text-white h-8 text-sm"
                   />
                   <p className="text-[10px] text-slate-500 italic">
@@ -1025,9 +1058,12 @@ const UnifiedMapSidebar = ({
                     type="number"
                     value={coverageViolationThreshold}
                     max={0} // Ensure user doesn't go positive
-                    onChange={(e) =>
-                      setCoverageViolationThreshold?.(parseInt(e.target.value))
-                    }
+                    onChange={(e) => {
+                      const parsed = Number(e.target.value);
+                      if (Number.isFinite(parsed)) {
+                        setCoverageViolationThreshold?.(Math.min(0, parsed));
+                      }
+                    }}
                     className="bg-slate-800 border-slate-600 text-white h-8 text-sm"
                   />
                   <p className="text-[10px] text-slate-500 italic">

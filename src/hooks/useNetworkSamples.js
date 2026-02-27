@@ -58,7 +58,7 @@ const parseLogEntry = (log, sessionId) => {
   };
 
   return {
-    id: log.id,
+    id: log.id ?? log.Id ?? log.log_id ?? log.LogId ?? null,
     session_id: sessionId ?? log.session_id,
     lat, lng, latitude: lat, longitude: lng,
     radius: 18,
@@ -77,9 +77,9 @@ const parseLogEntry = (log, sessionId) => {
     provider: normalizeProviderName(log.m_alpha_long || ''),
     technology: normalizeTechName(log.network || ''),
     band: log.band || '',
-    pci: log.pci || '',
+    pci: log.pci ?? log.Pci ?? log.PCI ?? '',
     nodeb_id: log.nodeb_id || '',
-    cell_id: log.cell_id || '',
+    cell_id: log.cell_id ?? log.cellId ?? '',
     num_cells: parseInt(log.num_cells) || null,
     speed: parseNum(log.Speed),
     battery: parseInt(log.battery) || null,
