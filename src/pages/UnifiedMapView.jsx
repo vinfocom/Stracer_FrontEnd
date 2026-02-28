@@ -7,7 +7,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useSearchParams, useNavigate, useLocation } from "react-router-dom"; 
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useJsApiLoader, Polygon } from "@react-google-maps/api";
 import { toast } from "react-toastify";
 import { LayoutGrid } from "lucide-react";
@@ -316,24 +316,24 @@ const normalizeKey = (value) => {
 const getLocationIdKey = (loc) =>
   normalizeKey(
     loc?.id ??
-      loc?.Id ??
-      loc?.ID ??
-      loc?.log_id ??
-      loc?.LogId ??
-      loc?.logId ??
-      loc?.logID,
+    loc?.Id ??
+    loc?.ID ??
+    loc?.log_id ??
+    loc?.LogId ??
+    loc?.logId ??
+    loc?.logID,
   );
 
 const getLocationPciKey = (loc) =>
   normalizeKey(
     loc?.pci ??
-      loc?.Pci ??
-      loc?.PCI ??
-      loc?.physical_cell_id ??
-      loc?.physicalCellId ??
-      loc?.cell_id ??
-      loc?.CellId ??
-      loc?.cellId,
+    loc?.Pci ??
+    loc?.PCI ??
+    loc?.physical_cell_id ??
+    loc?.physicalCellId ??
+    loc?.cell_id ??
+    loc?.CellId ??
+    loc?.cellId,
   );
 
 const toCoordinateKey = (latValue, lngValue) => {
@@ -863,29 +863,35 @@ const UnifiedMapView = () => {
   }, []);
 
   useEffect(() => {
-    if (!isSampleMode) {
-      if (
-        selectedMetric === "dominance" ||
-        selectedMetric === "coverage_violation"
-      ) {
-        setSelectedMetric("rsrp");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setSelectedMetric((currentMetric) => {
+      if (!isSampleMode) {
+        if (
+          currentMetric === "dominance" ||
+          currentMetric === "coverage_violation"
+        ) {
+          return "rsrp";
+        }
+        return currentMetric;
       }
-      return;
-    }
 
-    if (dominanceThreshold !== null) {
-      setSelectedMetric("dominance");
-    } else if (coverageViolationThreshold !== null) {
-      setSelectedMetric("coverage_violation");
-    } else if (selectedMetric === "dominance" || selectedMetric === "coverage_violation") {
-      // Revert to default RSRP only if we just turned off dominance/violation
-      setSelectedMetric("rsrp");
-    }
+      if (dominanceThreshold !== null) {
+        return "dominance";
+      } else if (coverageViolationThreshold !== null) {
+        return "coverage_violation";
+      } else if (
+        currentMetric === "dominance" ||
+        currentMetric === "coverage_violation"
+      ) {
+        // Revert to default RSRP only if we just turned off dominance/violation
+        return "rsrp";
+      }
+      return currentMetric;
+    });
   }, [
     isSampleMode,
     dominanceThreshold,
     coverageViolationThreshold,
-    selectedMetric,
   ]);
 
   const [dominanceSettings, setDominanceSettings] = useState({
@@ -1124,7 +1130,7 @@ const UnifiedMapView = () => {
     projectId,
     selectedMetric,
     (enableDataToggle && dataToggle === "prediction") ||
-      (enableSiteToggle && siteToggle === "sites-prediction"),
+    (enableSiteToggle && siteToggle === "sites-prediction"),
   );
 
   // ✅ 2b. Use LTE Prediction Hook
@@ -1281,7 +1287,7 @@ const UnifiedMapView = () => {
           sessionIds: sessionIds.join(","),
         });
         setDistance(res?.TotalDistanceKm || null);
-      } catch (error) {}
+      } catch (error) { }
     };
     neighbordata();
   }, [sessionIds]);
@@ -1294,7 +1300,7 @@ const UnifiedMapView = () => {
         });
         setIndoor(res?.Indoor);
         setOutdoor(res?.Outdoor);
-      } catch (error) {}
+      } catch (error) { }
     };
     ioAnalysis();
   }, [sessionIds]);
@@ -1952,10 +1958,10 @@ const UnifiedMapView = () => {
         fillColor =
           medianValue !== null
             ? getColorFromValueOrMetric(
-                medianValue,
-                currentThresholds,
-                selectedMetric,
-              )
+              medianValue,
+              currentThresholds,
+              selectedMetric,
+            )
             : "#ccc";
       }
       return {
@@ -2023,7 +2029,7 @@ const UnifiedMapView = () => {
   const locationsToDisplay = useMemo(() => {
     if (!showDataCircles) return [];
     return finalDisplayLocations;
-  }, [showDataCircles, finalDisplayLocations, onlyInsidePolygons]);
+  }, [showDataCircles, finalDisplayLocations]);
 
   const mapOptions = useMemo(
     () => ({
@@ -2208,56 +2214,56 @@ const UnifiedMapView = () => {
 
 
 
-const handleMarkerHover = useCallback((hoverInfo) => {
-  // 1. Unpack the deck.gl event object to get the actual log data
-  const log = hoverInfo?.object || hoverInfo;
-  
-  if (!log) {
-     setHoveredLog(null);
-     setHoveredCellId(null);
-     return;
-  }
+  const handleMarkerHover = useCallback((hoverInfo) => {
+    // 1. Unpack the deck.gl event object to get the actual log data
+    const log = hoverInfo?.object || hoverInfo;
+
+    if (!log) {
+      setHoveredLog(null);
+      setHoveredCellId(null);
+      return;
+    }
 
 
-  
-  // 2. Extract PCI from the unpacked log
-  const pci = log?.pci ?? log?.PCI ?? log?.cell_id ?? log?.physical_cell_id;
-  const normalizedPci = pci !== null && pci !== undefined ? String(pci).trim() : null;
-  
-  
-  // 3. Set the corrected log object to state
-  setHoveredLog(log);
-  setHoveredCellId(normalizedPci);
-}, []);
 
-const uniqueBands = useMemo(() => {
-  if (!siteData || !siteData.length) return [];
-  const paramSet = new Set();
-  siteData.forEach((s) => {
-    const bandVal = s.Band || s.band;
-    if (bandVal) {
-      const normalized = normalizeBandName(bandVal);
-      if (normalized && normalized !== "Unknown") {
-        paramSet.add(normalized);
+    // 2. Extract PCI from the unpacked log
+    const pci = log?.pci ?? log?.PCI ?? log?.cell_id ?? log?.physical_cell_id;
+    const normalizedPci = pci !== null && pci !== undefined ? String(pci).trim() : null;
+
+
+    // 3. Set the corrected log object to state
+    setHoveredLog(log);
+    setHoveredCellId(normalizedPci);
+  }, []);
+
+  const uniqueBands = useMemo(() => {
+    if (!siteData || !siteData.length) return [];
+    const paramSet = new Set();
+    siteData.forEach((s) => {
+      const bandVal = s.Band || s.band;
+      if (bandVal) {
+        const normalized = normalizeBandName(bandVal);
+        if (normalized && normalized !== "Unknown") {
+          paramSet.add(normalized);
+        }
       }
-    }
-  });
-  return Array.from(paramSet).sort();
-}, [siteData]);
+    });
+    return Array.from(paramSet).sort();
+  }, [siteData]);
 
-const uniquePcis = useMemo(() => {
-  if (!siteData || !siteData.length) return [];
-  const paramSet = new Set();
-  siteData.forEach((s) => {
-    // Check various casing for PCI
-    const val = s.Pci !== undefined ? s.Pci : (s.pci !== undefined ? s.pci : s.PCI);
-    if (val !== undefined && val !== null && val !== "") {
-      const num = Number(val);
-      if (!isNaN(num)) paramSet.add(num);
-    }
-  });
-  return Array.from(paramSet).sort((a, b) => a - b);
-}, [siteData]);
+  const uniquePcis = useMemo(() => {
+    if (!siteData || !siteData.length) return [];
+    const paramSet = new Set();
+    siteData.forEach((s) => {
+      // Check various casing for PCI
+      const val = s.Pci !== undefined ? s.Pci : (s.pci !== undefined ? s.pci : s.PCI);
+      if (val !== undefined && val !== null && val !== "") {
+        const num = Number(val);
+        if (!isNaN(num)) paramSet.add(num);
+      }
+    });
+    return Array.from(paramSet).sort((a, b) => a - b);
+  }, [siteData]);
 
   const uniquePcisFromLogs = useMemo(() => {
     const pciSet = new Set();
@@ -2510,8 +2516,8 @@ const uniquePcis = useMemo(() => {
 
         <div className="relative h-full w-full">
           {isLoading &&
-          (locations?.length || 0) === 0 &&
-          (siteData?.length || 0) === 0 ? (
+            (locations?.length || 0) === 0 &&
+            (siteData?.length || 0) === 0 ? (
             <div className="flex items-center justify-center h-full bg-gray-100 dark:bg-gray-700">
               <Spinner />
             </div>
@@ -2545,7 +2551,7 @@ const uniquePcis = useMemo(() => {
               hoveredCellId={hoveredLog?.pci}
               colorBy={colorBy}
               activeMarkerIndex={null}
-              onMarkerClick={() => {}}
+              onMarkerClick={() => { }}
               options={mapOptions}
               center={mapCenter}
               defaultZoom={13}
@@ -2569,7 +2575,7 @@ const uniquePcis = useMemo(() => {
               showNeighbors={showSessionNeighbors}
               neighborSquareSize={15}
               neighborOpacity={0.5}
-              onNeighborClick={(neighbor) => {}}
+              onNeighborClick={(neighbor) => { }}
               onFilteredNeighborsChange={setMapVisibleNeighbors}
               debugNeighbors={true}
               legendFilter={legendFilter}
@@ -2721,7 +2727,7 @@ const uniquePcis = useMemo(() => {
       {/* Add Site Cursor Indicator */}
       {addSiteMode && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[2000] bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
-           Click on the map to select a location
+          Click on the map to select a location
           <button
             onClick={() => { setAddSiteMode(false); addSiteModeRef.current = false; }}
             className="ml-2 bg-white/20 hover:bg-white/30 rounded-full px-2 py-0.5 text-xs"

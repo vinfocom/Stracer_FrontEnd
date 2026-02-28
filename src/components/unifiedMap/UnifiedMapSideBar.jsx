@@ -43,11 +43,10 @@ const Checkbox = memo(
       onClick={() => !disabled && onChange?.(!checked)}
       className={`
       w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0
-      ${
-        checked
+      ${checked
           ? "bg-blue-600 border-blue-600"
           : "bg-slate-700 border-slate-500 hover:border-slate-400"
-      }
+        }
       ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
       ${className}
     `}
@@ -184,20 +183,18 @@ SelectRow.displayName = "SelectRow";
 const SegmentedControl = memo(
   ({ value, onChange, options, disabled = false }) => (
     <div
-      className={`flex rounded-md overflow-hidden border border-slate-600 ${
-        disabled ? "opacity-50" : ""
-      }`}
+      className={`flex rounded-md overflow-hidden border border-slate-600 ${disabled ? "opacity-50" : ""
+        }`}
     >
       {options.map((option) => (
         <button
           key={option.value}
           onClick={() => !disabled && onChange(option.value)}
           disabled={disabled}
-          className={`flex-1 px-2 py-1.5 text-xs font-medium transition-all ${
-            value === option.value
-              ? "bg-blue-600 text-white"
-              : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
-          } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+          className={`flex-1 px-2 py-1.5 text-xs font-medium transition-all ${value === option.value
+            ? "bg-blue-600 text-white"
+            : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+            } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
         >
           {option.label}
         </button>
@@ -421,9 +418,9 @@ const UnifiedMapSidebar = ({
   );
 
   const clearAllDataFilters = useCallback(() => {
-    setDataFilters?.({ providers: [], bands: [], technologies: [],indoorOutdoor: [] });
+    setDataFilters?.({ providers: [], bands: [], technologies: [], indoorOutdoor: [] });
     setPciThreshold(0);
-  }, [setDataFilters,setPciThreshold]);
+  }, [setDataFilters, setPciThreshold]);
 
   const activeDataFiltersCount = useMemo(() => {
     if (!dataFilters) return 0;
@@ -514,7 +511,7 @@ const UnifiedMapSidebar = ({
     <>
       {open && (
         <div
-          className="fixed inset-0  "
+          className="fixed inset-0 z-40"
           onClick={() => onOpenChange?.(false)}
         />
       )}
@@ -618,7 +615,7 @@ const UnifiedMapSidebar = ({
             )}
           </CollapsibleSection>
 
-          
+
           <CollapsibleSection title="Sites Layer" icon={Radio}>
             <ToggleRow
               label="Enable Sites"
@@ -718,18 +715,18 @@ const UnifiedMapSidebar = ({
 
                 {/* Highlighted Site Mode Selection */}
                 <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-1.5">
-                   <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
-                     <Palette className="w-3 h-3" /> Color Sites By
-                   </Label>
-                   <SegmentedControl 
+                  <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
+                    <Palette className="w-3 h-3" /> Color Sites By
+                  </Label>
+                  <SegmentedControl
                     value={modeMethod}
                     onChange={setModeMethod}
                     options={[
-                      {value: "Operator", label: "Operator"},
-                      {value: "band", label: "Band"},
-                      {value: "technology", label: "Tech"},
+                      { value: "Operator", label: "Operator" },
+                      { value: "band", label: "Band" },
+                      { value: "technology", label: "Tech" },
                     ]}
-                   />
+                  />
                 </div>
 
                 {/* Add Site Button */}
@@ -758,7 +755,7 @@ const UnifiedMapSidebar = ({
                       Clear Selected
                     </button>
                   </div>
-                  
+
                 </div>
               </>
             )}
@@ -813,160 +810,161 @@ const UnifiedMapSidebar = ({
             )}
           </CollapsibleSection>
 
-          {shouldShowMetricSelector && (
-            <CollapsibleSection
-              title="Metric & Filters"
-              icon={Filter}
-              defaultOpen={true}
-              badge={activeDataFiltersCount > 0 ? activeDataFiltersCount : null}
-            >
-              <SelectRow
-                label="Metric"
-                value={metric}
-                onChange={setMetric}
-                options={metricOptions}
-                placeholder="Select metric"
-              />
+          {
+            shouldShowMetricSelector && (
+              <CollapsibleSection
+                title="Metric & Filters"
+                icon={Filter}
+                defaultOpen={true}
+                badge={activeDataFiltersCount > 0 ? activeDataFiltersCount : null}
+              >
+                <SelectRow
+                  label="Metric"
+                  value={metric}
+                  onChange={setMetric}
+                  options={metricOptions}
+                  placeholder="Select metric"
+                />
 
-              <SelectRow
-                label="Color By"
-                value={colorBy || "metric"}
-                onChange={(v) => setColorBy?.(v === "metric" ? null : v)}
-                options={colorOptions}
-                placeholder="Select color scheme"
-                disabled={!enableDataToggle}
-              />
-
-              <div className="border-t border-slate-700/50 pt-3 mt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-slate-400">Data Filters</span>
-                  {activeDataFiltersCount > 0 && (
-                    <button
-                      onClick={clearAllDataFilters}
-                      className="text-[10px] text-blue-400 hover:underline"
-                    >
-                      Clear All
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <SelectRow
-                    label="Provider"
-                    value={dataFilters?.providers?.[0] || "all"}
-                    onChange={(v) => updateDataFilter("providers", v)}
-                    options={[
-                      { value: "all", label: "All Providers" },
-                      ...(availableFilterOptions?.providers?.map((p) => ({
-                        value: p,
-                        label: p,
-                      })) || []),
-                    ]}
-                    disabled={!enableDataToggle}
-                  />
-
-                  <SelectRow
-                    label="Band"
-                    value={dataFilters?.bands?.[0] || "all"}
-                    onChange={(v) => updateDataFilter("bands", v)}
-                    options={[
-                      { value: "all", label: "All Bands" },
-                      ...(availableFilterOptions?.bands?.map((b) => ({
-                        value: b,
-                        label: b,
-                      })) || []),
-                    ]}
-                    disabled={!enableDataToggle}
-                  />
-
-                  <SelectRow
-                    label="Technology"
-                    value={dataFilters?.technologies?.[0] || "all"}
-                    onChange={(v) => updateDataFilter("technologies", v)}
-                    options={[
-                      { value: "all", label: "All Technologies" },
-                      ...(availableFilterOptions?.technologies
-                        ?.filter((t) => t && t.toLowerCase() !== "unknown")
-                        ?.map((t) => ({ value: t, label: t })) || []),
-                    ]}
-                    disabled={!enableDataToggle}
-                  />
-                </div>
-
-                <div className="space-y-1.5 pt-1">
-                  <Label className="text-xs text-slate-400">Environment</Label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
-                      <Checkbox
-                        checked={dataFilters?.indoorOutdoor?.includes("Indoor")}
-                        onChange={() => toggleEnvironment("Indoor")}
-                        disabled={!enableDataToggle}
-                      />
-                      <span className="text-sm text-slate-300">Indoor</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
-                      <Checkbox
-                        checked={dataFilters?.indoorOutdoor?.includes(
-                          "Outdoor",
-                        )}
-                        onChange={() => toggleEnvironment("Outdoor")}
-                        disabled={!enableDataToggle}
-                      />
-                      <span className="text-sm text-slate-300">Outdoor</span>
-                    </label>
-                  </div>
-                </div>
+                <SelectRow
+                  label="Color By"
+                  value={colorBy || "metric"}
+                  onChange={(v) => setColorBy?.(v === "metric" ? null : v)}
+                  options={colorOptions}
+                  placeholder="Select color scheme"
+                  disabled={!enableDataToggle}
+                />
 
                 <div className="border-t border-slate-700/50 pt-3 mt-2">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-slate-400">
-                      PCI Appearance Filter
-                    </span>
-                    <span className="text-xs font-mono text-blue-400">
-                      {clampedPciThreshold}%
-                    </span>
+                    <span className="text-xs text-slate-400">Data Filters</span>
+                    {activeDataFiltersCount > 0 && (
+                      <button
+                        onClick={clearAllDataFilters}
+                        className="text-[10px] text-blue-400 hover:underline"
+                      >
+                        Clear All
+                      </button>
+                    )}
                   </div>
 
-                  <div className="px-1">
-                    <input
-                      type="range"
-                      min={normalizedPciRange.min}
-                      max={normalizedPciRange.max}
-                      step="0.1"
-                      value={clampedPciThreshold}
-                      disabled={!supportsSessionFilters}
-                      onChange={(e) =>
-                        setPciThreshold(parseFloat(e.target.value))
-                      }
-                      className={`w-full h-1.5 bg-slate-700 rounded-lg accent-blue-500 ${
-                        supportsSessionFilters ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
-                      }`}
+                  <div className="space-y-2">
+                    <SelectRow
+                      label="Provider"
+                      value={dataFilters?.providers?.[0] || "all"}
+                      onChange={(v) => updateDataFilter("providers", v)}
+                      options={[
+                        { value: "all", label: "All Providers" },
+                        ...(availableFilterOptions?.providers?.map((p) => ({
+                          value: p,
+                          label: p,
+                        })) || []),
+                      ]}
+                      disabled={!enableDataToggle}
                     />
-                    <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                      <span>{normalizedPciRange.min}%</span>
-                      <span>{normalizedPciRange.max}%</span>
+
+                    <SelectRow
+                      label="Band"
+                      value={dataFilters?.bands?.[0] || "all"}
+                      onChange={(v) => updateDataFilter("bands", v)}
+                      options={[
+                        { value: "all", label: "All Bands" },
+                        ...(availableFilterOptions?.bands?.map((b) => ({
+                          value: b,
+                          label: b,
+                        })) || []),
+                      ]}
+                      disabled={!enableDataToggle}
+                    />
+
+                    <SelectRow
+                      label="Technology"
+                      value={dataFilters?.technologies?.[0] || "all"}
+                      onChange={(v) => updateDataFilter("technologies", v)}
+                      options={[
+                        { value: "all", label: "All Technologies" },
+                        ...(availableFilterOptions?.technologies
+                          ?.filter((t) => t && t.toLowerCase() !== "unknown")
+                          ?.map((t) => ({ value: t, label: t })) || []),
+                      ]}
+                      disabled={!enableDataToggle}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <Label className="text-xs text-slate-400">Environment</Label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
+                        <Checkbox
+                          checked={dataFilters?.indoorOutdoor?.includes("Indoor")}
+                          onChange={() => toggleEnvironment("Indoor")}
+                          disabled={!enableDataToggle}
+                        />
+                        <span className="text-sm text-slate-300">Indoor</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-slate-800/50">
+                        <Checkbox
+                          checked={dataFilters?.indoorOutdoor?.includes(
+                            "Outdoor",
+                          )}
+                          onChange={() => toggleEnvironment("Outdoor")}
+                          disabled={!enableDataToggle}
+                        />
+                        <span className="text-sm text-slate-300">Outdoor</span>
+                      </label>
                     </div>
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-2 italic">
-                    Hides PCIs that appear less than {clampedPciThreshold}% of
-                    the time in this session.
-                  </p>
-                  {!supportsSessionFilters && (
-                    <p className="text-[10px] text-amber-400 mt-1">
-                      Available only in Data Layer sample mode.
+
+                  <div className="border-t border-slate-700/50 pt-3 mt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-slate-400">
+                        PCI Appearance Filter
+                      </span>
+                      <span className="text-xs font-mono text-blue-400">
+                        {clampedPciThreshold}%
+                      </span>
+                    </div>
+
+                    <div className="px-1">
+                      <input
+                        type="range"
+                        min={normalizedPciRange.min}
+                        max={normalizedPciRange.max}
+                        step="0.1"
+                        value={clampedPciThreshold}
+                        disabled={!supportsSessionFilters}
+                        onChange={(e) =>
+                          setPciThreshold(parseFloat(e.target.value))
+                        }
+                        className={`w-full h-1.5 bg-slate-700 rounded-lg accent-blue-500 ${supportsSessionFilters ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
+                          }`}
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                        <span>{normalizedPciRange.min}%</span>
+                        <span>{normalizedPciRange.max}%</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 italic">
+                      Hides PCIs that appear less than {clampedPciThreshold}% of
+                      the time in this session.
                     </p>
+                    {!supportsSessionFilters && (
+                      <p className="text-[10px] text-amber-400 mt-1">
+                        Available only in Data Layer sample mode.
+                      </p>
+                    )}
+                  </div>
+
+                  {activeDataFiltersCount > 0 && (
+                    <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/50 rounded text-xs text-blue-300">
+                      🔍 {activeDataFiltersCount} filter
+                      {activeDataFiltersCount > 1 ? "s" : ""} active
+                    </div>
                   )}
                 </div>
-
-                {activeDataFiltersCount > 0 && (
-                  <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/50 rounded text-xs text-blue-300">
-                    🔍 {activeDataFiltersCount} filter
-                    {activeDataFiltersCount > 1 ? "s" : ""} active
-                  </div>
-                )}
-              </div>
-            </CollapsibleSection>
-          )}
+              </CollapsibleSection>
+            )
+          }
 
           {/* Heatmap Layer */}
           <CollapsibleSection title="Heatmap" icon={Thermometer}>
@@ -1065,7 +1063,7 @@ const UnifiedMapSidebar = ({
                     if (checked) {
                       setDominanceThreshold?.(null); // Mutually exclusive
                       // setMetric("coverage_violation"); // This triggers the layer update
-                    } 
+                    }
                     // else {
                     //   // If disabling, reset metric to default
                     //   setMetric("rsrp");
@@ -1113,7 +1111,7 @@ const UnifiedMapSidebar = ({
             icon={ArrowLeftRight}
             badge={
               (techHandover ? (technologyTransitions?.length || 0) : 0) +
-              (bandHandover ? (bandTransitions?.length || 0) : 0) + 
+              (bandHandover ? (bandTransitions?.length || 0) : 0) +
               (pciHandover ? (pciTransitions?.length || 0) : 0)
             }
           >
@@ -1144,7 +1142,7 @@ const UnifiedMapSidebar = ({
               useSwitch={true}
             />
             {bandHandover && bandTransitions?.length > 0 && (
-               <div className="bg-slate-800/50 rounded p-2 text-xs mb-2">
+              <div className="bg-slate-800/50 rounded p-2 text-xs mb-2">
                 <InfoBadge
                   label="Count"
                   value={bandTransitions.length}
@@ -1161,8 +1159,8 @@ const UnifiedMapSidebar = ({
               onChange={setPciHandover}
               useSwitch={true}
             />
-             {pciHandover && pciTransitions?.length > 0 && (
-               <div className="bg-slate-800/50 rounded p-2 text-xs">
+            {pciHandover && pciTransitions?.length > 0 && (
+              <div className="bg-slate-800/50 rounded p-2 text-xs">
                 <InfoBadge
                   label="Count"
                   value={pciTransitions.length}
@@ -1240,7 +1238,7 @@ const UnifiedMapSidebar = ({
               {activeCoverageFiltersCount > 0 && (
                 <div className="p-2 bg-yellow-900/20 border border-yellow-700/50 rounded text-xs text-yellow-300 mt-2">
                   <div className="font-medium mb-1">
-                     {activeCoverageFiltersCount} filter
+                    {activeCoverageFiltersCount} filter
                     {activeCoverageFiltersCount > 1 ? "s" : ""} active
                   </div>
                   <div className="text-yellow-400/80 text-[10px]">
