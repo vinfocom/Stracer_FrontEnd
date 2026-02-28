@@ -510,7 +510,8 @@ const MapWithMultipleCircles = ({
   polygonSource = "map",
   enablePolygonFilter = true,
   filterInsidePolygons = false,
-  filterPolygons = [],
+  filterPolygons = null,
+  externalPolygonsLoading = false,
   showPolygonBoundary = true,
   enableGrid = false,
   gridSizeMeters = 50,
@@ -595,14 +596,16 @@ const MapWithMultipleCircles = ({
 
   // Fetch polygons
   useEffect(() => {
-    const fetchPolygons = async () => {
-      if (Array.isArray(filterPolygons) && filterPolygons.length > 0) {
-        setPolygonData([]);
-        setPolygonsFetched(true);
-        setFetchError(null);
-        return;
-      }
+    const hasExternalPolygonControl = Array.isArray(filterPolygons);
 
+    if (hasExternalPolygonControl) {
+      setPolygonData([]);
+      setPolygonsFetched(!externalPolygonsLoading);
+      setFetchError(null);
+      return;
+    }
+
+    const fetchPolygons = async () => {
       if (!projectId || !enablePolygonFilter) {
         setPolygonData([]);
         setPolygonsFetched(true);
@@ -641,17 +644,19 @@ const MapWithMultipleCircles = ({
     };
     
     fetchPolygons();
-  }, [projectId, polygonSource, enablePolygonFilter, filterPolygons]);
+  }, [projectId, polygonSource, enablePolygonFilter, filterPolygons, externalPolygonsLoading]);
 
   const externalPolygonData = useMemo(
     () => normalizeExternalPolygonData(filterPolygons),
     [filterPolygons],
   );
+  const hasExternalPolygonControl = Array.isArray(filterPolygons);
 
   const activePolygonData = useMemo(() => {
+    if (hasExternalPolygonControl) return externalPolygonData;
     if (externalPolygonData.length > 0) return externalPolygonData;
     return polygonData;
-  }, [externalPolygonData, polygonData]);
+  }, [hasExternalPolygonControl, externalPolygonData, polygonData]);
 
   const activePolygonChecker = useMemo(
     () => new PolygonChecker(activePolygonData),
@@ -659,7 +664,9 @@ const MapWithMultipleCircles = ({
   );
 
   const hasActivePolygons = activePolygonData.length > 0;
-  const activePolygonsReady = externalPolygonData.length > 0 || polygonsFetched;
+  const activePolygonsReady = hasExternalPolygonControl
+    ? !externalPolygonsLoading
+    : externalPolygonData.length > 0 || polygonsFetched;
 
   // Filter primary locations by polygon & Legend
   const locationsToRender = useMemo(() => {
@@ -961,7 +968,8 @@ const MapWithMultipleCircles = ({
   if (!isLoaded) return null;
 
   const showPoints = showPointsProp && !enableGrid && !areaEnabled;
-  const isLoadingPolygons = enablePolygonFilter && !polygonsFetched && projectId;
+  const isLoadingPolygons = enablePolygonFilter && projectId &&
+    (hasExternalPolygonControl ? externalPolygonsLoading : !polygonsFetched);
 
   return (
     <div className="relative w-full h-full">

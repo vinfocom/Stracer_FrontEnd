@@ -55,8 +55,10 @@ import {
   getTechnologyColor,
   getProviderColor,
 } from "@/utils/colorUtils";
+import { PolygonChecker as FastPolygonChecker } from "@/utils/polygonUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
+const EMPTY_POLYGONS = Object.freeze([]);
 
 const DEFAULT_COVERAGE_FILTERS = {
   rsrp: { enabled: false, threshold: -110 },
@@ -231,6 +233,13 @@ const isPointInPolygon = (point, polygon) => {
   const lat = point.lat ?? point.latitude;
   const lng = point.lng ?? point.longitude;
   if (lat == null || lng == null) return false;
+  const bbox = polygon?.bbox;
+  if (
+    bbox &&
+    (lat < bbox.south || lat > bbox.north || lng < bbox.west || lng > bbox.east)
+  ) {
+    return false;
+  }
 
   let inside = false;
   for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
@@ -246,12 +255,10 @@ const isPointInPolygon = (point, polygon) => {
   return inside;
 };
 
-const filterPointsInsidePolygons = (points = [], polygons = []) => {
+const filterPointsInsidePolygons = (points = [], polygonChecker = null) => {
   if (!Array.isArray(points) || points.length === 0) return [];
-  if (!Array.isArray(polygons) || polygons.length === 0) return points;
-  return points.filter((point) =>
-    polygons.some((poly) => isPointInPolygon(point, poly)),
-  );
+  if (!polygonChecker) return points;
+  return polygonChecker.filter(points);
 };
 
 const normalizeKey = (value) => {
@@ -264,16 +271,26 @@ const normalizeKey = (value) => {
 };
 
 const getLocationIdKey = (loc) =>
-  normalizeKey(loc?.id ?? loc?.Id ?? loc?.log_id ?? loc?.LogId);
+  normalizeKey(
+    loc?.id ??
+      loc?.Id ??
+      loc?.ID ??
+      loc?.log_id ??
+      loc?.LogId ??
+      loc?.logId ??
+      loc?.logID,
+  );
 
 const getLocationPciKey = (loc) =>
   normalizeKey(
     loc?.pci ??
       loc?.Pci ??
       loc?.PCI ??
+      loc?.physical_cell_id ??
+      loc?.physicalCellId ??
       loc?.cell_id ??
       loc?.CellId ??
-      loc?.physical_cell_id,
+      loc?.cellId,
   );
 
 const buildHandoverTransitions = (logs = []) => {
@@ -675,6 +692,7 @@ const UnifiedMapView = () => {
 
   const [enableDataToggle, setEnableDataToggle] = useState(true);
   const [dataToggle, setDataToggle] = useState("sample");
+  const isSampleMode = enableDataToggle && dataToggle === "sample";
   const [enableSiteToggle, setEnableSiteToggle] = useState(false);
   const [siteToggle, setSiteToggle] = useState("Cell");
   const [modeMethod, setModeMethod] = useState("Operator");
@@ -768,6 +786,16 @@ const UnifiedMapView = () => {
   }, []);
 
   useEffect(() => {
+    if (!isSampleMode) {
+      if (
+        selectedMetric === "dominance" ||
+        selectedMetric === "coverage_violation"
+      ) {
+        setSelectedMetric("rsrp");
+      }
+      return;
+    }
+
     if (dominanceThreshold !== null) {
       setSelectedMetric("dominance");
     } else if (coverageViolationThreshold !== null) {
@@ -776,7 +804,12 @@ const UnifiedMapView = () => {
       // Revert to default RSRP only if we just turned off dominance/violation
       setSelectedMetric("rsrp");
     }
-  }, [dominanceThreshold, coverageViolationThreshold, selectedMetric]);
+  }, [
+    isSampleMode,
+    dominanceThreshold,
+    coverageViolationThreshold,
+    selectedMetric,
+  ]);
 
   const [dominanceSettings, setDominanceSettings] = useState({
     enabled: false,
@@ -787,6 +820,8 @@ const UnifiedMapView = () => {
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
+  const pciDistributionRequestRef = useRef(0);
+  const dominanceRequestRef = useRef(0);
 
   // --- Add Site Mode ---
   const [addSiteMode, setAddSiteMode] = useState(false);
@@ -815,6 +850,7 @@ const UnifiedMapView = () => {
       .map((s) => s.trim())
       .filter(Boolean);
   }, [searchParams]);
+  const sessionKey = useMemo(() => sessionIds.join(","), [sessionIds]);
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
   const {
@@ -843,10 +879,16 @@ const UnifiedMapView = () => {
     ],
     [polygons, areaEnabled, areaData],
   );
+  const filteringPolygonChecker = useMemo(
+    () =>
+      rawFilteringPolygons?.length
+        ? new FastPolygonChecker(rawFilteringPolygons)
+        : null,
+    [rawFilteringPolygons],
+  );
   const siteLayerPolygonFiltering = Boolean(enableSiteToggle && rawFilteringPolygons.length > 0);
 
-  const shouldFetchSamples =
-    !passedLocations && enableDataToggle && dataToggle === "sample";
+  const shouldFetchSamples = !passedLocations && isSampleMode;
 
   const {
     locations: fetchedSamples,
@@ -860,8 +902,8 @@ const UnifiedMapView = () => {
   } = useNetworkSamples(
     sessionIds,
     shouldFetchSamples,
-    onlyInsidePolygons,
-    rawFilteringPolygons,
+    false,
+    EMPTY_POLYGONS,
   );
 
   // Combine passed data with fetched data
@@ -890,8 +932,8 @@ const UnifiedMapView = () => {
     siteId: selectedSites.join(","),
     metric: selectedMetric,
     enabled: (enableDataToggle && dataToggle === "prediction") || Boolean(lteGridEnabled) || Boolean(enableSiteToggle),
-    filterEnabled: onlyInsidePolygons,
-    polygons: rawFilteringPolygons,
+    filterEnabled: false,
+    polygons: EMPTY_POLYGONS,
   });
 
   // ✅ 3. Use Session Neighbors Hook
@@ -906,8 +948,8 @@ const UnifiedMapView = () => {
   } = useSessionNeighbors(
     sessionIds,
     shouldFetchNeighbors,
-    onlyInsidePolygons,
-    rawFilteringPolygons,
+    false,
+    EMPTY_POLYGONS,
   );
 
   const sessionNeighborData = passedNeighbors || fetchedNeighbors;
@@ -924,8 +966,8 @@ const UnifiedMapView = () => {
     projectId,
     sessionIds,
     autoFetch: true,
-    filterEnabled: siteLayerPolygonFiltering || onlyInsidePolygons,
-    polygons: rawFilteringPolygons,
+    filterEnabled: false,
+    polygons: EMPTY_POLYGONS,
   });
 
   const siteData = rawSiteData || [];
@@ -1003,37 +1045,71 @@ const UnifiedMapView = () => {
   }, [sessionIds]);
 
   useEffect(() => {
-    if (sessionIds.length > 0) {
-      const fetchDist = async () => {
-        try {
-          const data = await mapViewApi.getPciDistribution(sessionIds);
-          if (data && data.success) {
-            // Store only the primary_yes data as requested
-            setPciDistData(data.primary_yes);
-          }
-        } catch (error) {
-          console.error("Failed to fetch PCI distribution", error);
-        }
-      };
-      fetchDist();
+    if (!sessionKey) {
+      setPciDistData(null);
+      return;
     }
-  }, [sessionIds]);
 
-  useEffect(() => {
-    const fetchDominance = async () => {
-      if (sessionIds.length > 0) {
-        try {
-          const res = await mapViewApi.getDominanceDetails(sessionIds);
-          if (res?.success && res.data) {
-            setDominanceData(res.data);
-          }
-        } catch (err) {
-          console.error("Failed to fetch dominance details", err);
+    const currentSessionIds = sessionKey.split(",").filter(Boolean);
+    let active = true;
+    const requestId = ++pciDistributionRequestRef.current;
+
+    const fetchDist = async () => {
+      try {
+        const data = await mapViewApi.getPciDistribution(currentSessionIds);
+        if (!active || requestId !== pciDistributionRequestRef.current) return;
+
+        if (data?.success) {
+          // Store only the primary_yes data as requested
+          setPciDistData(data.primary_yes || null);
+        } else {
+          setPciDistData(null);
         }
+      } catch (error) {
+        if (!active || requestId !== pciDistributionRequestRef.current) return;
+        setPciDistData(null);
+        console.error("Failed to fetch PCI distribution", error);
       }
     };
+
+    fetchDist();
+    return () => {
+      active = false;
+    };
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (!sessionKey) {
+      setDominanceData([]);
+      return;
+    }
+
+    const currentSessionIds = sessionKey.split(",").filter(Boolean);
+    let active = true;
+    const requestId = ++dominanceRequestRef.current;
+
+    const fetchDominance = async () => {
+      try {
+        const res = await mapViewApi.getDominanceDetails(currentSessionIds);
+        if (!active || requestId !== dominanceRequestRef.current) return;
+
+        if (res?.success && Array.isArray(res.data)) {
+          setDominanceData(res.data);
+        } else {
+          setDominanceData([]);
+        }
+      } catch (err) {
+        if (!active || requestId !== dominanceRequestRef.current) return;
+        setDominanceData([]);
+        console.error("Failed to fetch dominance details", err);
+      }
+    };
+
     fetchDominance();
-  }, [sessionIds]);
+    return () => {
+      active = false;
+    };
+  }, [sessionKey]);
 
   // ... (Rest of Derived State & Computations logic is same) ...
   const pciAppearanceByKey = useMemo(() => {
@@ -1079,8 +1155,8 @@ const UnifiedMapView = () => {
     }
 
     if (!onlyInsidePolygons) return mainLogs;
-    if (!rawFilteringPolygons?.length) return [];
-    return filterPointsInsidePolygons(mainLogs, rawFilteringPolygons);
+    if (!filteringPolygonChecker) return [];
+    return filterPointsInsidePolygons(mainLogs, filteringPolygonChecker);
   }, [
     enableDataToggle,
     enableSiteToggle,
@@ -1089,7 +1165,7 @@ const UnifiedMapView = () => {
     sampleLocations,
     predictionLocations,
     onlyInsidePolygons,
-    rawFilteringPolygons,
+    filteringPolygonChecker,
   ]);
 
   const isLoading =
@@ -1106,9 +1182,9 @@ const UnifiedMapView = () => {
   const polygonFilteredNeighborData = useMemo(() => {
     const data = sessionNeighborData || [];
     if (!onlyInsidePolygons) return data;
-    if (!rawFilteringPolygons?.length) return [];
-    return filterPointsInsidePolygons(data, rawFilteringPolygons);
-  }, [sessionNeighborData, onlyInsidePolygons, rawFilteringPolygons]);
+    if (!filteringPolygonChecker) return [];
+    return filterPointsInsidePolygons(data, filteringPolygonChecker);
+  }, [sessionNeighborData, onlyInsidePolygons, filteringPolygonChecker]);
 
   const effectiveThresholds = useMemo(() => {
     if (predictionColorSettings?.length && dataToggle === "prediction") {
@@ -1261,7 +1337,7 @@ const UnifiedMapView = () => {
           lowerFilters.includes(l.indoor_outdoor.toLowerCase()),
       );
     }
-    if (pciAppearanceByKey.size > 0 && pciThreshold > 0) {
+    if (isSampleMode && pciAppearanceByKey.size > 0 && pciThreshold > 0) {
       result = result.filter((loc) => {
         const logPci = getLocationPciKey(loc);
         if (!logPci) return true;
@@ -1272,7 +1348,11 @@ const UnifiedMapView = () => {
         return true;
       });
     }
-    if (dominanceThreshold !== null && dominanceByLogId instanceof Map) {
+    if (
+      isSampleMode &&
+      dominanceThreshold !== null &&
+      dominanceByLogId instanceof Map
+    ) {
       result = result
         .filter((loc) => {
           const logId = getLocationIdKey(loc);
@@ -1284,6 +1364,7 @@ const UnifiedMapView = () => {
         }));
     }
     if (
+      isSampleMode &&
       coverageViolationThreshold !== null &&
       coverageViolationByLogId instanceof Map
     ) {
@@ -1304,6 +1385,7 @@ const UnifiedMapView = () => {
     locations,
     coverageHoleFilters,
     dataFilters,
+    isSampleMode,
     pciAppearanceByKey,
     pciThreshold,
     dominanceByLogId,
@@ -1320,14 +1402,14 @@ const UnifiedMapView = () => {
       prioritized = highlightedLogs;
     }
     if (!onlyInsidePolygons) return prioritized;
-    if (!rawFilteringPolygons?.length) return [];
-    return filterPointsInsidePolygons(prioritized, rawFilteringPolygons);
+    if (!filteringPolygonChecker) return [];
+    return filterPointsInsidePolygons(prioritized, filteringPolygonChecker);
   }, [
     drawnPoints,
     highlightedLogs,
     filteredLocations,
     onlyInsidePolygons,
-    rawFilteringPolygons,
+    filteringPolygonChecker,
   ]);
 
   const {
@@ -1932,6 +2014,7 @@ const uniquePcis = useMemo(() => {
       <UnifiedMapSidebar
         open={isSideOpen}
         pciThreshold={pciThreshold}
+        supportsSessionFilters={isSampleMode}
         dominanceThreshold={dominanceThreshold}
         setDominanceThreshold={setDominanceThreshold}
         setPciThreshold={setPciThreshold}
@@ -2116,6 +2199,7 @@ const uniquePcis = useMemo(() => {
               polygonSource={polygonSource}
               enablePolygonFilter={true}
               filterPolygons={rawFilteringPolygons}
+              externalPolygonsLoading={polygonLoading || areaLoading}
               showPolygonBoundary={true}
               enableGrid={enableGrid}
               gridSizeMeters={gridSizeMeters}

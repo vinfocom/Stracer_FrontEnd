@@ -334,6 +334,7 @@ const UnifiedMapSidebar = ({
   onUIChange,
   techHandover,
   pciRange = { min: 0, max: 100 },
+  supportsSessionFilters = true,
   technologyTransitions,
   showPolygons,
   setShowPolygons,
@@ -924,10 +925,13 @@ const UnifiedMapSidebar = ({
                       max={normalizedPciRange.max}
                       step="0.1"
                       value={clampedPciThreshold}
+                      disabled={!supportsSessionFilters}
                       onChange={(e) =>
                         setPciThreshold(parseFloat(e.target.value))
                       }
-                      className="w-full h-1.5 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                      className={`w-full h-1.5 bg-slate-700 rounded-lg accent-blue-500 ${
+                        supportsSessionFilters ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
+                      }`}
                     />
                     <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                       <span>{normalizedPciRange.min}%</span>
@@ -938,6 +942,11 @@ const UnifiedMapSidebar = ({
                     Hides PCIs that appear less than {clampedPciThreshold}% of
                     the time in this session.
                   </p>
+                  {!supportsSessionFilters && (
+                    <p className="text-[10px] text-amber-400 mt-1">
+                      Available only in Data Layer sample mode.
+                    </p>
+                  )}
                 </div>
 
                 {activeDataFiltersCount > 0 && (
@@ -983,6 +992,7 @@ const UnifiedMapSidebar = ({
                 <span className="text-sm text-slate-300">Dominance Filter</span>
                 <ToggleSwitch
                   checked={dominanceThreshold !== null}
+                  disabled={!supportsSessionFilters}
                   onChange={(checked) => {
                     const newVal = checked ? 6 : null;
                     setDominanceThreshold(newVal);
@@ -1007,6 +1017,7 @@ const UnifiedMapSidebar = ({
                     type="number"
                     value={dominanceThreshold}
                     min={0}
+                    disabled={!supportsSessionFilters}
                     onChange={(e) => {
                       const parsed = Number(e.target.value);
                       if (Number.isFinite(parsed)) {
@@ -1021,6 +1032,11 @@ const UnifiedMapSidebar = ({
                     {Math.abs(dominanceThreshold)} dB. Colors reflect the count
                     of overlapping signals.
                   </p>
+                  {!supportsSessionFilters && (
+                    <p className="text-[10px] text-amber-400">
+                      Available only in Data Layer sample mode.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -1031,6 +1047,7 @@ const UnifiedMapSidebar = ({
                 <span className="text-sm text-slate-300">Enable Violation</span>
                 <ToggleSwitch
                   checked={coverageViolationThreshold !== null}
+                  disabled={!supportsSessionFilters}
                   onChange={(checked) => {
                     // FIX: Ensure it defaults to a negative number and updates the metric
                     const newVal = checked ? -10 : null;
@@ -1058,6 +1075,7 @@ const UnifiedMapSidebar = ({
                     type="number"
                     value={coverageViolationThreshold}
                     max={0} // Ensure user doesn't go positive
+                    disabled={!supportsSessionFilters}
                     onChange={(e) => {
                       const parsed = Number(e.target.value);
                       if (Number.isFinite(parsed)) {
@@ -1071,6 +1089,11 @@ const UnifiedMapSidebar = ({
                     {coverageViolationThreshold} dB and 0 dB relative to
                     primary. Colors reflect count of signals.
                   </p>
+                  {!supportsSessionFilters && (
+                    <p className="text-[10px] text-amber-400">
+                      Available only in Data Layer sample mode.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
