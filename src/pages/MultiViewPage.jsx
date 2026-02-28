@@ -32,8 +32,12 @@ const MultiViewPage = () => {
   const passedNeighbors = passedState?.neighborData;
   const passedThresholds = passedState?.thresholds;
   const project = passedState?.project;
+  const hasPassedLocations =
+    Array.isArray(passedLocations) && passedLocations.length > 0;
+  const hasPassedNeighbors =
+    Array.isArray(passedNeighbors) && passedNeighbors.length > 0;
 
-  const shouldFetch = !passedLocations;
+  const shouldFetch = !hasPassedLocations;
 
   const { locations: fetchedLocations, loading: samplesLoading } =
     useNetworkSamples(sessionIds, shouldFetch);
@@ -43,8 +47,8 @@ const MultiViewPage = () => {
   const { thresholds: hookThresholds } = useColorForLog();
   const { isLoaded } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
 
-  const locations = passedLocations || fetchedLocations;
-  const neighborData = passedNeighbors || fetchedNeighbors;
+  const locations = hasPassedLocations ? passedLocations : fetchedLocations;
+  const neighborData = hasPassedNeighbors ? passedNeighbors : fetchedNeighbors;
   const thresholds = passedThresholds || hookThresholds;
 
   // --- Map State Management ---

@@ -676,8 +676,10 @@ const MapWithMultipleCircles = ({
 
     // A. Apply Polygon Filter
     if (filterInsidePolygons && enablePolygonFilter) {
-      if (!activePolygonsReady || !hasActivePolygons) return [];
-      filtered = activePolygonChecker.filterLocations(filtered);
+      if (!activePolygonsReady) return [];
+      if (hasActivePolygons) {
+        filtered = activePolygonChecker.filterLocations(filtered);
+      }
     }
 
     // B. Apply Legend Filter (Highlight)
@@ -807,8 +809,10 @@ const MapWithMultipleCircles = ({
       });
 
     if (filterInsidePolygons && enablePolygonFilter) {
-      if (!activePolygonsReady || !hasActivePolygons) return [];
-      parsed = activePolygonChecker.filterLocations(parsed);
+      if (!activePolygonsReady) return [];
+      if (hasActivePolygons) {
+        parsed = activePolygonChecker.filterLocations(parsed);
+      }
     }
 
     if (legendFilter) {
@@ -952,6 +956,10 @@ const MapWithMultipleCircles = ({
     onLoadProp?.(mapInstance);
   }, [locationsToRender, processedNeighbors, locations, fitToLocations, computedCenter, defaultZoom, onLoadProp]);
 
+  const handleMapUnmount = useCallback(() => {
+    setMap(null);
+  }, []);
+
   const handlePrimaryClick = useCallback((index, loc) => {
     setSelectedLog(loc);
     setSelectedNeighbor(null);
@@ -976,6 +984,7 @@ const MapWithMultipleCircles = ({
       <GoogleMap
         mapContainerStyle={containerStyle}
         onLoad={handleMapLoad}
+        onUnmount={handleMapUnmount}
         options={{ ...options, gestureHandling: 'greedy', disableDefaultUI: false }}
         defaultCenter={computedCenter}
         zoom={defaultZoom}

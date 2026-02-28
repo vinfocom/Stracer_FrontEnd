@@ -17,6 +17,26 @@ const isRequestCancelled = (error) => {
   );
 };
 
+const isUnifiedMapDebugEnabled = () => {
+  if (typeof window === "undefined") return false;
+  try {
+    const query = new URLSearchParams(window.location.search)
+      .get("debugMap")
+      ?.toLowerCase();
+    const local = (
+      window.localStorage.getItem("debug.unifiedMap") || ""
+    ).toLowerCase();
+    return query === "1" || query === "true" || local === "1" || local === "true";
+  } catch {
+    return false;
+  }
+};
+
+const debugUnifiedMapApi = (event, payload = {}) => {
+  if (!isUnifiedMapDebugEnabled()) return;
+  console.log(`[UnifiedMapApi] ${event}`, payload);
+};
+
 export const generalApi = {
   healthCheck: async () => {
     try {
@@ -475,10 +495,12 @@ export const adminApi = {
   getOutdoorCount: () => api.get("/Admin/OutdoorCount"),
   getAllUsers: (filters) => api.post("/Admin/GetAllUsers", filters),
 
-  getAppValue: (startDate, endDate) =>
-    api.get("/Admin/AppQualityFlatV2", {
-      params: { from: startDate, to: endDate },
-    }),
+  getAppValue: (startDate, endDate) => {
+    const params = {};
+    if (startDate) params.from = startDate;
+    if (endDate) params.to = endDate;
+    return api.get("/Admin/AppQualityFlatV2", { params });
+  },
 
   getHoles: () => api.get("/Admin/holes"),
   getBoxData: (metric, params = {}) =>
@@ -628,12 +650,26 @@ export const mapViewApi = {
   // src/api/apiEndpoints.js
   getPciDistribution: async (sessionIds) => {
     try {
+      const ids = Array.isArray(sessionIds)
+        ? sessionIds.map((x) => String(x).trim()).filter(Boolean).join(",")
+        : String(sessionIds ?? "").trim();
+
+      if (!ids) return null;
+      debugUnifiedMapApi("getPciDistribution:start", { ids });
+
       const response = await api.get(`/api/MapView/GetPciDistribution`, {
-        params: { session_ids: sessionIds.join(',') }
+        params: { session_ids: ids }
+      });
+      debugUnifiedMapApi("getPciDistribution:success", {
+        success: response?.success,
+        primaryYesCount: Object.keys(response?.primary_yes || {}).length,
       });
       // REMOVE .data here because api.get already returns the JSON body
       return response;
     } catch (error) {
+      debugUnifiedMapApi("getPciDistribution:error", {
+        message: error?.message || String(error),
+      });
       console.error("Error fetching PCI distribution:", error);
       return null;
     }
@@ -707,14 +743,22 @@ export const mapViewApi = {
   getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
     const sid = Array.isArray(session_ids) ? session_ids.join(",") : session_ids;
 
+    debugUnifiedMapApi("getNetworkLog:start", { sid, page, limit });
 
     const response = await api.get("/api/MapView/GetNetworkLog", {
       params: {
         session_Ids: sid,
+        session_ids: sid,
+        sessionId: sid,
         page: page,
         limit: limit,
       },
       signal: signal,
+      dedupe: false,
+    });
+    debugUnifiedMapApi("getNetworkLog:success", {
+      count: Array.isArray(response?.data) ? response.data.length : 0,
+      total: response?.total_count,
     });
 
 
@@ -766,9 +810,24 @@ export const mapViewApi = {
   },
 
   getDominanceDetails: (sessionIds) => {
-    const ids = Array.isArray(sessionIds) ? sessionIds.join(',') : sessionIds;
+    const ids = Array.isArray(sessionIds)
+      ? sessionIds.map((x) => String(x).trim()).filter(Boolean).join(",")
+      : String(sessionIds ?? "").trim();
+    if (!ids) return Promise.resolve({ success: false, data: [] });
+    debugUnifiedMapApi("getDominanceDetails:start", { ids });
     return api.get(`/api/MapView/GetDominanceDetails`, {
       params: { session_ids: ids }
+    }).then((res) => {
+      debugUnifiedMapApi("getDominanceDetails:success", {
+        success: res?.success,
+        count: Array.isArray(res?.data) ? res.data.length : 0,
+      });
+      return res;
+    }).catch((error) => {
+      debugUnifiedMapApi("getDominanceDetails:error", {
+        message: error?.message || String(error),
+      });
+      throw error;
     });
   },
 

@@ -46,8 +46,8 @@ const isPointInPolygon = (point, polygon) => {
 
 const parseLogEntry = (log, sessionId) => {
   if (!log || typeof log !== 'object') return null;
-  const lat = parseFloat(log.lat);
-  const lng = parseFloat(log.lon);
+  const lat = parseFloat(log.lat ?? log.latitude ?? log.Lat ?? log.Latitude);
+  const lng = parseFloat(log.lon ?? log.lng ?? log.longitude ?? log.Lng ?? log.Longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
@@ -103,29 +103,35 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
   
   const abortControllerRef = useRef(null);
   const isFetchingRef = useRef(false);
+  const activeFetchKeyRef = useRef('');
   const mountedRef = useRef(true);
   const lastFetchedKeyRef = useRef(null);
   const fetchIdRef = useRef(0);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
+    const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
 
 
     if (!forceRefresh && fetchKey === lastFetchedKeyRef.current && locations.length > 0) return;
     if (!sessionIds?.length || !enabled) {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      isFetchingRef.current = false;
+      activeFetchKeyRef.current = '';
+      setLoading(false);
       setLocations([]);
       setAppSummary({});
       setInpSummary({});
       setTptVolume({});
       return;
     }
-    if (isFetchingRef.current && fetchKey === lastFetchedKeyRef.current) return;
+    if (!forceRefresh && isFetchingRef.current && fetchKey === activeFetchKeyRef.current) return;
 
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
     const currentFetchId = ++fetchIdRef.current;
 
     isFetchingRef.current = true;
+    activeFetchKeyRef.current = fetchKey;
     setLoading(true);
     setError(null);
     setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
@@ -164,8 +170,13 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
         let apiBody;
         let logsArray;
 
-        // Handle various API response structures
-        if (response?.data && typeof response.data === 'object' && !Array.isArray(response.data) && response.data.data) {
+        // Handle various API response structures (apiService returns response.data directly)
+        if (
+          response?.data &&
+          typeof response.data === 'object' &&
+          !Array.isArray(response.data) &&
+          response.data.data
+        ) {
           apiBody = response.data;
           logsArray = apiBody.data || [];
         } else if (response?.data && Array.isArray(response.data)) {
@@ -176,11 +187,28 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
           logsArray = response;
         } else {
           apiBody = response?.data || response || {};
-          logsArray = apiBody?.data || (Array.isArray(apiBody) ? apiBody : []);
+          logsArray =
+            apiBody?.data ||
+            apiBody?.Data ||
+            apiBody?.logs ||
+            apiBody?.result ||
+            apiBody?.Result ||
+            (Array.isArray(apiBody) ? apiBody : []);
         }
 
+        if (!Array.isArray(logsArray) && apiBody?.data && typeof apiBody.data === 'object') {
+          logsArray = apiBody.data.data || apiBody.data.Data || [];
+        }
+        if (!Array.isArray(logsArray)) logsArray = [];
+
         if (currentPage === 1) {
-          totalCount = apiBody?.total_count || apiBody?.totalCount || apiBody?.TotalCount || 0;
+          totalCount =
+            apiBody?.total_count ||
+            apiBody?.totalCount ||
+            apiBody?.TotalCount ||
+            apiBody?.count ||
+            apiBody?.Count ||
+            0;
           if (totalCount === 0 && logsArray.length > 0) totalCount = logsArray.length;
           totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
           if (apiBody?.app_summary) summaryData.app = apiBody.app_summary;
@@ -249,6 +277,7 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
     } finally {
       if (fetchIdRef.current === currentFetchId) {
         isFetchingRef.current = false;
+        activeFetchKeyRef.current = '';
         if (mountedRef.current) setLoading(false);
       }
     }

@@ -1,5 +1,18 @@
 import { useState, useEffect } from 'react';
 
+const TIME_FILTER_KEYS = ['dateFrom', 'dateTo', 'from', 'to', 'startDate', 'endDate', 'startTime', 'endTime'];
+
+const stripTimeFilters = (filters) => {
+  if (!filters || typeof filters !== 'object' || Array.isArray(filters)) return {};
+  const next = { ...filters };
+  TIME_FILTER_KEYS.forEach((key) => {
+    if (key in next) {
+      delete next[key];
+    }
+  });
+  return next;
+};
+
 export const usePersistedFilters = (chartKey, initialFilters = {}) => {
   const storageKey = `chart_filters_${chartKey}`;
   
@@ -8,11 +21,11 @@ export const usePersistedFilters = (chartKey, initialFilters = {}) => {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        return parsed;
+        return stripTimeFilters(parsed);
       }
     } catch (error) {
     }
-    return initialFilters;
+    return stripTimeFilters(initialFilters);
   });
 
   useEffect(() => {

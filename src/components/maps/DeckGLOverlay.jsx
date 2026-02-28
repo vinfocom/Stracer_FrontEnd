@@ -92,11 +92,27 @@ const DeckGLOverlay = ({
 }) => {
   const overlayRef = useRef(null);
   const isCleanedUpRef = useRef(false);
+  const attachedMapRef = useRef(null);
+  const idleListenerRef = useRef(null);
+  const attachTimerRef = useRef(null);
   const isValidMapInstance = useCallback((m) => {
     if (!m || !window.google?.maps) return false;
     if (typeof m.getDiv !== 'function') return false;
     return Boolean(m.getDiv());
   }, []);
+
+  const canAttachOverlay = useCallback((m) => {
+    if (!isValidMapInstance(m)) return false;
+    if (typeof m.addListener !== 'function') return false;
+    try {
+      if (typeof m.getProjection === 'function' && !m.getProjection()) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    return true;
+  }, [isValidMapInstance]);
 
   useEffect(() => {
     if (!isValidMapInstance(map)) return;
@@ -110,23 +126,55 @@ const DeckGLOverlay = ({
       });
     }
 
-    try {
-      overlayRef.current.setMap(map);
-    } catch (err) {
-      console.warn("Could not attach DeckGL to map instance:", err);
+    const clearPendingAttach = () => {
+      if (idleListenerRef.current && window.google?.maps?.event?.removeListener) {
+        window.google.maps.event.removeListener(idleListenerRef.current);
+      }
+      idleListenerRef.current = null;
+      if (attachTimerRef.current) {
+        window.clearTimeout(attachTimerRef.current);
+      }
+      attachTimerRef.current = null;
+    };
+
+    const attachOverlay = () => {
+      if (!overlayRef.current || isCleanedUpRef.current) return;
+      if (attachedMapRef.current === map) return;
+      if (!canAttachOverlay(map)) return;
+      try {
+        overlayRef.current.setMap(map);
+        attachedMapRef.current = map;
+        clearPendingAttach();
+      } catch (err) {
+        console.warn("Could not attach DeckGL to map instance:", err);
+      }
+    };
+
+    attachOverlay();
+
+    // Map may exist but still be mid-initialization; retry after first idle tick.
+    if (attachedMapRef.current !== map && typeof map.addListener === 'function') {
+      idleListenerRef.current = map.addListener('idle', attachOverlay);
+      attachTimerRef.current = window.setTimeout(attachOverlay, 150);
     }
 
     return () => {
+      clearPendingAttach();
       if (overlayRef.current) {
         try {
           overlayRef.current.setProps({ layers: [] });
-          overlayRef.current.setMap(null);
+          if (attachedMapRef.current === map) {
+            overlayRef.current.setMap(null);
+          }
         } catch (e) {
           // ignore detach errors during fast remount/unmount
         }
       }
+      if (attachedMapRef.current === map) {
+        attachedMapRef.current = null;
+      }
     };
-  }, [map, isValidMapInstance]);
+  }, [map, isValidMapInstance, canAttachOverlay]);
 
   const handlePrimaryClick = useCallback((info) => {
     if (info.object && onClick) onClick(info.index, info.object);
@@ -166,6 +214,7 @@ const DeckGLOverlay = ({
 
   useEffect(() => {
     if (!overlayRef.current || !isValidMapInstance(map)) return;
+    if (attachedMapRef.current !== map) return;
 
     const layers = [];
 
@@ -225,20 +274,35 @@ const DeckGLOverlay = ({
       }
     }
 
-    overlayRef.current.setProps({ layers });
+    try {
+      overlayRef.current.setProps({ layers });
+    } catch (e) {
+      // Overlay can detach during map teardown; skip this update.
+    }
   }, [map, primaryData, neighborData, showPrimaryLogs, showNeighbors, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor, isValidMapInstance]);
 
   useEffect(() => {
     return () => {
+      if (idleListenerRef.current && window.google?.maps?.event?.removeListener) {
+        window.google.maps.event.removeListener(idleListenerRef.current);
+      }
+      idleListenerRef.current = null;
+      if (attachTimerRef.current) {
+        window.clearTimeout(attachTimerRef.current);
+      }
+      attachTimerRef.current = null;
       if (!overlayRef.current || isCleanedUpRef.current) return;
       try {
         overlayRef.current.setProps({ layers: [] });
-        overlayRef.current.setMap(null);
+        if (attachedMapRef.current) {
+          overlayRef.current.setMap(null);
+        }
         overlayRef.current.finalize();
       } catch (e) {
         // ignore cleanup errors
       }
       overlayRef.current = null;
+      attachedMapRef.current = null;
       isCleanedUpRef.current = true;
     };
   }, []);

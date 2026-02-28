@@ -470,10 +470,19 @@ const UnifiedMapSidebar = ({
   }, [pciThreshold, normalizedPciRange]);
 
   useEffect(() => {
-    if (clampedPciThreshold !== pciThreshold) {
-      setPciThreshold(clampedPciThreshold);
+    if (!supportsSessionFilters) return;
+    const current = Number(pciThreshold);
+    const next = Number(clampedPciThreshold);
+    if (!Number.isFinite(next)) return;
+    if (!Number.isFinite(current) || Math.abs(next - current) > 0.0001) {
+      setPciThreshold(next);
     }
-  }, [clampedPciThreshold, pciThreshold, setPciThreshold]);
+  }, [
+    clampedPciThreshold,
+    pciThreshold,
+    setPciThreshold,
+    supportsSessionFilters,
+  ]);
 
   const shouldShowMetricSelector = useMemo(
     () =>

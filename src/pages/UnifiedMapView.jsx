@@ -59,6 +59,18 @@ import { PolygonChecker as FastPolygonChecker } from "@/utils/polygonUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 const EMPTY_POLYGONS = Object.freeze([]);
+const EMPTY_LIST = Object.freeze([]);
+const SESSION_QUERY_KEYS = Object.freeze([
+  "sessionId",
+  "session",
+  "sessionIds",
+  "session_ids",
+  "session_Ids",
+  "SessionId",
+  "SessionID",
+  "SessionIds",
+  "Session_Ids",
+]);
 
 const DEFAULT_COVERAGE_FILTERS = {
   rsrp: { enabled: false, threshold: -110 },
@@ -227,6 +239,37 @@ const getThresholdKey = (metric) => {
   return normalizeMetric(metric);
 };
 
+const parseSessionIds = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+  }
+  if (value == null) return [];
+  if (typeof value === "number") return [String(value)];
+  if (typeof value === "string") {
+    return value
+      .split(/[;,|]/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "object") {
+    const fromSessionIds = parseSessionIds(value.sessionIds);
+    if (fromSessionIds.length > 0) return fromSessionIds;
+    const fromSessionIdsSnake = parseSessionIds(value.session_ids);
+    if (fromSessionIdsSnake.length > 0) return fromSessionIdsSnake;
+    const fromSessionId = parseSessionIds(value.sessionId);
+    if (fromSessionId.length > 0) return fromSessionId;
+    return parseSessionIds(value.session);
+  }
+  return [];
+};
+
+const toSessionCsv = (value) => {
+  const ids = parseSessionIds(value);
+  return ids.length > 0 ? ids.join(",") : "";
+};
+
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
   if (!path?.length) return false;
@@ -292,6 +335,40 @@ const getLocationPciKey = (loc) =>
       loc?.CellId ??
       loc?.cellId,
   );
+
+const toCoordinateKey = (latValue, lngValue) => {
+  const lat = Number(latValue);
+  const lng = Number(lngValue);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return `${lat.toFixed(6)}|${lng.toFixed(6)}`;
+};
+
+const getLocationCoordinateKey = (loc) =>
+  toCoordinateKey(
+    loc?.lat ?? loc?.latitude ?? loc?.Lat,
+    loc?.lng ?? loc?.lon ?? loc?.longitude ?? loc?.Lng,
+  );
+
+const setLookupCount = (lookup, key, count) => {
+  if (!key || !Number.isFinite(count)) return;
+  const prev = lookup.get(key);
+  if (prev == null || count > prev) {
+    lookup.set(key, count);
+  }
+};
+
+const getLookupCountForLocation = (loc, lookup) => {
+  if (!(lookup instanceof Map)) return null;
+  const idKey = getLocationIdKey(loc);
+  if (idKey && lookup.has(`id:${idKey}`)) return lookup.get(`id:${idKey}`);
+  const coordKey = getLocationCoordinateKey(loc);
+  if (coordKey && lookup.has(`coord:${coordKey}`))
+    return lookup.get(`coord:${coordKey}`);
+  return null;
+};
+
+const getLocationIdentityKey = (loc) =>
+  getLocationIdKey(loc) || getLocationCoordinateKey(loc);
 
 const buildHandoverTransitions = (logs = []) => {
   if (!Array.isArray(logs) || logs.length < 2) {
@@ -834,6 +911,10 @@ const UnifiedMapView = () => {
   const passedLocations = passedState?.locations;
   const passedNeighbors = passedState?.neighborData;
   const passedProject = passedState?.project;
+  const hasPassedLocations =
+    Array.isArray(passedLocations) && passedLocations.length > 0;
+  const hasPassedNeighbors =
+    Array.isArray(passedNeighbors) && passedNeighbors.length > 0;
 
   const [project, setProject] = useState(passedProject || null);
 
@@ -842,15 +923,135 @@ const UnifiedMapView = () => {
     return param ? Number(param) : null;
   }, [searchParams]);
 
-  const sessionIds = useMemo(() => {
-    const param = searchParams.get("sessionId") ?? searchParams.get("session");
-    if (!param) return [];
-    return param
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+  const querySessionParam = useMemo(() => {
+    for (const key of SESSION_QUERY_KEYS) {
+      const value = searchParams.get(key);
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    for (const [key, value] of searchParams.entries()) {
+      if (typeof value !== "string" || !value.trim()) continue;
+      if (key.toLowerCase().includes("session")) {
+        return value.trim();
+      }
+    }
+
+    return "";
   }, [searchParams]);
+
+  const stateSessionParam = useMemo(() => {
+    return (
+      toSessionCsv(passedState?.sessionIds) ||
+      toSessionCsv(passedState?.session_ids) ||
+      toSessionCsv(passedState?.sessionId) ||
+      toSessionCsv(passedState?.session)
+    );
+  }, [passedState]);
+
+  const projectSessionParam = useMemo(() => {
+    return (
+      toSessionCsv(project?.ref_session_id) ||
+      toSessionCsv(project?.session_ids) ||
+      toSessionCsv(project?.sessionIds) ||
+      toSessionCsv(project?.SessionIds) ||
+      toSessionCsv(passedProject?.ref_session_id) ||
+      toSessionCsv(passedProject?.session_ids) ||
+      toSessionCsv(passedProject?.sessionIds) ||
+      toSessionCsv(passedProject?.SessionIds)
+    );
+  }, [project, passedProject]);
+
+  useEffect(() => {
+    if (!projectId || projectSessionParam) return;
+
+    let active = true;
+    const fetchProjectForSessions = async () => {
+      try {
+        const response = await mapViewApi.getProjects();
+        const projects = response?.Data || [];
+        if (!Array.isArray(projects) || !active) return;
+        const matchedProject = projects.find((p) => Number(p?.id) === Number(projectId));
+        if (!matchedProject) return;
+
+        const nextCsv =
+          toSessionCsv(matchedProject?.ref_session_id) ||
+          toSessionCsv(matchedProject?.session_ids) ||
+          toSessionCsv(matchedProject?.sessionIds) ||
+          toSessionCsv(matchedProject?.SessionIds);
+        if (!nextCsv || !active) return;
+
+        setProject((prev) => {
+          const prevId = Number(prev?.id);
+          const prevCsv =
+            toSessionCsv(prev?.ref_session_id) ||
+            toSessionCsv(prev?.session_ids) ||
+            toSessionCsv(prev?.sessionIds) ||
+            toSessionCsv(prev?.SessionIds);
+          if (prevId === Number(matchedProject.id) && prevCsv === nextCsv) {
+            return prev;
+          }
+          return matchedProject;
+        });
+      } catch (error) {
+        console.warn("[UnifiedMap] Could not resolve project sessions", {
+          projectId,
+          message: error?.message || String(error),
+        });
+      }
+    };
+
+    fetchProjectForSessions();
+    return () => {
+      active = false;
+    };
+  }, [projectId, projectSessionParam]);
+
+  const fallbackSessionParam = useMemo(
+    () => stateSessionParam || projectSessionParam || "",
+    [stateSessionParam, projectSessionParam],
+  );
+
+  const inferredSessionIdsFromPassedLogs = useMemo(() => {
+    if (!hasPassedLocations) return [];
+    const ids = new Set();
+    for (const loc of passedLocations || EMPTY_LIST) {
+      const raw =
+        loc?.session_id ??
+        loc?.sessionId ??
+        loc?.session ??
+        loc?.sessionID;
+      const id = String(raw ?? "").trim();
+      if (id) ids.add(id);
+    }
+    return Array.from(ids);
+  }, [hasPassedLocations, passedLocations]);
+
+  const sessionIds = useMemo(() => {
+    const explicit = parseSessionIds(querySessionParam || fallbackSessionParam);
+    if (explicit.length > 0) return explicit;
+    if (inferredSessionIdsFromPassedLogs.length > 0) {
+      return inferredSessionIdsFromPassedLogs;
+    }
+    return [];
+  }, [querySessionParam, fallbackSessionParam, inferredSessionIdsFromPassedLogs]);
   const sessionKey = useMemo(() => sessionIds.join(","), [sessionIds]);
+  const isDebugMapFlow = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const q = (searchParams.get("debugMap") || "").toLowerCase();
+    const local = (
+      window.localStorage.getItem("debug.unifiedMap") || ""
+    ).toLowerCase();
+    return q === "1" || q === "true" || local === "1" || local === "true";
+  }, [searchParams]);
+  const debugMapFlow = useCallback(
+    (event, payload = {}) => {
+      if (!isDebugMapFlow) return;
+      console.log(`[UnifiedMapDebug] ${event}`, payload);
+    },
+    [isDebugMapFlow],
+  );
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
   const {
@@ -879,6 +1080,7 @@ const UnifiedMapView = () => {
     ],
     [polygons, areaEnabled, areaData],
   );
+  const hasFilteringPolygons = rawFilteringPolygons.length > 0;
   const filteringPolygonChecker = useMemo(
     () =>
       rawFilteringPolygons?.length
@@ -888,7 +1090,7 @@ const UnifiedMapView = () => {
   );
   const siteLayerPolygonFiltering = Boolean(enableSiteToggle && rawFilteringPolygons.length > 0);
 
-  const shouldFetchSamples = !passedLocations && isSampleMode;
+  const shouldFetchSamples = isSampleMode && sessionIds.length > 0;
 
   const {
     locations: fetchedSamples,
@@ -906,8 +1108,10 @@ const UnifiedMapView = () => {
     EMPTY_POLYGONS,
   );
 
-  // Combine passed data with fetched data
-  const sampleLocations = passedLocations || fetchedSamples;
+  // Prefer live fetched data whenever sample fetch is enabled.
+  const sampleLocations = shouldFetchSamples
+    ? (fetchedSamples || EMPTY_LIST)
+    : (hasPassedLocations ? passedLocations : fetchedSamples);
 
   // ✅ 2. Use Prediction Data Hook
   const {
@@ -937,7 +1141,7 @@ const UnifiedMapView = () => {
   });
 
   // ✅ 3. Use Session Neighbors Hook
-  const shouldFetchNeighbors = !passedNeighbors && showSessionNeighbors;
+  const shouldFetchNeighbors = !hasPassedNeighbors && showSessionNeighbors;
 
   const {
     neighborData: fetchedNeighbors,
@@ -952,7 +1156,58 @@ const UnifiedMapView = () => {
     EMPTY_POLYGONS,
   );
 
-  const sessionNeighborData = passedNeighbors || fetchedNeighbors;
+  const sessionNeighborData = hasPassedNeighbors
+    ? passedNeighbors
+    : fetchedNeighbors;
+
+  useEffect(() => {
+    debugMapFlow("fetch-gates", {
+      isSampleMode,
+      enableDataToggle,
+      dataToggle,
+      hasPassedLocations,
+      hasPassedNeighbors,
+      shouldFetchSamples,
+      shouldFetchNeighbors,
+      sessionCount: sessionIds.length,
+      sessionKey,
+    });
+  }, [
+    debugMapFlow,
+    isSampleMode,
+    enableDataToggle,
+    dataToggle,
+    hasPassedLocations,
+    hasPassedNeighbors,
+    shouldFetchSamples,
+    shouldFetchNeighbors,
+    sessionIds,
+    sessionKey,
+  ]);
+
+  useEffect(() => {
+    if (!isSampleMode || sessionIds.length > 0) return;
+    console.warn(
+      "[UnifiedMap] Sample mode is active but no session IDs were resolved from URL/state/project. Sample and PCI APIs will not be called.",
+      {
+        querySessionParam,
+        querySessionPairs: Array.from(searchParams.entries()).filter(([k, v]) =>
+          k.toLowerCase().includes("session") && String(v ?? "").trim(),
+        ),
+        stateSessionParam,
+        projectSessionParam,
+        fallbackSessionParam,
+      },
+    );
+  }, [
+    isSampleMode,
+    sessionIds,
+    searchParams,
+    querySessionParam,
+    stateSessionParam,
+    projectSessionParam,
+    fallbackSessionParam,
+  ]);
 
   // ✅ 6. Use Site Data (Existing)
   const {
@@ -1045,7 +1300,14 @@ const UnifiedMapView = () => {
   }, [sessionIds]);
 
   useEffect(() => {
+    if (!isSampleMode) {
+      debugMapFlow("pci-fetch-skip", { reason: "not-sample-mode" });
+      setPciDistData(null);
+      return;
+    }
+
     if (!sessionKey) {
+      debugMapFlow("pci-fetch-skip", { reason: "empty-session-key" });
       setPciDistData(null);
       return;
     }
@@ -1056,18 +1318,31 @@ const UnifiedMapView = () => {
 
     const fetchDist = async () => {
       try {
+        debugMapFlow("pci-fetch-start", {
+          requestId,
+          sessionIds: currentSessionIds,
+        });
         const data = await mapViewApi.getPciDistribution(currentSessionIds);
         if (!active || requestId !== pciDistributionRequestRef.current) return;
 
         if (data?.success) {
           // Store only the primary_yes data as requested
           setPciDistData(data.primary_yes || null);
+          debugMapFlow("pci-fetch-success", {
+            requestId,
+            pciCount: Object.keys(data?.primary_yes || {}).length,
+          });
         } else {
           setPciDistData(null);
+          debugMapFlow("pci-fetch-empty", { requestId, data });
         }
       } catch (error) {
         if (!active || requestId !== pciDistributionRequestRef.current) return;
         setPciDistData(null);
+        debugMapFlow("pci-fetch-error", {
+          requestId,
+          message: error?.message || String(error),
+        });
         console.error("Failed to fetch PCI distribution", error);
       }
     };
@@ -1076,10 +1351,17 @@ const UnifiedMapView = () => {
     return () => {
       active = false;
     };
-  }, [sessionKey]);
+  }, [sessionKey, isSampleMode, debugMapFlow]);
 
   useEffect(() => {
+    if (!isSampleMode) {
+      debugMapFlow("dominance-fetch-skip", { reason: "not-sample-mode" });
+      setDominanceData([]);
+      return;
+    }
+
     if (!sessionKey) {
+      debugMapFlow("dominance-fetch-skip", { reason: "empty-session-key" });
       setDominanceData([]);
       return;
     }
@@ -1090,17 +1372,30 @@ const UnifiedMapView = () => {
 
     const fetchDominance = async () => {
       try {
+        debugMapFlow("dominance-fetch-start", {
+          requestId,
+          sessionIds: currentSessionIds,
+        });
         const res = await mapViewApi.getDominanceDetails(currentSessionIds);
         if (!active || requestId !== dominanceRequestRef.current) return;
 
         if (res?.success && Array.isArray(res.data)) {
           setDominanceData(res.data);
+          debugMapFlow("dominance-fetch-success", {
+            requestId,
+            count: res.data.length,
+          });
         } else {
           setDominanceData([]);
+          debugMapFlow("dominance-fetch-empty", { requestId, res });
         }
       } catch (err) {
         if (!active || requestId !== dominanceRequestRef.current) return;
         setDominanceData([]);
+        debugMapFlow("dominance-fetch-error", {
+          requestId,
+          message: err?.message || String(err),
+        });
         console.error("Failed to fetch dominance details", err);
       }
     };
@@ -1109,7 +1404,7 @@ const UnifiedMapView = () => {
     return () => {
       active = false;
     };
-  }, [sessionKey]);
+  }, [sessionKey, isSampleMode, debugMapFlow]);
 
   // ... (Rest of Derived State & Computations logic is same) ...
   const pciAppearanceByKey = useMemo(() => {
@@ -1154,8 +1449,8 @@ const UnifiedMapView = () => {
       mainLogs = predictionLocations || [];
     }
 
-    if (!onlyInsidePolygons) return mainLogs;
-    if (!filteringPolygonChecker) return [];
+    if (!onlyInsidePolygons || !hasFilteringPolygons) return mainLogs;
+    if (!filteringPolygonChecker) return mainLogs;
     return filterPointsInsidePolygons(mainLogs, filteringPolygonChecker);
   }, [
     enableDataToggle,
@@ -1165,6 +1460,7 @@ const UnifiedMapView = () => {
     sampleLocations,
     predictionLocations,
     onlyInsidePolygons,
+    hasFilteringPolygons,
     filteringPolygonChecker,
   ]);
 
@@ -1181,10 +1477,15 @@ const UnifiedMapView = () => {
 
   const polygonFilteredNeighborData = useMemo(() => {
     const data = sessionNeighborData || [];
-    if (!onlyInsidePolygons) return data;
-    if (!filteringPolygonChecker) return [];
+    if (!onlyInsidePolygons || !hasFilteringPolygons) return data;
+    if (!filteringPolygonChecker) return data;
     return filterPointsInsidePolygons(data, filteringPolygonChecker);
-  }, [sessionNeighborData, onlyInsidePolygons, filteringPolygonChecker]);
+  }, [
+    sessionNeighborData,
+    onlyInsidePolygons,
+    hasFilteringPolygons,
+    filteringPolygonChecker,
+  ]);
 
   const effectiveThresholds = useMemo(() => {
     if (predictionColorSettings?.length && dataToggle === "prediction") {
@@ -1266,14 +1567,19 @@ const UnifiedMapView = () => {
       const logId = normalizeKey(
         item?.LogId ?? item?.log_id ?? item?.id ?? item?.Id,
       );
-      if (!logId) return;
       const values = Array.isArray(item?.dominance) ? item.dominance : [];
       const countInRange = values.filter((val) => {
         const num = parseFloat(val);
         return Number.isFinite(num) && num >= -limit && num <= limit;
       }).length;
       if (countInRange > 0) {
-        idMap.set(logId, countInRange);
+        if (logId) {
+          setLookupCount(idMap, `id:${logId}`, countInRange);
+        }
+        const coordKey = toCoordinateKey(item?.lat, item?.lon);
+        if (coordKey) {
+          setLookupCount(idMap, `coord:${coordKey}`, countInRange);
+        }
       }
     });
     return idMap;
@@ -1294,14 +1600,19 @@ const UnifiedMapView = () => {
       const logId = normalizeKey(
         item?.LogId ?? item?.log_id ?? item?.id ?? item?.Id,
       );
-      if (!logId) return;
       const values = Array.isArray(item?.dominance) ? item.dominance : [];
       const countInRange = values.filter((val) => {
         const num = parseFloat(val);
         return Number.isFinite(num) && num >= start && num <= 0;
       }).length;
       if (countInRange > 0) {
-        idMap.set(logId, countInRange);
+        if (logId) {
+          setLookupCount(idMap, `id:${logId}`, countInRange);
+        }
+        const coordKey = toCoordinateKey(item?.lat, item?.lon);
+        if (coordKey) {
+          setLookupCount(idMap, `coord:${coordKey}`, countInRange);
+        }
       }
     });
     return idMap;
@@ -1337,11 +1648,25 @@ const UnifiedMapView = () => {
           lowerFilters.includes(l.indoor_outdoor.toLowerCase()),
       );
     }
-    if (isSampleMode && pciAppearanceByKey.size > 0 && pciThreshold > 0) {
+    if (isSampleMode && pciThreshold > 0) {
+      let pciLookup = pciAppearanceByKey;
+      if (pciLookup.size === 0 && result.length > 0) {
+        const total = result.length;
+        const counts = new Map();
+        result.forEach((loc) => {
+          const key = getLocationPciKey(loc);
+          if (!key) return;
+          counts.set(key, (counts.get(key) || 0) + 1);
+        });
+        pciLookup = new Map();
+        counts.forEach((count, key) => {
+          pciLookup.set(key, (count / total) * 100);
+        });
+      }
       result = result.filter((loc) => {
         const logPci = getLocationPciKey(loc);
         if (!logPci) return true;
-        const totalPercentage = pciAppearanceByKey.get(logPci);
+        const totalPercentage = pciLookup.get(logPci);
         if (totalPercentage !== undefined) {
           return totalPercentage >= pciThreshold;
         }
@@ -1355,12 +1680,12 @@ const UnifiedMapView = () => {
     ) {
       result = result
         .filter((loc) => {
-          const logId = getLocationIdKey(loc);
-          return logId ? dominanceByLogId.has(logId) : false;
+          const count = getLookupCountForLocation(loc, dominanceByLogId);
+          return Number.isFinite(count) && count > 0;
         })
         .map((loc) => ({
           ...loc,
-          dominance: dominanceByLogId.get(getLocationIdKey(loc)),
+          dominance: getLookupCountForLocation(loc, dominanceByLogId),
         }));
     }
     if (
@@ -1370,13 +1695,14 @@ const UnifiedMapView = () => {
     ) {
       result = result
         .filter((loc) => {
-          const logId = getLocationIdKey(loc);
-          return logId ? coverageViolationByLogId.has(logId) : false;
+          const count = getLookupCountForLocation(loc, coverageViolationByLogId);
+          return Number.isFinite(count) && count > 0;
         })
         .map((loc) => ({
           ...loc,
-          coverage_violation: coverageViolationByLogId.get(
-            getLocationIdKey(loc),
+          coverage_violation: getLookupCountForLocation(
+            loc,
+            coverageViolationByLogId,
           ),
         }));
     }
@@ -1398,18 +1724,50 @@ const UnifiedMapView = () => {
     let prioritized = filteredLocations;
     if (drawnPoints !== null) {
       prioritized = drawnPoints;
-    } else if (highlightedLogs) {
-      prioritized = highlightedLogs;
+    } else if (Array.isArray(highlightedLogs)) {
+      if (highlightedLogs.length === 0) {
+        prioritized = filteredLocations;
+      } else {
+        const allowedKeys = new Set(
+          (filteredLocations || [])
+            .map(getLocationIdentityKey)
+            .filter(Boolean),
+        );
+        prioritized = highlightedLogs.filter((loc) => {
+          const key = getLocationIdentityKey(loc);
+          return key ? allowedKeys.has(key) : true;
+        });
+      }
     }
-    if (!onlyInsidePolygons) return prioritized;
-    if (!filteringPolygonChecker) return [];
+    if (!onlyInsidePolygons || !hasFilteringPolygons) return prioritized;
+    if (!filteringPolygonChecker) return prioritized;
     return filterPointsInsidePolygons(prioritized, filteringPolygonChecker);
   }, [
     drawnPoints,
     highlightedLogs,
     filteredLocations,
     onlyInsidePolygons,
+    hasFilteringPolygons,
     filteringPolygonChecker,
+  ]);
+
+  useEffect(() => {
+    debugMapFlow("data-counts", {
+      fetchedSamples: fetchedSamples?.length || 0,
+      sampleLocations: sampleLocations?.length || 0,
+      predictionLocations: predictionLocations?.length || 0,
+      locations: locations?.length || 0,
+      filteredLocations: filteredLocations?.length || 0,
+      finalDisplayLocations: finalDisplayLocations?.length || 0,
+    });
+  }, [
+    debugMapFlow,
+    fetchedSamples,
+    sampleLocations,
+    predictionLocations,
+    locations,
+    filteredLocations,
+    finalDisplayLocations,
   ]);
 
   const {
@@ -2174,7 +2532,7 @@ const uniquePcis = useMemo(() => {
               loadError={loadError}
               locations={
                 enableDataToggle && dataToggle === "prediction"
-                  ? []
+                  ? EMPTY_LIST
                   : finalDisplayLocations
               }
               thresholds={effectiveThresholds}
@@ -2204,7 +2562,7 @@ const uniquePcis = useMemo(() => {
               enableGrid={enableGrid}
               gridSizeMeters={gridSizeMeters}
               areaEnabled={areaEnabled}
-              filterInsidePolygons={onlyInsidePolygons}
+              filterInsidePolygons={false}
               onFilteredLocationsChange={setMapVisibleLocations}
               opacity={opacity}
               neighborData={filteredNeighbors}
@@ -2220,7 +2578,7 @@ const uniquePcis = useMemo(() => {
                 map={mapRef.current}
                 enabled={ui.drawEnabled}
                 logs={finalDisplayLocations}
-                sessions={[]}
+                sessions={EMPTY_LIST}
                 selectedMetric={selectedMetric}
                 thresholds={effectiveThresholds}
                 pixelateRect={ui.drawPixelateRect}
@@ -2237,11 +2595,11 @@ const uniquePcis = useMemo(() => {
                 <LtePredictionLocationLayer
                   enabled={true}
                   map={mapRef.current}
-                  locations={ltePredictionLocations || []}
+                  locations={ltePredictionLocations || EMPTY_LIST}
                   selectedMetric={selectedMetric}
                   thresholds={effectiveThresholds}
                   getMetricColor={getMetricColorForLog}
-                  filterPolygons={onlyInsidePolygons ? rawFilteringPolygons : []}
+                  filterPolygons={onlyInsidePolygons ? rawFilteringPolygons : EMPTY_POLYGONS}
                   filterInsidePolygons={onlyInsidePolygons}
                   enableGrid={lteGridEnabled}
                   gridSizeMeters={lteGridSizeMeters || 50}
