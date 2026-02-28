@@ -57,6 +57,7 @@ const SuperAdminCompanies = () => {
 
   const columns = [
     { header: "ID", accessor: "id" },
+    { header: "Company Code", accessor: "company_code" },
     { header: "Company Name", accessor: "company_name" },
     { header: "Contact Person", accessor: "contact_person" },
     { header: "Email", accessor: "email" },
@@ -86,6 +87,7 @@ const SuperAdminCompanies = () => {
       header: "Created On",
       render: (row) => row.created_on ? new Date(row.created_on).toLocaleDateString() : "-"
     },
+    {header: "Validity", accessor: "license_validity_in_months"},
     {
             header: 'Action',
             render: (user) => (
@@ -126,7 +128,6 @@ const SuperAdminCompanies = () => {
 
   
   useEffect(() => {
-    // Only fetch if user is actually a Super Admin
     if (user?.m_user_type_id === 3) {
       fetchCompanies();
     }

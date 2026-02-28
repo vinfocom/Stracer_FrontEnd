@@ -962,6 +962,9 @@ export const companyApi = {
 
   revokeLicense: (id) => api.post(`/api/company/revokeLicense`, null, { params: { licenseId: id } }),
 
+  updateIssuedLicense: (licenseId, data) =>
+    api.put("/api/company/updateIssuedLicense", data, { params: { licenseId } }),
+
   licensesDetails: (params) => api.get("/api/company/usedLicenses",
     { params, withCredentials: true }
   ),

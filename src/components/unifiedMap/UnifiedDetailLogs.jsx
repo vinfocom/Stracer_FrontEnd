@@ -739,10 +739,68 @@ export default function UnifiedDetailLogs({
   const rndRef = useRef(null);
   const contentRef = useRef(null);
 
-  const PANEL_WIDTH = 500;
   const HEADER_OFFSET = 70;
-  const BOTTOM_MARGIN = 20;
-  const DEFAULT_HEIGHT = 450;
+  const EDGE_GAP = 12;
+  const MIN_PANEL_WIDTH = 420;
+  const MAX_DOCKED_WIDTH = 560;
+  const MIN_PANEL_HEIGHT = 320;
+
+  const getViewportSize = useCallback(() => {
+    const width = window?.innerWidth || 1280;
+    const height = window?.innerHeight || 720;
+    return { width, height };
+  }, []);
+
+  const getDockedLayout = useCallback(() => {
+    const { width: viewportWidth, height: viewportHeight } = getViewportSize();
+    const width = Math.max(
+      MIN_PANEL_WIDTH,
+      Math.min(MAX_DOCKED_WIDTH, Math.floor(viewportWidth * 0.34)),
+    );
+    const height = Math.max(
+      MIN_PANEL_HEIGHT,
+      viewportHeight - HEADER_OFFSET - EDGE_GAP,
+    );
+
+    return {
+      width,
+      height,
+      x: Math.max(EDGE_GAP, viewportWidth - width - EDGE_GAP),
+      y: HEADER_OFFSET,
+    };
+  }, [getViewportSize]);
+
+  const getExpandedLayout = useCallback(() => {
+    const { width: viewportWidth, height: viewportHeight } = getViewportSize();
+    const maxWidth = Math.max(MIN_PANEL_WIDTH, viewportWidth - EDGE_GAP * 2);
+    const preferredWidth = Math.floor(viewportWidth * 0.78);
+    const minExpandedWidth = Math.min(maxWidth, MIN_PANEL_WIDTH + 220);
+    const width = Math.max(
+      minExpandedWidth,
+      Math.min(preferredWidth, maxWidth),
+    );
+
+    const availableHeight = Math.max(
+      MIN_PANEL_HEIGHT,
+      viewportHeight - HEADER_OFFSET - EDGE_GAP,
+    );
+    const height = Math.max(
+      MIN_PANEL_HEIGHT,
+      Math.min(Math.floor(availableHeight * 0.9), availableHeight),
+    );
+
+    return {
+      width,
+      height,
+      x: Math.max(EDGE_GAP, Math.floor((viewportWidth - width) / 2)),
+      y: Math.max(
+        HEADER_OFFSET,
+        Math.floor(HEADER_OFFSET + (availableHeight - height) / 2),
+      ),
+    };
+  }, [getViewportSize]);
+
+  const initialPanelLayout = useMemo(() => getDockedLayout(), [getDockedLayout]);
 
   useEffect(() => {
     setDurationData(durationTime);
@@ -823,21 +881,21 @@ export default function UnifiedDetailLogs({
   const handleToggleMaximize = () => {
     if (!rndRef.current) return;
 
-    if (expanded) {
-      rndRef.current.updateSize({ width: PANEL_WIDTH, height: DEFAULT_HEIGHT });
-      rndRef.current.updatePosition({
-        x: window.innerWidth - PANEL_WIDTH - 10,
-        y: window.innerHeight - DEFAULT_HEIGHT - BOTTOM_MARGIN,
+    setExpanded((prev) => {
+      const next = !prev;
+      const nextLayout = next ? getExpandedLayout() : getDockedLayout();
+
+      rndRef.current.updateSize({
+        width: nextLayout.width,
+        height: nextLayout.height,
       });
-    } else {
-      const fullHeight = window.innerHeight - HEADER_OFFSET - BOTTOM_MARGIN;
-      rndRef.current.updateSize({ width: PANEL_WIDTH, height: fullHeight });
       rndRef.current.updatePosition({
-        x: window.innerWidth - PANEL_WIDTH - 10,
-        y: HEADER_OFFSET,
+        x: nextLayout.x,
+        y: nextLayout.y,
       });
-    }
-    setExpanded(!expanded);
+
+      return next;
+    });
   };
 
   const handleGenerateReport = async () => {
@@ -970,17 +1028,18 @@ export default function UnifiedDetailLogs({
     <Rnd
       ref={rndRef}
       default={{
-        x: window.innerWidth - PANEL_WIDTH - 10,
-        y: window.innerHeight - DEFAULT_HEIGHT - BOTTOM_MARGIN,
-        width: PANEL_WIDTH,
-        height: DEFAULT_HEIGHT,
+        x: initialPanelLayout.x,
+        y: initialPanelLayout.y,
+        width: initialPanelLayout.width,
+        height: initialPanelLayout.height,
       }}
       minWidth={320}
       minHeight={300}
       bounds="window"
       dragHandleClassName="drag-handle"
-      className="z-[1000] shadow-2xl border border-gray-700 bg-gray-900 rounded-lg overflow-hidden flex flex-col"
+      className="z-[1000] shadow-2xl border border-gray-700 bg-gray-900 rounded-lg overflow-hidden flex flex-col min-h-0"
     >
+      <div className="h-full min-h-0 flex flex-col">
       <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 rounded-t-lg drag-handle cursor-move select-none shrink-0">
         <div className="flex items-center gap-3">
           <BarChart3 className="h-5 w-5 text-blue-400" />
@@ -1078,7 +1137,7 @@ export default function UnifiedDetailLogs({
         </div>
       </div>
 
-      <div className="flex gap-2 p-3 bg-slate-900 border-b border-slate-700 overflow-x-auto scrollbar-hide shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="flex gap-2 p-3 bg-slate-900 border-b border-slate-700 overflow-x-auto scrollbar-hide shrink-0" onMouseDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
         {availableTabs.map((tab) => (
           <TabButton
             key={tab.id}
@@ -1094,8 +1153,9 @@ export default function UnifiedDetailLogs({
 
       <div
         ref={contentRef}
-        className="flex-1 overflow-y-auto scrollbar-hide p-4 space-y-4 cursor-default h-full"
+        className="flex-1 min-h-0 overflow-y-auto scrollbar-hide p-4 space-y-4 cursor-default"
         onMouseDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
       >
         {(isLoading || isFilterLoading) && <LoadingSpinner />}
 
@@ -1135,6 +1195,7 @@ export default function UnifiedDetailLogs({
         {activeTab === "handover" && <HandoverAnalysisTab transitions={technologyTransitions} />}
         
         {activeTab === "n78" && <N78AnalysisTab n78NeighborData={n78NeighborData} n78NeighborStats={n78NeighborStats} n78NeighborLoading={n78NeighborLoading} thresholds={thresholds} expanded={expanded} primaryData={locations} selectedMetric={selectedMetric} />}
+      </div>
       </div>
     </Rnd>
   );
