@@ -8,7 +8,7 @@ import {
   toNumber,
   ensureNegative
 } from '../utils/dashboardUtils';
-import { normalizeProviderName, normalizeTechName } from '@/utils/colorUtils';
+import { normalizeBandName, normalizeProviderName, normalizeTechName } from '@/utils/colorUtils';
 
 
 
@@ -30,16 +30,6 @@ const CACHE_TIME = {
   SHORT: 2 * 60 * 1000,
   MEDIUM: 5 * 60 * 1000,
   LONG: 15 * 60 * 1000,
-};
-
-const createRecentIsoRange = (days = 14) => {
-  const to = new Date();
-  const from = new Date(to);
-  from.setDate(to.getDate() - days);
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
 };
 
 const METRIC_ENDPOINT_MAP = {
@@ -521,19 +511,10 @@ export const useBandDistribution = (filters) => {
 };
 
 export const useBandCount = () => {
-  const rangeRef = useRef(null);
-  if (!rangeRef.current) {
-    rangeRef.current = createRecentIsoRange(14);
-  }
-
   const { data: rawData, ...rest } = useSWR(
-    `bandCount:${rangeRef.current.from.slice(0, 10)}:${rangeRef.current.to.slice(0, 10)}`,
+    'bandCount',
     createFetcher(
-      () =>
-        adminApi.getBandDistributionV2?.({
-          from: rangeRef.current.from,
-          to: rangeRef.current.to,
-        }),
+      () => adminApi.getBandDistributionV2?.(),
       []
     ),
     { ...SWR_CONFIG, dedupingInterval: CACHE_TIME.MEDIUM, fallbackData: [] }
@@ -544,9 +525,13 @@ export const useBandCount = () => {
     
     const uniqueBands = new Set();
     rawData.forEach(item => {
-      const band = item?.band ?? item?.Band ?? item?.bandNumber;
-      if (band !== undefined && band !== null) {
-        uniqueBands.add(band);
+      const rawBand = item?.band ?? item?.Band ?? item?.bandNumber ?? item?.name;
+      if (rawBand !== undefined && rawBand !== null) {
+        const cleanBand = String(rawBand).replace(/^Band\s+/i, '').trim();
+        const normalized = normalizeBandName(cleanBand);
+        if (normalized && normalized !== 'Unknown') {
+          uniqueBands.add(normalized);
+        }
       }
     });
     

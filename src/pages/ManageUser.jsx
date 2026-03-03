@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { adminApi, companyApi } from '../api/apiEndpoints';
+import { adminApi } from '../api/apiEndpoints';
 import { toast } from 'react-toastify';
 import DataTable from '../components/common/DataTable';
 import Spinner from '../components/common/Spinner';
@@ -34,14 +34,41 @@ const ManageUsersPage = () => {
         setLoading(true);
         try {
             const apiFilters = {
-                name: filters.UserName,
-                mobile: filters.MobileNo,
-                email: filters.EmailId,
-                ...(companyIdQuery ? { companyId: companyIdQuery } : {})
+                ...(filters.UserName?.trim() ? { UserName: filters.UserName.trim() } : {}),
+                ...(filters.MobileNo?.trim() ? { Mobile: filters.MobileNo.trim() } : {}),
+                ...(filters.EmailId?.trim() ? { Email: filters.EmailId.trim() } : {}),
+                ...(companyIdQuery ? { company_id: Number(companyIdQuery) } : {})
             };
-            const response = await companyApi.licensesDetails(apiFilters);
-            const userData = response.Data || [];
-            setUsers(Array.isArray(userData) ? userData : []);
+            const response = await adminApi.getUsers(apiFilters);
+            if (response?.Status !== 1) {
+                throw new Error(response?.Message || 'Failed to fetch users.');
+            }
+
+            const userData = Array.isArray(response?.Data) ? response.Data : [];
+            const normalizedUsers = userData.map((item) => {
+                const obUser = item?.ob_user || item || {};
+                const userId = obUser.id ?? item?.user_id ?? item?.id;
+                const userTypeId = obUser.m_user_type_id ?? item?.m_user_type_id ?? null;
+                const companyId = obUser.company_id ?? item?.company_id ?? null;
+
+                return {
+                    ...item,
+                    ...obUser,
+                    id: userId,
+                    user_id: userId,
+                    user_name: obUser.name ?? item?.user_name ?? '',
+                    user_email: obUser.email ?? item?.user_email ?? '',
+                    user_mobile: obUser.mobile ?? item?.user_mobile ?? '',
+                    user_isactive: obUser.isactive ?? item?.user_isactive ?? 0,
+                    m_user_type_id: userTypeId,
+                    license_id: item?.license_id ?? userTypeId,
+                    company_id: companyId,
+                    company_name: item?.company_name ?? (companyId ? `ID: ${companyId}` : '-'),
+                    created_on: obUser.date_created ?? item?.created_on ?? null,
+                };
+            });
+
+            setUsers(normalizedUsers);
         } catch (error) {
             toast.error(error.message || 'Failed to fetch users.');
             setUsers([]);
@@ -273,12 +300,12 @@ const ManageUsersPage = () => {
                         <DropdownMenuLabel className="text-gray-800">Actions</DropdownMenuLabel>
                         {(user.user_isactive === 1) ? (
                             <>
-                                <DropdownMenuItem 
+                                {/*<DropdownMenuItem 
                                     onClick={() => handleOpenDialog(user)}
                                     className="text-gray-700 hover:bg-gray-100 cursor-pointer"
                                 >
                                     Edit
-                                </DropdownMenuItem>
+                                </DropdownMenuItem> */}
                                 <DropdownMenuItem
                                     onClick={() => handleDeleteUser(user)}
                                     className="text-red-600 hover:bg-red-50 cursor-pointer"

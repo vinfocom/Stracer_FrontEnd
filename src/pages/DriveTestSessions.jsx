@@ -136,7 +136,13 @@ const DriveTestSessionsPage = () => {
     try {
       setLoading(true);
       const data = await adminApi.getSessions();
-      setSessions(data?.Data || []);
+      const rows = Array.isArray(data?.Data) ? data.Data : [];
+      const sortedRows = [...rows].sort((a, b) => {
+        const aId = Number(a?.id ?? 0);
+        const bId = Number(b?.id ?? 0);
+        return bId - aId; // newest session first
+      });
+      setSessions(sortedRows);
     } catch (error) {
       toast.error(`Failed to fetch sessions: ${error.message}`);
     } finally {
@@ -585,10 +591,10 @@ const DriveTestSessionsPage = () => {
                 View on Map
               </Button>
               <Button
-                variant="destructive"
+                variant="default"
                 size="sm"
                 onClick={handleDeleteSelected}
-                className="h-9"
+                className="h-9 border  hover:bg-red-100"
               >
                 <Trash2 className="h-4 w-4 mr-2 text-red-500" />
                 Delete Selected

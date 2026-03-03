@@ -294,7 +294,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
               "Session Data File (.csv or .zip)"
             )}
             <Textarea
-              placeholder="Remarks"
+              placeholder=" Remarks (Required)"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
             />
@@ -438,7 +438,9 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
                         className={
                           file.status === "Success"
                             ? "text-green-200"
-                            : "text-red-200"
+                            : file.status === "Processing"
+                              ? "text-yellow-200"
+                              : "text-red-200"
                         }
                       >
                         {file.status}

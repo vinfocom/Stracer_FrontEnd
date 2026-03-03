@@ -941,6 +941,7 @@ export const settingApi = {
 export const excelApi = {
   uploadFile: (formData, onUploadProgress = null) =>
     api.post("/ExcelUpload/UploadExcelFile", formData, {
+      timeout: 600000, // 10 minutes for upload + server-side processing
       onUploadProgress:
         onUploadProgress ||
         ((progressEvent) => {
