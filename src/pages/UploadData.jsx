@@ -431,6 +431,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
                     <TableRow key={file.id}>
                       <TableCell>{file.file_name}</TableCell>
                       <TableCell>{file.uploaded_by}</TableCell>
+                      <TableCell>{file.session_id ? `${file.session_id}` : "N/A"}</TableCell>
                       <TableCell>
                         {new Date(file.uploaded_on).toLocaleString()}
                       </TableCell>
