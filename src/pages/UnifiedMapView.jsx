@@ -1430,7 +1430,12 @@ const UnifiedMapView = () => {
     };
   }, [sessionKey, isSampleMode, debugMapFlow]);
 
-  useEffect(() => {
+  const shouldFetchDominanceDetails =
+    isSampleMode &&
+    Boolean(sessionKey) &&
+    (dominanceThreshold !== null || coverageViolationThreshold !== null);
+
+  const refetchDominanceDetails = useCallback(async () => {
     if (!isSampleMode) {
       debugMapFlow("dominance-fetch-skip", { reason: "not-sample-mode" });
       setDominanceData([]);
@@ -1444,44 +1449,71 @@ const UnifiedMapView = () => {
     }
 
     const currentSessionIds = sessionKey.split(",").filter(Boolean);
-    let active = true;
     const requestId = ++dominanceRequestRef.current;
 
-    const fetchDominance = async () => {
-      try {
-        debugMapFlow("dominance-fetch-start", {
-          requestId,
-          sessionIds: currentSessionIds,
-        });
-        const res = await mapViewApi.getDominanceDetails(currentSessionIds);
-        if (!active || requestId !== dominanceRequestRef.current) return;
+    try {
+      debugMapFlow("dominance-fetch-start", {
+        requestId,
+        sessionIds: currentSessionIds,
+      });
 
-        if (res?.success && Array.isArray(res.data)) {
-          setDominanceData(res.data);
-          debugMapFlow("dominance-fetch-success", {
-            requestId,
-            count: res.data.length,
-          });
-        } else {
-          setDominanceData([]);
-          debugMapFlow("dominance-fetch-empty", { requestId, res });
-        }
-      } catch (err) {
-        if (!active || requestId !== dominanceRequestRef.current) return;
+      const res = await mapViewApi.getDominanceDetails(currentSessionIds);
+      if (requestId !== dominanceRequestRef.current) return;
+
+      const payload = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.Data)
+          ? res.Data
+          : Array.isArray(res)
+            ? res
+            : [];
+      const isSuccess =
+        res?.success === true ||
+        res?.Status === 1 ||
+        Array.isArray(payload);
+
+      if (isSuccess && Array.isArray(payload) && payload.length > 0) {
+        setDominanceData(payload);
+        debugMapFlow("dominance-fetch-success", {
+          requestId,
+          count: payload.length,
+        });
+      } else {
         setDominanceData([]);
-        debugMapFlow("dominance-fetch-error", {
-          requestId,
-          message: err?.message || String(err),
-        });
-        console.error("Failed to fetch dominance details", err);
+        debugMapFlow("dominance-fetch-empty", { requestId, res });
       }
-    };
-
-    fetchDominance();
-    return () => {
-      active = false;
-    };
+    } catch (err) {
+      if (requestId !== dominanceRequestRef.current) return;
+      setDominanceData([]);
+      debugMapFlow("dominance-fetch-error", {
+        requestId,
+        message: err?.message || String(err),
+      });
+      console.error("Failed to fetch dominance details", err);
+    }
   }, [sessionKey, isSampleMode, debugMapFlow]);
+
+  useEffect(() => {
+    if (!shouldFetchDominanceDetails) {
+      if (!isSampleMode) {
+        debugMapFlow("dominance-fetch-skip", { reason: "not-sample-mode" });
+      } else if (!sessionKey) {
+        debugMapFlow("dominance-fetch-skip", { reason: "empty-session-key" });
+      } else {
+        debugMapFlow("dominance-fetch-skip", { reason: "filter-not-enabled" });
+      }
+      setDominanceData([]);
+      return;
+    }
+
+    refetchDominanceDetails();
+  }, [
+    shouldFetchDominanceDetails,
+    refetchDominanceDetails,
+    isSampleMode,
+    sessionKey,
+    debugMapFlow,
+  ]);
 
   // ... (Rest of Derived State & Computations logic is same) ...
   const pciAppearanceByKey = useMemo(() => {
@@ -2288,6 +2320,7 @@ const UnifiedMapView = () => {
     if (areaEnabled) refetchAreaPolygons();
     if (showNeighbors) refetchNeighbors();
     if (showSessionNeighbors) refetchSessionNeighbors();
+    if (shouldFetchDominanceDetails) refetchDominanceDetails();
   }, [
     enableDataToggle,
     enableSiteToggle,
@@ -2304,6 +2337,8 @@ const UnifiedMapView = () => {
     refetchSites,
     refetchNeighbors,
     refetchSessionNeighbors,
+    shouldFetchDominanceDetails,
+    refetchDominanceDetails,
   ]);
 
   const filteredNeighbors = useMemo(() => {
