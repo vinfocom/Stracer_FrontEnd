@@ -987,30 +987,7 @@ const UnifiedMapSidebar = ({
             )
           }
 
-          {/* Heatmap Layer */}
-          <CollapsibleSection title="Heatmap" icon={Thermometer}>
-            <ToggleRow
-              label="Neighbor Heatmap"
-              description="Display neighbor cell data"
-              checked={showNeighbors}
-              onChange={setShowNeighbors}
-              useSwitch={true}
-            />
-
-            {showNeighbors && neighborStats?.total > 0 && (
-              <div className="bg-slate-800/50 rounded p-2 space-y-1">
-                <InfoBadge
-                  label="Total Neighbors"
-                  value={neighborStats.total}
-                />
-                <InfoBadge
-                  label="Unique PCIs"
-                  value={neighborStats.uniquePCIs}
-                  color="green"
-                />
-              </div>
-            )}
-          </CollapsibleSection>
+        
 
           {/* Metric & Filters */}
 

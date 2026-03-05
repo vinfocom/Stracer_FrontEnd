@@ -20,6 +20,7 @@ import { EmptyState } from "../../common/EmptyState";
 import {
   normalizeProviderName,
   normalizeTechName,
+  normalizeBandName,
   getLogColor,
 } from "@/utils/colorUtils";
 
@@ -184,6 +185,14 @@ const getProviderColor = (provider) => {
   return getLogColor("provider", normalized, "#6B7280");
 };
 
+const normalizeBandForChart = (band) => {
+  const rawBand = String(band ?? "").trim();
+  if (!rawBand || rawBand === "-1" || rawBand.toLowerCase() === "unknown") {
+    return "Unknown";
+  }
+  return normalizeBandName(rawBand);
+};
+
 export const OperatorComparisonChart = React.forwardRef(
   (
     {
@@ -263,10 +272,12 @@ export const OperatorComparisonChart = React.forwardRef(
             (operatorStats[provider].technologies[tech] || 0) + 1;
         }
 
-        const band = loc.band || "";
-        if (band && band !== "-1" && band !== "Unknown") {
-          operatorStats[provider].bands[band] =
-            (operatorStats[provider].bands[band] || 0) + 1;
+        const normalizedBand = normalizeBandForChart(
+          loc.band ?? loc.Band ?? loc.neighbourBand ?? loc.neighborBand,
+        );
+        if (normalizedBand !== "Unknown") {
+          operatorStats[provider].bands[normalizedBand] =
+            (operatorStats[provider].bands[normalizedBand] || 0) + 1;
         }
       });
 
@@ -462,10 +473,7 @@ export const OperatorComparisonChart = React.forwardRef(
 
           <div className="mt-2 pt-2 border-t border-slate-700 text-[10px] text-slate-400">
             <div>Tech: {operator.dominantTech}</div>
-            <div>
-              Band:{" "}
-              {operator.dominantBand !== "N/A" ? `B${operator.dominantBand}` : "N/A"}
-            </div>
+            <div>Band: {operator.dominantBand}</div>
           </div>
         </div>
       );
@@ -797,7 +805,7 @@ export const OperatorComparisonChart = React.forwardRef(
                       {op.dominantTech}
                     </td>
                     <td className="p-2 text-center text-blue-400">
-                      {op.dominantBand !== "N/A" ? `B${op.dominantBand}` : "N/A"}
+                      {op.dominantBand}
                     </td>
                   </tr>
                 ))}
