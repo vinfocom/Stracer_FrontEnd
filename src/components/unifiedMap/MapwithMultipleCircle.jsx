@@ -443,18 +443,28 @@ const NeighborInfoWindow = React.memo(({ neighbor, onClose, resolveColor, select
 });
 NeighborInfoWindow.displayName = 'NeighborInfoWindow';
 
-const normalizeMetric = (metric) => {
-  if (!metric) return "rsrp";
-  const lower = metric.toLowerCase();
-  if (["dl_tpt", "dl_throughput", "tpt_dl", "throughput_dl"].includes(lower)) return "dl_thpt";
-  if (["ul_tpt", "ul_throughput", "tpt_ul", "throughput_ul"].includes(lower)) return "ul_thpt";
-  return lower;
+const getThroughputValue = (log, direction = "dl") => {
+  const fields =
+    direction === "dl"
+      ? ["dl_thpt", "dl_tpt", "dl_rpt", "dl_throughput", "throughput_dl", "download"]
+      : ["ul_thpt", "ul_tpt", "ul_rpt", "ul_throughput", "throughput_ul", "upload"];
+
+  for (const field of fields) {
+    const raw = log?.[field];
+    if (raw !== null && raw !== undefined && raw !== "") {
+      const parsed = parseFloat(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
 };
 
 const PrimaryLogInfoWindow = React.memo(({ log, onClose, resolveColor, selectedMetric }) => {
   if (!log) return null;
-  const metricValue = log[normalizeMetric(selectedMetric)];
+  const metricValue = getMetricValueFromLog(log, selectedMetric);
   const metricColor = resolveColor(metricValue, selectedMetric);
+  const dlValue = getThroughputValue(log, "dl");
+  const ulValue = getThroughputValue(log, "ul");
 
   return (
     <InfoWindow
@@ -474,8 +484,8 @@ const PrimaryLogInfoWindow = React.memo(({ log, onClose, resolveColor, selectedM
           {log.rsrp !== null && log.rsrp !== undefined && <div className="flex justify-between text-xs items-center"><span className="text-gray-500">RSRP</span><span className="font-semibold" style={{ color: resolveColor(log.rsrp, 'rsrp') }}>{log.rsrp?.toFixed?.(1)} dBm</span></div>}
           {log.rsrq !== null && log.rsrq !== undefined && <div className="flex justify-between text-xs items-center"><span className="text-gray-500">RSRQ</span><span className="font-medium" style={{ color: resolveColor(log.rsrq, 'rsrq') }}>{log.rsrq?.toFixed?.(1)} dB</span></div>}
           {log.sinr !== null && log.sinr !== undefined && <div className="flex justify-between text-xs items-center"><span className="text-gray-500">SINR</span><span className="font-medium" style={{ color: resolveColor(log.sinr, 'sinr') }}>{log.sinr?.toFixed?.(1)} dB</span></div>}
-          {log.dl_tpt !== null && log.dl_tpt !== undefined && <div className="flex justify-between text-xs"><span className="text-gray-500">DL Throughput</span><span className="font-medium">{log.dl_tpt?.toFixed?.(2)} Mbps</span></div>}
-          {log.ul_tpt !== null && log.ul_tpt !== undefined && <div className="flex justify-between text-xs"><span className="text-gray-500">UL Throughput</span><span className="font-medium">{log.ul_tpt?.toFixed?.(2)} Mbps</span></div>}
+          {dlValue !== null && <div className="flex justify-between text-xs"><span className="text-gray-500">DL Throughput</span><span className="font-medium">{dlValue.toFixed(2)} Mbps</span></div>}
+          {ulValue !== null && <div className="flex justify-between text-xs"><span className="text-gray-500">UL Throughput</span><span className="font-medium">{ulValue.toFixed(2)} Mbps</span></div>}
         </div>
         <div className="mt-2 pt-2 border-t border-gray-100"><div className="text-[10px] text-gray-400 font-mono text-center">📍 {log.lat.toFixed(6)}, {log.lng.toFixed(6)}</div></div>
       </div>
@@ -578,8 +588,9 @@ const MapWithMultipleCircles = ({
     }
     
     // ✅ 3. Threshold-based Coloring
-    const metricKey = typeKey === 'dl_tpt' ? 'dl_thpt' : 
-                      typeKey === 'ul_tpt' ? 'ul_thpt' : typeKey;
+    const metricKey =
+      typeKey === 'dl_tpt' || typeKey === 'dl_rpt' ? 'dl_thpt' :
+      typeKey === 'ul_tpt' || typeKey === 'ul_rpt' ? 'ul_thpt' : typeKey;
 
     if (thresholds && thresholds[metricKey]?.length > 0) {
       return getColorFromThresholds(value, thresholds[metricKey]);
@@ -896,8 +907,7 @@ const MapWithMultipleCircles = ({
         const value = loc?.[key];
         return resolveColor(value, colorBy);
     }
-    const normalizedKey = normalizeMetric(selectedMetric);
-    const value = loc?.[normalizedKey];
+    const value = getMetricValueFromLog(loc, selectedMetric);
     return resolveColor(value, selectedMetric);
   }, [selectedMetric, colorBy, resolveColor]);
 

@@ -57,6 +57,39 @@ const parseLogEntry = (log, sessionId) => {
     return Number.isFinite(num) ? num : null;
   };
 
+  const parseNumFromKeys = (keys = []) => {
+    for (const key of keys) {
+      const parsed = parseNum(log?.[key]);
+      if (parsed !== null) return parsed;
+    }
+    return null;
+  };
+
+  const dlThroughput = parseNumFromKeys([
+    "dl_thpt",
+    "DL_THPT",
+    "dl_tpt",
+    "DL_TPT",
+    "dl_rpt",
+    "DL_RPT",
+    "dl_throughput",
+    "throughput_dl",
+    "throughput_DL",
+    "download",
+  ]);
+  const ulThroughput = parseNumFromKeys([
+    "ul_thpt",
+    "UL_THPT",
+    "ul_tpt",
+    "UL_TPT",
+    "ul_rpt",
+    "UL_RPT",
+    "ul_throughput",
+    "throughput_ul",
+    "throughput_UL",
+    "upload",
+  ]);
+
   return {
     id: log.id ?? log.Id ?? log.log_id ?? log.LogId ?? null,
     session_id: sessionId ?? log.session_id,
@@ -66,8 +99,12 @@ const parseLogEntry = (log, sessionId) => {
     rsrp: parseNum(log.rsrp),
     rsrq: parseNum(log.rsrq),
     sinr: parseNum(log.sinr),
-    dl_tpt: parseNum(log.dl_tpt),
-    ul_tpt: parseNum(log.ul_tpt),
+    dl_tpt: dlThroughput,
+    dl_thpt: dlThroughput,
+    dl_rpt: dlThroughput,
+    ul_tpt: ulThroughput,
+    ul_thpt: ulThroughput,
+    ul_rpt: ulThroughput,
     mos: parseNum(log.mos),
     level: parseNum(log.level),
     jitter: parseNum(log.jitter),

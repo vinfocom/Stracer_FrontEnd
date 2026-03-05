@@ -58,6 +58,7 @@ import {
 import { PolygonChecker as FastPolygonChecker } from "@/utils/polygonUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
+const DEFAULT_MAP_ZOOM = 13;
 const EMPTY_POLYGONS = Object.freeze([]);
 const EMPTY_LIST = Object.freeze([]);
 const SESSION_QUERY_KEYS = Object.freeze([
@@ -95,6 +96,13 @@ const METRIC_CONFIG = {
   },
   rsrq: { higherIsBetter: true, unit: "dB", label: "RSRQ", min: -20, max: -3 },
   sinr: { higherIsBetter: true, unit: "dB", label: "SINR", min: -10, max: 30 },
+  dl_thpt: {
+    higherIsBetter: true,
+    unit: "Mbps",
+    label: "DL Throughput",
+    min: 0,
+    max: 300,
+  },
   dl_tpt: {
     higherIsBetter: true,
     unit: "Mbps",
@@ -102,7 +110,28 @@ const METRIC_CONFIG = {
     min: 0,
     max: 300,
   },
+  dl_rpt: {
+    higherIsBetter: true,
+    unit: "Mbps",
+    label: "DL Throughput",
+    min: 0,
+    max: 300,
+  },
+  ul_thpt: {
+    higherIsBetter: true,
+    unit: "Mbps",
+    label: "UL Throughput",
+    min: 0,
+    max: 100,
+  },
   ul_tpt: {
+    higherIsBetter: true,
+    unit: "Mbps",
+    label: "UL Throughput",
+    min: 0,
+    max: 100,
+  },
+  ul_rpt: {
     higherIsBetter: true,
     unit: "Mbps",
     label: "UL Throughput",
@@ -170,11 +199,19 @@ const debounce = (fn, wait) => {
   };
 };
 
+const areCentersEqual = (a, b, tolerance = 1e-7) => {
+  if (!a || !b) return false;
+  return (
+    Math.abs(Number(a.lat) - Number(b.lat)) <= tolerance &&
+    Math.abs(Number(a.lng) - Number(b.lng)) <= tolerance
+  );
+};
+
 const normalizeMetric = (metric) => {
   if (!metric) return "rsrp";
   const lower = metric.toLowerCase();
-  if (["dl_tpt", "dl_throughput", "tpt_dl", "throughput_dl"].includes(lower)) return "dl_thpt";
-  if (["ul_tpt", "ul_throughput", "tpt_ul", "throughput_ul"].includes(lower)) return "ul_thpt";
+  if (["dl_thpt", "dl_tpt", "dl_rpt", "dl_throughput", "tpt_dl", "throughput_dl"].includes(lower)) return "dl_thpt";
+  if (["ul_thpt", "ul_tpt", "ul_rpt", "ul_throughput", "tpt_ul", "throughput_ul"].includes(lower)) return "ul_thpt";
   return lower;
 };
 
@@ -762,8 +799,18 @@ const UnifiedMapView = () => {
 
   const [isSideOpen, setIsSideOpen] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [selectedMetric, setSelectedMetric] = useState("rsrp");
+  const [selectedMetric, setSelectedMetricState] = useState("rsrp");
+  const setSelectedMetric = useCallback((nextMetric) => {
+    setSelectedMetricState((prevMetric) => {
+      const resolvedMetric =
+        typeof nextMetric === "function" ? nextMetric(prevMetric) : nextMetric;
+      return normalizeMetric(resolvedMetric);
+    });
+  }, []);
   const [viewport, setViewport] = useState(null);
+  const [mapZoom, setMapZoom] = useState(DEFAULT_MAP_ZOOM);
+  const [mapCenterFallback, setMapCenterFallback] = useState(DEFAULT_CENTER);
+  const [isZoomLocked, setIsZoomLocked] = useState(false);
   const [colorBy, setColorBy] = useState(null);
   const [highlightedLogs, setHighlightedLogs] = useState(null);
 
@@ -903,8 +950,25 @@ const UnifiedMapView = () => {
 
   const mapRef = useRef(null);
   const viewportRef = useRef(null);
+  const zoomLockEnabledRef = useRef(false);
+  const lockedZoomRef = useRef(null);
   const pciDistributionRequestRef = useRef(0);
   const dominanceRequestRef = useRef(0);
+
+  useEffect(() => {
+    zoomLockEnabledRef.current = Boolean(isZoomLocked);
+    if (!isZoomLocked) {
+      lockedZoomRef.current = null;
+      return;
+    }
+
+    const currentZoom = mapRef.current?.getZoom?.();
+    const lockZoom = Number.isFinite(currentZoom) ? currentZoom : mapZoom;
+    lockedZoomRef.current = lockZoom;
+    if (Number.isFinite(lockZoom)) {
+      setMapZoom((prev) => (prev === lockZoom ? prev : lockZoom));
+    }
+  }, [isZoomLocked, mapZoom]);
 
   // --- Add Site Mode ---
   const [addSiteMode, setAddSiteMode] = useState(false);
@@ -1119,6 +1183,14 @@ const UnifiedMapView = () => {
     ? (fetchedSamples || EMPTY_LIST)
     : (hasPassedLocations ? passedLocations : fetchedSamples);
 
+  const isDataPredictionMode = enableDataToggle && dataToggle === "prediction";
+  const isSitePredictionMode =
+    enableSiteToggle && siteToggle === "sites-prediction";
+  const shouldFetchPredictionLogs = isDataPredictionMode || isSitePredictionMode;
+  const shouldFetchLtePrediction =
+    Boolean(lteGridEnabled) ||
+    Boolean(enableSiteToggle && selectedSites.length > 0);
+
   // ✅ 2. Use Prediction Data Hook
   const {
     locations: predictionLocations,
@@ -1129,8 +1201,7 @@ const UnifiedMapView = () => {
   } = usePredictionData(
     projectId,
     selectedMetric,
-    (enableDataToggle && dataToggle === "prediction") ||
-    (enableSiteToggle && siteToggle === "sites-prediction"),
+    shouldFetchPredictionLogs,
   );
 
   // ✅ 2b. Use LTE Prediction Hook
@@ -1141,7 +1212,7 @@ const UnifiedMapView = () => {
     projectId,
     siteId: selectedSites.join(","),
     metric: selectedMetric,
-    enabled: (enableDataToggle && dataToggle === "prediction") || Boolean(lteGridEnabled) || Boolean(enableSiteToggle),
+    enabled: shouldFetchLtePrediction,
     filterEnabled: false,
     polygons: EMPTY_POLYGONS,
   });
@@ -2008,13 +2079,13 @@ const UnifiedMapView = () => {
   }, [showPolygons, polygonsWithColors, viewport]);
 
   const mapCenter = useMemo(() => {
-    if (!locations?.length) return DEFAULT_CENTER;
+    if (!locations?.length) return mapCenterFallback || DEFAULT_CENTER;
     const sum = locations.reduce(
       (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
       { lat: 0, lng: 0 },
     );
     return { lat: sum.lat / locations.length, lng: sum.lng / locations.length };
-  }, [locations]);
+  }, [locations, mapCenterFallback]);
 
   const showDataCircles =
     enableDataToggle || (enableSiteToggle && siteToggle === "sites-prediction");
@@ -2035,9 +2106,12 @@ const UnifiedMapView = () => {
     () => ({
       mapTypeId: ui.basemapStyle,
       disableDefaultUI: false,
-      zoomControl: true,
+      zoomControl: !isZoomLocked,
+      scrollwheel: !isZoomLocked,
+      disableDoubleClickZoom: isZoomLocked,
+      keyboardShortcuts: !isZoomLocked,
     }),
-    [ui.basemapStyle],
+    [ui.basemapStyle, isZoomLocked],
   );
 
   const updateViewportRef = useCallback((newViewport) => {
@@ -2070,12 +2144,63 @@ const UnifiedMapView = () => {
           west: bounds.getSouthWest().lng(),
         };
         debouncedSetViewport(newViewport);
+
+        const center = map.getCenter?.();
+        if (center) {
+          const nextCenter = { lat: center.lat(), lng: center.lng() };
+          setMapCenterFallback((prev) =>
+            areCentersEqual(prev, nextCenter) ? prev : nextCenter,
+          );
+        }
+
+        const currentZoom = map.getZoom?.();
+        if (Number.isFinite(currentZoom)) {
+          if (
+            zoomLockEnabledRef.current &&
+            Number.isFinite(lockedZoomRef.current) &&
+            currentZoom !== lockedZoomRef.current
+          ) {
+            map.setZoom(lockedZoomRef.current);
+          } else {
+            setMapZoom((prev) => (prev === currentZoom ? prev : currentZoom));
+          }
+        }
       };
+
+      map.addListener("zoom_changed", () => {
+        const currentZoom = map.getZoom?.();
+        if (!Number.isFinite(currentZoom)) return;
+
+        if (
+          zoomLockEnabledRef.current &&
+          Number.isFinite(lockedZoomRef.current) &&
+          currentZoom !== lockedZoomRef.current
+        ) {
+          map.setZoom(lockedZoomRef.current);
+          return;
+        }
+
+        setMapZoom((prev) => (prev === currentZoom ? prev : currentZoom));
+      });
+
       map.addListener("idle", updateViewport);
       updateViewport();
 
       // Add site click listener
       map.addListener("click", (e) => {
+        if (
+          zoomLockEnabledRef.current &&
+          Number.isFinite(lockedZoomRef.current)
+        ) {
+          const currentZoom = map.getZoom?.();
+          if (
+            Number.isFinite(currentZoom) &&
+            currentZoom !== lockedZoomRef.current
+          ) {
+            map.setZoom(lockedZoomRef.current);
+          }
+        }
+
         if (addSiteModeRef.current) {
           const lat = e.latLng.lat();
           const lng = e.latLng.lng();
@@ -2088,6 +2213,31 @@ const UnifiedMapView = () => {
     },
     [debouncedSetViewport],
   );
+
+  const handleResetZoom = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) {
+      setMapZoom(DEFAULT_MAP_ZOOM);
+      if (isZoomLocked) {
+        lockedZoomRef.current = DEFAULT_MAP_ZOOM;
+      }
+      return;
+    }
+
+    const center = map.getCenter?.();
+    if (center) {
+      const nextCenter = { lat: center.lat(), lng: center.lng() };
+      setMapCenterFallback((prev) =>
+        areCentersEqual(prev, nextCenter) ? prev : nextCenter,
+      );
+    }
+
+    map.setZoom(DEFAULT_MAP_ZOOM);
+    setMapZoom(DEFAULT_MAP_ZOOM);
+    if (isZoomLocked) {
+      lockedZoomRef.current = DEFAULT_MAP_ZOOM;
+    }
+  }, [isZoomLocked]);
 
   const handleUIChange = useCallback((newUI) => {
     setUi((prev) => {
@@ -2432,6 +2582,10 @@ const UnifiedMapView = () => {
         setShowSiteSectors={setShowSiteSectors}
         loading={isLoading}
         reloadData={reloadData}
+        isZoomLocked={isZoomLocked}
+        setIsZoomLocked={setIsZoomLocked}
+        currentZoom={mapZoom}
+        onResetZoom={handleResetZoom}
         showNeighbors={showNeighbors}
         setShowNeighbors={setShowNeighbors}
         neighborStats={neighborStats}
@@ -2536,11 +2690,7 @@ const UnifiedMapView = () => {
             <MapWithMultipleCircles
               isLoaded={isLoaded}
               loadError={loadError}
-              locations={
-                enableDataToggle && dataToggle === "prediction"
-                  ? EMPTY_LIST
-                  : finalDisplayLocations
-              }
+              locations={isDataPredictionMode ? EMPTY_LIST : finalDisplayLocations}
               thresholds={effectiveThresholds}
               selectedMetric={selectedMetric}
               areaData={areaData}
@@ -2554,7 +2704,7 @@ const UnifiedMapView = () => {
               onMarkerClick={() => { }}
               options={mapOptions}
               center={mapCenter}
-              defaultZoom={13}
+              defaultZoom={mapZoom}
               fitToLocations={(locationsToDisplay?.length || 0) > 0}
               showNumCells={showNumCells}
               onLoad={handleMapLoad}
@@ -2596,12 +2746,18 @@ const UnifiedMapView = () => {
                 onDrawingsChange={handleDrawingsChange}
               />
 
-              {/* LTE Prediction Layer — renders when dataToggle === "prediction" or lteGridEnabled or sites are selected */}
-              {((enableDataToggle && dataToggle === "prediction") || lteGridEnabled || (enableSiteToggle && selectedSites.length > 0)) && (
+              {/* LTE Prediction Layer — renders for prediction mode, LTE grid, or selected sites */}
+              {(isDataPredictionMode ||
+                lteGridEnabled ||
+                (enableSiteToggle && selectedSites.length > 0)) && (
                 <LtePredictionLocationLayer
                   enabled={true}
                   map={mapRef.current}
-                  locations={ltePredictionLocations || EMPTY_LIST}
+                  locations={
+                    isDataPredictionMode
+                      ? predictionLocations || EMPTY_LIST
+                      : ltePredictionLocations || EMPTY_LIST
+                  }
                   selectedMetric={selectedMetric}
                   thresholds={effectiveThresholds}
                   getMetricColor={getMetricColorForLog}

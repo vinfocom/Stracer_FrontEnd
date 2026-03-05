@@ -414,6 +414,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
                 <TableRow>
                   <TableHead>File Name</TableHead>
                   <TableHead>Uploaded By</TableHead>
+                  <TableHead>Session ID</TableHead>
                   <TableHead>Uploaded On</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Remarks</TableHead>

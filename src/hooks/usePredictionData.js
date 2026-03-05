@@ -31,25 +31,34 @@ export const usePredictionData = (projectId, selectedMetric, enabled = true) => 
       });
 
       if (res?.Status === 1 && res?.Data) {
-        const { dataList = [], colorSetting = [] } = res.Data;
-        const formatted = dataList.map((pt) => {
-          const lat = parseFloat(pt.lat);
-          const lng = parseFloat(pt.lon);
+        const rawData = Array.isArray(res.Data)
+          ? res.Data
+          : Array.isArray(res.Data?.dataList)
+            ? res.Data.dataList
+            : [];
+        const colorSetting = Array.isArray(res.Data?.colorSetting) ? res.Data.colorSetting : [];
+
+        const formatted = rawData.map((pt) => {
+          const lat = parseFloat(pt.lat ?? pt.latitude ?? pt.Lat);
+          const lng = parseFloat(pt.lon ?? pt.lng ?? pt.longitude ?? pt.Lon);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
           return {
             lat,
             lng,
             latitude: lat,
             longitude: lng,
-            [selectedMetric]: pt.prm,
-            value: pt.prm,        // required by LtePredictionLocationLayer
+            [selectedMetric]: pt.prm ?? pt.value,
+            value: pt.prm ?? pt.value, // required by LtePredictionLocationLayer
             isPrediction: true,
           };
         }).filter(Boolean);
 
         setLocations(formatted);
         setColorSettings(colorSetting);
-        toast.success(`${formatted.length} prediction points`);
+        const totalCount = formatted.length > 0 ? formatted.length : rawData.length;
+        toast.success(
+          `${totalCount > 0 ? `${totalCount} prediction points` : "No prediction points"} loaded`,
+        );
       } else {
         toast.error(res?.Message || "No prediction data");
         setLocations([]);

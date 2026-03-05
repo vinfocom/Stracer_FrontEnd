@@ -345,6 +345,10 @@ const UnifiedMapSidebar = ({
   setShowSiteSectors,
   loading,
   reloadData,
+  isZoomLocked = false,
+  setIsZoomLocked,
+  currentZoom = 13,
+  onResetZoom,
   showNeighbors,
   setShowNeighbors,
   neighborStats,
@@ -382,8 +386,8 @@ const UnifiedMapSidebar = ({
       { value: "rsrp", label: "RSRP" },
       { value: "rsrq", label: "RSRQ" },
       { value: "sinr", label: "SINR" },
-      { value: "dl_tpt", label: "DL Throughput" },
-      { value: "ul_tpt", label: "UL Throughput" },
+      { value: "dl_thpt", label: "DL Throughput" },
+      { value: "ul_thpt", label: "UL Throughput" },
       { value: "mos", label: "MOS" },
       { value: "pci", label: "PCI" },
       { value: "num_cells", label: "Pilot pollution" },
@@ -509,13 +513,6 @@ const UnifiedMapSidebar = ({
 
   return (
     <>
-      {open && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => onOpenChange?.(false)}
-        />
-      )}
-
       <div className={sideClasses}>
         {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 shrink-0">
@@ -544,6 +541,31 @@ const UnifiedMapSidebar = ({
               )}
             </div>
           )}
+
+          <CollapsibleSection title="Map View" icon={Layers}>
+            <ToggleRow
+              label="Lock Zoom"
+              description="Keep current zoom level fixed"
+              checked={Boolean(isZoomLocked)}
+              onChange={setIsZoomLocked}
+              useSwitch={true}
+            />
+
+            <div className="bg-slate-800/50 rounded p-2">
+              <InfoBadge
+                label="Current Zoom"
+                value={Number.isFinite(currentZoom) ? currentZoom.toFixed(1) : "N/A"}
+                color="blue"
+              />
+            </div>
+
+            <Button
+              className="w-full bg-slate-700 hover:bg-slate-600 h-8 text-xs"
+              onClick={() => onResetZoom?.()}
+            >
+              Reset Zoom
+            </Button>
+          </CollapsibleSection>
 
           {/* Data Layer */}
           <CollapsibleSection

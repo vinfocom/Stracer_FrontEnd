@@ -863,8 +863,8 @@ const ProviderVolumeCard = ({
                     className="inline-flex items-center gap-2 text-white px-3 py-1.5 rounded-lg border"
                     style={getTechBadgeStyle(tech)}
                   >
-                    <span className="font-medium">{tech}</span>
-                    <span className="text-xs opacity-80">
+                    <span className="font-medium text-white/80">{tech}</span>
+                    <span className="text-xs text-white/80">
                       {formatBytes(data.dl_gb, "GB")} GB /{" "}
                       {formatBytes(data.ul_gb, "GB")} GB
                     </span>

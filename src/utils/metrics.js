@@ -209,13 +209,13 @@ export const METRIC_CONFIG = {
     thresholdKey: 'dl_thpt',
     label: 'DL Throughput',
     unit: 'Mbps',
-    fields: ['dl_tpt', 'DL_TPT', 'dl_thpt', 'DL_THPT', 'dl_throughput', 'download', 'throughput_dl', 'throughput_DL', 'tpt_dl', 'tpt_DL'],
+    fields: ['dl_thpt', 'DL_THPT', 'dl_tpt', 'DL_TPT', 'dl_rpt', 'DL_RPT', 'dl_throughput', 'download', 'throughput_dl', 'throughput_DL', 'tpt_dl', 'tpt_DL'],
   },
   ul_thpt: {
     thresholdKey: 'ul_thpt',
     label: 'UL Throughput',
     unit: 'Mbps',
-    fields: ['ul_thpt', 'UL_THPT', 'ul_tpt', 'UL_TPT', 'ul_throughput', 'upload', 'throughput_ul', 'throughput_UL', 'tpt_ul', 'tpt_UL'],
+    fields: ['ul_thpt', 'UL_THPT', 'ul_tpt', 'UL_TPT', 'ul_rpt', 'UL_RPT', 'ul_throughput', 'upload', 'throughput_ul', 'throughput_UL', 'tpt_ul', 'tpt_UL'],
   },
   mos: {
     thresholdKey: 'mos',
@@ -287,7 +287,9 @@ export const METRIC_CONFIG = {
 
 const METRIC_ALIASES = {
   'dl_tpt': 'dl_thpt',
+  'dl_rpt': 'dl_thpt',
   'ul_tpt': 'ul_thpt',
+  'ul_rpt': 'ul_thpt',
   'dl_throughput': 'dl_thpt',
   'ul_throughput': 'ul_thpt',
   'throughput_dl': 'dl_thpt',

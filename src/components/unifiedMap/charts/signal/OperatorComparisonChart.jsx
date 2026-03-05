@@ -13,7 +13,6 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  Cell,
   Radar,
 } from "recharts";
 import { ChartContainer } from "../../common/ChartContainer";
@@ -22,7 +21,6 @@ import {
   normalizeProviderName,
   normalizeTechName,
   getLogColor,
-  COLOR_SCHEMES,
 } from "@/utils/colorUtils";
 
 const safeNumber = (value) => {
@@ -32,11 +30,9 @@ const safeNumber = (value) => {
   return num;
 };
 
-// Calculate mode (most frequent value)
 const calculateMode = (values) => {
   if (!values.length) return null;
 
-  // Round values to 1 decimal place for grouping
   const frequencyMap = {};
   values.forEach((v) => {
     const rounded = Math.round(v * 10) / 10;
@@ -53,7 +49,6 @@ const calculateMode = (values) => {
     }
   });
 
-  // If all values appear only once, return the median as fallback
   if (maxFreq === 1) {
     const sorted = [...values].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
@@ -67,8 +62,16 @@ const calculateMode = (values) => {
 
 const calculateStats = (values) => {
   const valid = values.filter((v) => v !== null);
-  if (valid.length === 0)
-    return { avg: null, median: null, mode: null, min: null, max: null, count: 0 };
+  if (valid.length === 0) {
+    return {
+      avg: null,
+      median: null,
+      mode: null,
+      min: null,
+      max: null,
+      count: 0,
+    };
+  }
 
   const sorted = [...valid].sort((a, b) => a - b);
   const sum = valid.reduce((a, b) => a + b, 0);
@@ -81,7 +84,7 @@ const calculateStats = (values) => {
   return {
     avg: parseFloat(avg.toFixed(2)),
     median: parseFloat(median.toFixed(2)),
-    mode: mode,
+    mode,
     min: parseFloat(Math.min(...valid).toFixed(2)),
     max: parseFloat(Math.max(...valid).toFixed(2)),
     count: valid.length,
@@ -152,7 +155,7 @@ const STAT_MODES = {
     key: "avg",
     label: "Mean",
     shortLabel: "Avg",
-    
+    description: "Average of all samples",
     icon: BarChart3,
     color: "#3B82F6",
   },
@@ -160,7 +163,7 @@ const STAT_MODES = {
     key: "median",
     label: "Median",
     shortLabel: "Med",
-    
+    description: "Middle value of all samples",
     icon: TrendingUp,
     color: "#8B5CF6",
   },
@@ -168,7 +171,7 @@ const STAT_MODES = {
     key: "mode",
     label: "Mode",
     shortLabel: "Mode",
-    
+    description: "Most frequent value",
     icon: Hash,
     color: "#22C55E",
   },
@@ -195,7 +198,14 @@ export const OperatorComparisonChart = React.forwardRef(
     const [selectedMetrics, setSelectedMetrics] = useState(defaultMetrics);
     const [showSettings, setShowSettings] = useState(false);
     const [viewMode, setViewMode] = useState("bar");
-    const [statMode, setStatMode] = useState(defaultStatMode); // 'avg', 'median', or 'mode'
+    const [statMode, setStatMode] = useState(defaultStatMode);
+
+    const viewModes = useMemo(() => {
+      const modes = ["bar"];
+      if (showRadar) modes.push("radar");
+      if (showTable) modes.push("table");
+      return modes;
+    }, [showRadar, showTable]);
 
     const operatorData = useMemo(() => {
       if (!locations?.length) return [];
@@ -279,15 +289,13 @@ export const OperatorComparisonChart = React.forwardRef(
             "N/A",
           dominantBand:
             Object.entries(op.bands).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A",
-          techCount: Object.keys(op.technologies).length,
-          bandCount: Object.keys(op.bands).length,
         }))
         .sort((a, b) => b.samples - a.samples);
     }, [locations]);
 
     const barChartData = useMemo(() => {
       return operatorData.map((op) => {
-        const data = { name: op.name, color: op.color, samples: op.samples };
+        const data = { name: op.name, samples: op.samples };
         selectedMetrics.forEach((metricKey) => {
           data[metricKey] = op[metricKey]?.[statMode];
         });
@@ -305,8 +313,7 @@ export const OperatorComparisonChart = React.forwardRef(
           v !== null ? Math.max(0, Math.min(100, ((v + 20) / 17) * 100)) : 0,
         sinr: (v) =>
           v !== null ? Math.max(0, Math.min(100, ((v + 10) / 40) * 100)) : 0,
-        mos: (v) =>
-          v !== null ? Math.max(0, Math.min(100, (v / 5) * 100)) : 0,
+        mos: (v) => (v !== null ? Math.max(0, Math.min(100, (v / 5) * 100)) : 0),
         dl_tpt: (v) =>
           v !== null ? Math.max(0, Math.min(100, (v / 200) * 100)) : 0,
         ul_tpt: (v) =>
@@ -341,7 +348,6 @@ export const OperatorComparisonChart = React.forwardRef(
       });
     }, []);
 
-    // Get other stat values for comparison display
     const getOtherStats = (stats) => {
       const others = Object.keys(STAT_MODES).filter((key) => key !== statMode);
       return others
@@ -353,6 +359,32 @@ export const OperatorComparisonChart = React.forwardRef(
         .filter((s) => s.value !== null && s.value !== undefined);
     };
 
+    const MetricLegend = () => (
+      <div className="flex flex-wrap gap-2 mb-3">
+        {selectedMetrics.map((metricKey) => {
+          const config = AVAILABLE_METRICS[metricKey];
+          return (
+            <div
+              key={metricKey}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 border border-slate-700"
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: config.color }}
+              />
+              <span className="text-xs text-white font-medium">
+                {config.label}
+              </span>
+              <span className="text-[10px] text-white/70">
+                {STAT_MODES[statMode].shortLabel}
+                {config.unit ? ` • ${config.unit}` : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+
     const CustomBarTooltip = ({ active, payload, label }) => {
       if (!active || !payload?.length) return null;
 
@@ -362,15 +394,12 @@ export const OperatorComparisonChart = React.forwardRef(
       return (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl min-w-[220px]">
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: operator.color }}
-            />
             <span className="font-semibold text-white">{label}</span>
             <span className="text-[10px] text-slate-400 ml-auto">
               {operator.samples} samples
             </span>
           </div>
+
           <div
             className="text-[9px] mb-2 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
             style={{
@@ -384,30 +413,45 @@ export const OperatorComparisonChart = React.forwardRef(
             })()}
             {STAT_MODES[statMode].label}
           </div>
+
           <div className="space-y-2">
             {payload.map((entry, idx) => {
               const config = AVAILABLE_METRICS[entry.dataKey];
               if (!config) return null;
+
               const stats = operator[entry.dataKey];
               const otherStats = getOtherStats(stats);
 
               return (
                 <div key={idx} className="text-xs">
                   <div className="flex items-center justify-between gap-4">
-                    <span style={{ color: config.color }}>{config.label}:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: config.color }}
+                      />
+                      <span className="text-white">{config.label}</span>
+                    </div>
                     <span className="text-white font-semibold">
-                      {entry.value?.toFixed(1) ?? "N/A"} {config.unit}
+                      {typeof entry.value === "number"
+                        ? entry.value.toFixed(1)
+                        : "N/A"}{" "}
+                      {config.unit}
                     </span>
                   </div>
+
                   {otherStats.length > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-500 mt-0.5">
                       {otherStats.map((s) => (
                         <span key={s.key}>
-                          {s.label}: {s.value?.toFixed(1)}
+                          {s.label}:{" "}
+                          {typeof s.value === "number" ? s.value.toFixed(1) : "-"}
                         </span>
                       ))}
                       <span>
-                        Range: {stats.min?.toFixed(1)} - {stats.max?.toFixed(1)}
+                        Range:{" "}
+                        {typeof stats?.min === "number" ? stats.min.toFixed(1) : "-"} -{" "}
+                        {typeof stats?.max === "number" ? stats.max.toFixed(1) : "-"}
                       </span>
                     </div>
                   )}
@@ -415,9 +459,13 @@ export const OperatorComparisonChart = React.forwardRef(
               );
             })}
           </div>
+
           <div className="mt-2 pt-2 border-t border-slate-700 text-[10px] text-slate-400">
             <div>Tech: {operator.dominantTech}</div>
-            <div>Band: B{operator.dominantBand}</div>
+            <div>
+              Band:{" "}
+              {operator.dominantBand !== "N/A" ? `B${operator.dominantBand}` : "N/A"}
+            </div>
           </div>
         </div>
       );
@@ -431,6 +479,7 @@ export const OperatorComparisonChart = React.forwardRef(
       return (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl">
           <div className="font-semibold text-white mb-1">{data.metric}</div>
+
           <div
             className="text-[9px] mb-2 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
             style={{
@@ -444,6 +493,7 @@ export const OperatorComparisonChart = React.forwardRef(
             })()}
             {STAT_MODES[statMode].label}
           </div>
+
           <div className="space-y-1">
             {operatorData.map((op) => (
               <div
@@ -458,7 +508,9 @@ export const OperatorComparisonChart = React.forwardRef(
                   <span className="text-slate-300">{op.name}</span>
                 </div>
                 <span className="text-white font-semibold">
-                  {data[`${op.name}_raw`]?.toFixed(1) ?? "N/A"}
+                  {typeof data[`${op.name}_raw`] === "number"
+                    ? data[`${op.name}_raw`].toFixed(1)
+                    : "N/A"}
                 </span>
               </div>
             ))}
@@ -483,7 +535,6 @@ export const OperatorComparisonChart = React.forwardRef(
         subtitle={`${operatorData.length} operators | ${locations?.length || 0} samples`}
         headerExtra={
           <div className="flex items-center gap-2">
-            {/* Stat Mode Toggle (Mean/Median/Mode) */}
             <div className="flex rounded-lg overflow-hidden border border-slate-600">
               {Object.entries(STAT_MODES).map(([key, mode]) => {
                 const Icon = mode.icon;
@@ -508,9 +559,8 @@ export const OperatorComparisonChart = React.forwardRef(
               })}
             </div>
 
-            {/* View Mode Toggle */}
             <div className="flex rounded-lg overflow-hidden border border-slate-600">
-              {["bar", "table"].map((mode) => (
+              {viewModes.map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setViewMode(mode)}
@@ -525,7 +575,6 @@ export const OperatorComparisonChart = React.forwardRef(
               ))}
             </div>
 
-            {/* Metrics Settings */}
             <div className="relative">
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -586,9 +635,7 @@ export const OperatorComparisonChart = React.forwardRef(
         expandable
         collapsible
       >
-        {/* Active filters display */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          {/* Stat mode indicator */}
           <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
             style={{
@@ -602,28 +649,9 @@ export const OperatorComparisonChart = React.forwardRef(
             })()}
             {STAT_MODES[statMode].label}
           </span>
-
-          {/* Selected metrics */}
-          {selectedMetrics.map((metricKey) => {
-            const config = AVAILABLE_METRICS[metricKey];
-            return (
-              <span
-                key={metricKey}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
-                style={{
-                  backgroundColor: `${config.color}20`,
-                  color: config.color,
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: config.color }}
-                />
-                {config.label}
-              </span>
-            );
-          })}
         </div>
+
+        {(viewMode === "bar" || viewMode === "table") && <MetricLegend />}
 
         {viewMode === "bar" && (
           <ResponsiveContainer width="100%" height={300}>
@@ -639,25 +667,18 @@ export const OperatorComparisonChart = React.forwardRef(
                 textAnchor="end"
                 height={60}
               />
-              <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} reversed={true} />
+              <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} />
               <Tooltip content={<CustomBarTooltip />} />
-              <Legend wrapperStyle={{ fontSize: "11px" }} />
               {selectedMetrics.map((metricKey) => {
                 const config = AVAILABLE_METRICS[metricKey];
                 return (
                   <Bar
                     key={metricKey}
                     dataKey={metricKey}
-                    name={`${config.label} (${STAT_MODES[statMode].label})`}
+                    name={config.label}
                     radius={[4, 4, 0, 0]}
-                  >
-                    {barChartData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={getProviderColor(entry.name)}
-                      />
-                    ))}
-                  </Bar>
+                    fill={config.color}
+                  />
                 );
               })}
             </BarChart>
@@ -665,36 +686,47 @@ export const OperatorComparisonChart = React.forwardRef(
         )}
 
         {viewMode === "radar" && (
-          <ResponsiveContainer width="100%" height={350}>
-            <RadarChart
-              data={radarChartData}
-              margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
-            >
-              <PolarGrid stroke="#334155" />
-              <PolarAngleAxis
-                dataKey="metric"
-                tick={{ fill: "#9CA3AF", fontSize: 10 }}
-              />
-              <PolarRadiusAxis
-                angle={30}
-                domain={[0, 100]}
-                tick={{ fill: "#9CA3AF", fontSize: 9 }}
-              />
-              <Tooltip content={<CustomRadarTooltip />} />
-              <Legend wrapperStyle={{ fontSize: "11px" }} />
-              {operatorData.map((op) => (
-                <Radar
-                  key={op.name}
-                  name={op.name}
-                  dataKey={op.name}
-                  stroke={op.color}
-                  fill={op.color}
-                  fillOpacity={0.2}
-                  strokeWidth={2}
+          <>
+            <div className="mb-3">
+              <div className="text-xs text-white font-medium mb-2">Operators</div>
+            </div>
+
+            <ResponsiveContainer width="100%" height={350}>
+              <RadarChart
+                data={radarChartData}
+                margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
+              >
+                <PolarGrid stroke="#334155" />
+                <PolarAngleAxis
+                  dataKey="metric"
+                  tick={{ fill: "#9CA3AF", fontSize: 10 }}
                 />
-              ))}
-            </RadarChart>
-          </ResponsiveContainer>
+                <PolarRadiusAxis
+                  angle={30}
+                  domain={[0, 100]}
+                  tick={{ fill: "#9CA3AF", fontSize: 9 }}
+                />
+                <Tooltip content={<CustomRadarTooltip />} />
+                <Legend
+                  wrapperStyle={{ fontSize: "11px" }}
+                  formatter={(value) => (
+                    <span className="text-white">{value}</span>
+                  )}
+                />
+                {operatorData.map((op) => (
+                  <Radar
+                    key={op.name}
+                    name={op.name}
+                    dataKey={op.name}
+                    stroke={op.color}
+                    fill={op.color}
+                    fillOpacity={0.2}
+                    strokeWidth={2}
+                  />
+                ))}
+              </RadarChart>
+            </ResponsiveContainer>
+          </>
         )}
 
         {viewMode === "table" && (
@@ -717,18 +749,9 @@ export const OperatorComparisonChart = React.forwardRef(
                         style={{ color: config.color }}
                       >
                         <div>{config.label}</div>
-                        <div
-                          className="text-[9px] inline-flex items-center gap-0.5 mt-0.5"
-                          style={{ color: STAT_MODES[statMode].color }}
-                        >
-                          {(() => {
-                            const Icon = STAT_MODES[statMode].icon;
-                            return <Icon className="w-2.5 h-2.5" />;
-                          })()}
+                        <div className="text-[9px] text-white/70 mt-0.5">
                           {STAT_MODES[statMode].label}
-                          {config.unit && (
-                            <span className="text-slate-500"> ({config.unit})</span>
-                          )}
+                          {config.unit ? ` (${config.unit})` : ""}
                         </div>
                       </th>
                     );
@@ -751,13 +774,7 @@ export const OperatorComparisonChart = React.forwardRef(
                   >
                     <td className="p-2 sticky left-0 bg-slate-900">
                       <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: op.color }}
-                        />
-                        <span className="font-semibold text-white">
-                          {op.name}
-                        </span>
+                        <span className="font-semibold text-white">{op.name}</span>
                         {idx === 0 && (
                           <span className="text-[9px] bg-green-500/20 text-green-400 px-1 rounded">
                             #1
@@ -765,9 +782,9 @@ export const OperatorComparisonChart = React.forwardRef(
                         )}
                       </div>
                     </td>
-                    <td className="p-2 text-center text-slate-300">
-                      {op.samples}
-                    </td>
+
+                    <td className="p-2 text-center text-slate-300">{op.samples}</td>
+
                     {selectedMetrics.map((metricKey) => {
                       const config = AVAILABLE_METRICS[metricKey];
                       const stats = op[metricKey];
@@ -776,8 +793,11 @@ export const OperatorComparisonChart = React.forwardRef(
                       const allValues = operatorData
                         .map((o) => o[metricKey]?.[statMode])
                         .filter((v) => v !== null && v !== undefined);
+
                       const isBest =
                         allValues.length > 0 &&
+                        value !== null &&
+                        value !== undefined &&
                         (config.higherBetter
                           ? value === Math.max(...allValues)
                           : value === Math.min(...allValues));
@@ -792,7 +812,7 @@ export const OperatorComparisonChart = React.forwardRef(
                           }`}
                         >
                           <div className="font-medium">
-                            {value?.toFixed(1) ?? "-"}
+                            {typeof value === "number" ? value.toFixed(1) : "-"}
                             {isBest && (
                               <span className="ml-1 text-yellow-400 text-[10px]">
                                 ★
@@ -803,7 +823,10 @@ export const OperatorComparisonChart = React.forwardRef(
                             <div className="text-[9px] text-slate-500 space-x-1">
                               {otherStats.map((s) => (
                                 <span key={s.key}>
-                                  {s.label}: {s.value?.toFixed(1)}
+                                  {s.label}:{" "}
+                                  {typeof s.value === "number"
+                                    ? s.value.toFixed(1)
+                                    : "-"}
                                 </span>
                               ))}
                             </div>
@@ -811,6 +834,7 @@ export const OperatorComparisonChart = React.forwardRef(
                         </td>
                       );
                     })}
+
                     <td className="p-2 text-center text-purple-400">
                       {op.dominantTech}
                     </td>
@@ -824,24 +848,6 @@ export const OperatorComparisonChart = React.forwardRef(
           </div>
         )}
 
-        {/* Operator legend */}
-        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-700">
-          {operatorData.map((op) => (
-            <div
-              key={op.name}
-              className="flex items-center gap-1.5 px-2 py-1 bg-slate-800 rounded"
-            >
-              <div
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: op.color }}
-              />
-              <span className="text-xs text-white font-medium">{op.name}</span>
-              <span className="text-[10px] text-slate-400">{op.samples}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Stats explanation footer */}
         <div className="mt-3 pt-2 border-t border-slate-700/50">
           <div className="flex flex-wrap gap-3 text-[9px] text-slate-500">
             {Object.entries(STAT_MODES).map(([key, mode]) => {

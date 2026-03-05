@@ -44,8 +44,8 @@ const toRgbaArray = (hexOrCss, alpha = 220) => {
 };
 
 const getThresholdKey = (metric) => {
-  if (metric === "dl_tpt") return "dl_thpt";
-  if (metric === "ul_tpt") return "ul_thpt";
+  if (metric === "dl_tpt" || metric === "dl_rpt") return "dl_thpt";
+  if (metric === "ul_tpt" || metric === "ul_rpt") return "ul_thpt";
   return metric;
 };
 
