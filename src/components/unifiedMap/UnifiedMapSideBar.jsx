@@ -735,7 +735,6 @@ const UnifiedMapSidebar = ({
                   )}
                 </div>
 
-                {/* Highlighted Site Mode Selection */}
                 <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-1.5">
                   <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
                     <Palette className="w-3 h-3" /> Color Sites By

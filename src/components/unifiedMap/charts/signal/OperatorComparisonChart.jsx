@@ -202,7 +202,7 @@ export const OperatorComparisonChart = React.forwardRef(
 
     const viewModes = useMemo(() => {
       const modes = ["bar"];
-      if (showRadar) modes.push("radar");
+     
       if (showTable) modes.push("table");
       return modes;
     }, [showRadar, showTable]);
@@ -685,49 +685,7 @@ export const OperatorComparisonChart = React.forwardRef(
           </ResponsiveContainer>
         )}
 
-        {viewMode === "radar" && (
-          <>
-            <div className="mb-3">
-              <div className="text-xs text-white font-medium mb-2">Operators</div>
-            </div>
-
-            <ResponsiveContainer width="100%" height={350}>
-              <RadarChart
-                data={radarChartData}
-                margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
-              >
-                <PolarGrid stroke="#334155" />
-                <PolarAngleAxis
-                  dataKey="metric"
-                  tick={{ fill: "#9CA3AF", fontSize: 10 }}
-                />
-                <PolarRadiusAxis
-                  angle={30}
-                  domain={[0, 100]}
-                  tick={{ fill: "#9CA3AF", fontSize: 9 }}
-                />
-                <Tooltip content={<CustomRadarTooltip />} />
-                <Legend
-                  wrapperStyle={{ fontSize: "11px" }}
-                  formatter={(value) => (
-                    <span className="text-white">{value}</span>
-                  )}
-                />
-                {operatorData.map((op) => (
-                  <Radar
-                    key={op.name}
-                    name={op.name}
-                    dataKey={op.name}
-                    stroke={op.color}
-                    fill={op.color}
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                ))}
-              </RadarChart>
-            </ResponsiveContainer>
-          </>
-        )}
+       
 
         {viewMode === "table" && (
           <div className="overflow-x-auto">
