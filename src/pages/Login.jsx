@@ -85,9 +85,13 @@ const LoginPage = () => {
 
                 <div className="text-center">
                     <div className="flex justify-center mb-4">
-                        <span className="inline-flex items-center justify-center w-10 h-24  text-white text-xl font-bold shadow-md">
-                            <img src={vinfocom} alt="vinfocom" />
-                        </span>
+                        <div className="flex justify-center mb-4">
+    <img
+        src={vinfocom}
+        alt="vinfocom"
+        className="w-20 h-20 object-contain border-2 border-slate-400 shadow-2xl rounded-xl p-2"
+    />
+</div>
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 ">Welcome  S-Tracer</h2>
                     <p className="mt-1 text-sm text-gray-500 ">

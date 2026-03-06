@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { 
-  Radio, Signal, Activity, TrendingUp, Square, BarChart3, Wifi, MapPin, Layers, Server, ArrowRightLeft,
-  ChevronDown
+  Radio, Activity, Wifi, Layers, Server, ArrowRightLeft
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -60,6 +59,8 @@ const METRIC_CONFIG = {
   }
 };
 
+const METRIC_OPTIONS = Object.entries(METRIC_CONFIG);
+
 const getColorFromThresholds = (value, thresholds) => {
   if (value == null || isNaN(value)) return "#9CA3AF";
   if (!thresholds?.length) {
@@ -76,6 +77,25 @@ const getColorFromThresholds = (value, thresholds) => {
     if (value >= parseFloat(t.min) && value < parseFloat(t.max)) return t.color;
   }
   return "#9CA3AF";
+};
+
+const getMedian = (sortedValues) => {
+  if (!sortedValues.length) return 0;
+  const mid = Math.floor(sortedValues.length / 2);
+  return sortedValues.length % 2
+    ? sortedValues[mid]
+    : (sortedValues[mid - 1] + sortedValues[mid]) / 2;
+};
+
+const incrementBucket = (buckets, value, key) => {
+  for (let i = 0; i < buckets.length; i++) {
+    const bucket = buckets[i];
+    const isLast = i === buckets.length - 1;
+    if (value >= bucket.min && (isLast ? value <= bucket.max : value < bucket.max)) {
+      bucket[key] += 1;
+      break;
+    }
+  }
 };
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -100,7 +120,6 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 const N78AnalysisTab = ({
   n78NeighborData,
-  n78NeighborStats,
   n78NeighborLoading,
   primaryData = [],
   thresholds,
@@ -115,66 +134,62 @@ const N78AnalysisTab = ({
     
     const config = METRIC_CONFIG[selectedMetric];
 
-    // 1. Filter Valid Data based on Selected Metric
-    const validNeighborData = n78NeighborData.map(n => ({
-      ...n,
-      val: n[config.neighborKey] ?? n.neighborRsrp, // fallback for legacy
-      provider: n.provider || "Unknown",
-      band: n.neighbourBand || n.primaryBand || "Unknown",
-      tech: n.networkType || "Unknown"
-    })).filter(n => n.val != null && !isNaN(n.val) && n.val !== 0); // Filter zeros if needed
-
-    const validPrimaryData = primaryData.map(p => ({
-        val: p[config.primaryKey]
-    })).filter(p => p.val != null && !isNaN(p.val) && p.val !== 0);
-
-    // 2. Calculate Basic Stats (Neighbor)
-    const values = validNeighborData.map(n => n.val).sort((a, b) => a - b);
-    const avg = values.reduce((a, b) => a + b, 0) / values.length || 0;
-    const mid = Math.floor(values.length / 2);
-    const median = values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
-
-    // 3. Aggregations
     const providers = {};
     const bands = {};
     const techs = {};
-
-    validNeighborData.forEach(n => {
-      providers[n.provider] = (providers[n.provider] || 0) + 1;
-      bands[n.band] = (bands[n.band] || 0) + 1;
-      techs[n.tech] = (techs[n.tech] || 0) + 1;
-    });
-
-    // 4. Distribution & Comparison
-    // Initialize buckets
-    const distData = config.buckets.map(b => ({ 
-        name: b.label, 
-        Primary: 0, 
-        Neighbor: 0,
-        min: b.min,
-        max: b.max
+    const values = [];
+    const primaryValues = [];
+    const distData = config.buckets.map(b => ({
+      name: b.label,
+      Primary: 0,
+      Neighbor: 0,
+      min: b.min,
+      max: b.max
     }));
+    const sessionIds = new Set();
 
-    // Fill buckets
-    const fillBucket = (val, type) => {
-        const bucket = distData.find(b => val >= b.min && val < b.max);
-        if (bucket) bucket[type]++;
-    };
+    let neighborSum = 0;
+    for (const neighbor of n78NeighborData) {
+      sessionIds.add(neighbor.sessionId);
+      const rawValue = neighbor[config.neighborKey] ?? neighbor.neighborRsrp;
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || value === 0) continue;
 
-    validNeighborData.forEach(n => fillBucket(n.val, 'Neighbor'));
-    validPrimaryData.forEach(p => fillBucket(p.val, 'Primary'));
+      values.push(value);
+      neighborSum += value;
 
-    // 5. Comparative Summary (Avg/Median)
-    const primaryValues = validPrimaryData.map(p => p.val).sort((a, b) => a - b);
-    const primaryAvg = primaryValues.reduce((a, b) => a + b, 0) / primaryValues.length || 0;
-    const pMid = Math.floor(primaryValues.length / 2);
-    const primaryMedian = primaryValues.length % 2 ? primaryValues[pMid] : (primaryValues[pMid - 1] + primaryValues[pMid]) / 2;
+      const provider = neighbor.provider || "Unknown";
+      const band = neighbor.neighbourBand || neighbor.primaryBand || "Unknown";
+      const tech = neighbor.networkType || "Unknown";
+
+      providers[provider] = (providers[provider] || 0) + 1;
+      bands[band] = (bands[band] || 0) + 1;
+      techs[tech] = (techs[tech] || 0) + 1;
+      incrementBucket(distData, value, "Neighbor");
+    }
+
+    let primarySum = 0;
+    for (const primary of primaryData) {
+      const value = Number(primary[config.primaryKey]);
+      if (!Number.isFinite(value) || value === 0) continue;
+      primaryValues.push(value);
+      primarySum += value;
+      incrementBucket(distData, value, "Primary");
+    }
+
+    values.sort((a, b) => a - b);
+    primaryValues.sort((a, b) => a - b);
+
+    const avg = values.length ? neighborSum / values.length : 0;
+    const median = getMedian(values);
+    const primaryAvg = primaryValues.length ? primarySum / primaryValues.length : 0;
+    const primaryMedian = getMedian(primaryValues);
 
     const comparisonSummary = [
-        { name: 'Average', Primary: primaryAvg.toFixed(1), Neighbor: avg.toFixed(1) },
-        { name: 'Median', Primary: primaryMedian.toFixed(1), Neighbor: median.toFixed(1) },
-        { name: 'Min', Primary: primaryValues[0]?.toFixed(1) || 0, Neighbor: values[0]?.toFixed(1) || 0 },
-        { name: 'Max', Primary: primaryValues[primaryValues.length-1]?.toFixed(1) || 0, Neighbor: values[values.length-1]?.toFixed(1) || 0 },
+        { name: 'Average', Primary: Number(primaryAvg.toFixed(1)), Neighbor: Number(avg.toFixed(1)) },
+        { name: 'Median', Primary: Number(primaryMedian.toFixed(1)), Neighbor: Number(median.toFixed(1)) },
+        { name: 'Min', Primary: Number((primaryValues[0] ?? 0).toFixed(1)), Neighbor: Number((values[0] ?? 0).toFixed(1)) },
+        { name: 'Max', Primary: Number((primaryValues[primaryValues.length - 1] ?? 0).toFixed(1)), Neighbor: Number((values[values.length - 1] ?? 0).toFixed(1)) },
     ];
 
     const formatChartData = (obj) => Object.entries(obj)
@@ -183,7 +198,7 @@ const N78AnalysisTab = ({
 
     return {
       total: n78NeighborData.length,
-      sessionCount: new Set(n78NeighborData.map(n => n.sessionId)).size,
+      sessionCount: sessionIds.size,
       stats: { min: values[0], max: values[values.length-1], avg, median },
       chartData: {
         providers: formatChartData(providers),
@@ -232,7 +247,7 @@ const N78AnalysisTab = ({
 
         {/* Metric Selector Buttons */}
         <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
-            {Object.entries(METRIC_CONFIG).map(([key, conf]) => (
+            {METRIC_OPTIONS.map(([key, conf]) => (
                 <button
                     key={key}
                     onClick={() => setSelectedMetric(key)}
@@ -272,12 +287,12 @@ const N78AnalysisTab = ({
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Bar dataKey="Primary" fill="#3B82F6" name="Primary" radius={[0, 4, 4, 0]} barSize={20} />
-              <Bar dataKey="Neighbor" fill="#8B5CF6" name="Neighbor" radius={[0, 4, 4, 0]} barSize={20} />
+              <Bar dataKey="Neighbor" fill="#8B5CF6" name="Secondary" radius={[0, 4, 4, 0]} barSize={20} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Distribution Overlap (Area Chart) */}
+    
         <div className="bg-slate-800/50 p-10 rounded-lg border border-slate-700 h-[300px]">
            <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <Activity className="h-4 w-4 text-pink-400" /> {config.label} Distribution
@@ -370,4 +385,4 @@ const N78AnalysisTab = ({
   );
 };
 
-export default N78AnalysisTab;
+export default memo(N78AnalysisTab);

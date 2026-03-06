@@ -53,8 +53,8 @@ const MultiViewPage = () => {
 
   // --- Map State Management ---
   const [maps, setMaps] = useState([
-    { id: 1, title: "Map 1" },
-    { id: 2, title: "Map 2" },
+    { id: 1, title: "Primary Map", role: "primary" },
+    { id: 2, title: "Secondary Map", role: "secondary" },
   ]);
 
   // Controls which map is displayed in the first slot
@@ -62,7 +62,9 @@ const MultiViewPage = () => {
 
   const addMap = () => {
     const newId = maps.length > 0 ? Math.max(...maps.map((m) => m.id)) + 1 : 1;
-    const newMaps = [...maps, { id: newId, title: `Map ${newId}` }];
+    const role = newId % 2 === 0 ? "secondary" : "primary";
+    const titlePrefix = role === "secondary" ? "Secondary Map" : "Primary Map";
+    const newMaps = [...maps, { id: newId, title: `${titlePrefix} ${newId}`, role }];
     setMaps(newMaps);
     if (newMaps.length > 2) {
       setActiveStartIndex(newMaps.length - 2); 
@@ -140,9 +142,20 @@ const MultiViewPage = () => {
                        <span className={`text-sm font-medium ${isActive ? "text-blue-700" : "text-gray-700"}`}>
                          {mapInstance.title}
                        </span>
-                       <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-1.5 rounded">
-                         #{index + 1}
-                       </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                            mapInstance.role === "secondary"
+                              ? "bg-purple-100 text-purple-700"
+                              : "bg-green-100 text-green-700"
+                          }`}
+                        >
+                          {mapInstance.role === "secondary" ? "Secondary" : "Primary"}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-1.5 rounded">
+                          #{index + 1}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between mt-2">
@@ -182,6 +195,7 @@ const MultiViewPage = () => {
                   projectId={projectId}
                   allLocations={locations}
                   allNeighbors={neighborData}
+                  mapRole={mapInstance.role}
                   thresholds={thresholds}
                   project={project}
                   onRemove={(id) => removeMap(id)}

@@ -218,6 +218,13 @@ const HandsetPerformanceChart = () => {
     return result;
   }, [data, topN, minSamples, sortBy]);
 
+  const xAxisInterval = useMemo(() => {
+    if (chartData.length <= 8) return 0;
+    if (chartData.length <= 14) return 1;
+    if (chartData.length <= 20) return 2;
+    return 3;
+  }, [chartData.length]);
+
   const stats = useMemo(() => {
     if (chartData.length === 0) return null;
     
@@ -399,7 +406,7 @@ const HandsetPerformanceChart = () => {
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
           <ComposedChart
             data={chartData}
-            margin={{ top: 20, right: 20, left: 60, bottom: 80 }}
+            margin={{ top: 20, right: 20, left: 55, bottom: 105 }}
           >
             {SIGNAL_QUALITY_RANGES.map((range, idx) => (
               <ReferenceArea
@@ -421,11 +428,19 @@ const HandsetPerformanceChart = () => {
             <XAxis
               dataKey="Make"
               type="category"
-              angle={-45}
+              angle={-35}
               textAnchor="end"
-              height={100}
+              height={115}
+              tickMargin={14}
+              dy={8}
+              minTickGap={10}
               tick={{ fill: '#111827', fontSize: 11, fontWeight: 600 }}
-              interval={0}
+              interval={xAxisInterval}
+              tickFormatter={(value) =>
+                String(value || "").length > 14
+                  ? `${String(value).slice(0, 14)}...`
+                  : String(value || "")
+              }
             />
 
             <YAxis

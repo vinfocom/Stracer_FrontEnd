@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'react-toastify';
 import {
   Box,
@@ -10,6 +10,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   alpha,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
   SignalCellularAlt,
@@ -74,8 +76,14 @@ const isValidOperatorName = (name) => {
 };
 
 const OperatorRankingChart = () => {
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMediumDown = useMediaQuery(theme.breakpoints.down('md'));
+
   const [chartType, setChartType] = useState('coverage');
   const [hoveredOperator, setHoveredOperator] = useState(null);
+  const gaugeHostRef = useRef(null);
+  const [gaugeHostWidth, setGaugeHostWidth] = useState(260);
 
   const [coverageSettings, setCoverageSettings] = useState({ rsrpMin: -95, rsrpMax: 0 });
   const [qualitySettings, setQualitySettings] = useState({ rsrqMin: -10, rsrqMax: 0 });
@@ -171,7 +179,24 @@ const OperatorRankingChart = () => {
     }
   };
 
+  useEffect(() => {
+    const host = gaugeHostRef.current;
+    if (!host) return undefined;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setGaugeHostWidth(Math.max(150, Math.floor(entry.contentRect.width)));
+    });
+
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   const getTitle = () => {
+    if (isMediumDown) {
+      return chartType === 'coverage' ? 'Coverage Ranking' : 'Quality Ranking';
+    }
     if (chartType === 'coverage') {
       return `Coverage Ranking (RSRP ${coverageSettings.rsrpMin} to ${coverageSettings.rsrpMax} dBm)`;
     }
@@ -252,9 +277,9 @@ const OperatorRankingChart = () => {
       size="small"
       sx={{
         '& .MuiToggleButton-root': {
-          fontSize: '11px',
-          py: 0.4,
-          px: 1.2,
+          fontSize: isSmallScreen ? '10px' : '11px',
+          py: isSmallScreen ? 0.25 : 0.4,
+          px: isSmallScreen ? 0.6 : 1.2,
           textTransform: 'none',
           fontWeight: 600,
           border: '1px solid #ddd',
@@ -272,8 +297,8 @@ const OperatorRankingChart = () => {
           },
         }}
       >
-        <SignalCellular4Bar sx={{ fontSize: 14, mr: 0.5 }} />
-        Coverage
+        <SignalCellular4Bar sx={{ fontSize: 14, mr: isSmallScreen ? 0.3 : 0.5 }} />
+        {isSmallScreen ? 'Cov' : 'Coverage'}
       </ToggleButton>
       <ToggleButton
         value="quality"
@@ -283,18 +308,29 @@ const OperatorRankingChart = () => {
           },
         }}
       >
-        <SignalCellularAlt sx={{ fontSize: 14, mr: 0.5 }} />
-        Quality
+        <SignalCellularAlt sx={{ fontSize: 14, mr: isSmallScreen ? 0.3 : 0.5 }} />
+        {isSmallScreen ? 'Qual' : 'Quality'}
       </ToggleButton>
     </ToggleButtonGroup>
   );
 
-  const MultiRingGauge = () => {
-    const size = 200;
+  const gaugeSize = useMemo(() => {
+    const max = isSmallScreen ? 220 : 290;
+    const min = isSmallScreen ? 150 : 180;
+    return Math.min(max, Math.max(min, gaugeHostWidth - 20));
+  }, [gaugeHostWidth, isSmallScreen]);
+
+  const MultiRingGauge = ({ size }) => {
     const centerX = size / 2;
     const centerY = size / 2;
-    const ringWidth = 12;
-    const gap = 3;
+    const maxRings = Math.min(chartData.length, 12);
+    const innerMinRadius = Math.max(20, Math.floor(size * 0.11));
+    const outerPadding = Math.max(10, Math.floor(size * 0.07));
+    const availableSpan = Math.max(1, (size / 2) - outerPadding - innerMinRadius);
+    const ringStep = maxRings > 1 ? availableSpan / (maxRings - 1) : availableSpan;
+    const ringWidth = Math.max(4, Math.min(12, ringStep * 0.72));
+    const gap = Math.max(1, ringStep - ringWidth);
+    const ringsToRender = chartData.slice(0, maxRings);
     const startAngle = -135;
     const endAngle = 135;
     const totalAngle = endAngle - startAngle;
@@ -329,11 +365,11 @@ const OperatorRankingChart = () => {
     return (
       <Box sx={{ position: 'relative', width: size, height: size }}>
         <svg width={size} height={size}>
-          {chartData.map((item, index) => {
-            const radius = (size / 2) - 15 - index * (ringWidth + gap);
+          {ringsToRender.map((item, index) => {
+            const radius = (size / 2) - outerPadding - index * (ringWidth + gap);
             const isHovered = hoveredOperator === item.id;
 
-            if (radius < 25) return null;
+            if (radius < innerMinRadius) return null;
 
             return (
               <g
@@ -380,17 +416,17 @@ const OperatorRankingChart = () => {
               <Box>
                 <Typography
                   fontWeight="900"
-                  sx={{ color: chartData[hoveredOperator]?.color, lineHeight: 1, fontSize: '16px' }}
+                  sx={{ color: chartData[hoveredOperator]?.color, lineHeight: 1, fontSize: isSmallScreen ? '13px' : '16px' }}
                 >
                   {chartData[hoveredOperator]?.percentage}%
                 </Typography>
                 <Typography
                   fontWeight="700"
-                  sx={{ color: chartData[hoveredOperator]?.darkColor, fontSize: '9px' }}
+                  sx={{ color: chartData[hoveredOperator]?.darkColor, fontSize: isSmallScreen ? '8px' : '9px' }}
                 >
                   {chartData[hoveredOperator]?.label}
                 </Typography>
-                <Typography sx={{ color: '#888', fontSize: '8px' }}>
+                <Typography sx={{ color: '#888', fontSize: isSmallScreen ? '7px' : '8px' }}>
                   {formatNumber(chartData[hoveredOperator]?.value)}
                 </Typography>
               </Box>
@@ -400,7 +436,7 @@ const OperatorRankingChart = () => {
               <Typography
                 fontWeight="900"
                 sx={{
-                  fontSize: '14px',
+                  fontSize: isSmallScreen ? '12px' : '14px',
                   background: chartType === 'coverage'
                     ? 'linear-gradient(135deg, #1565c0, #42a5f5)'
                     : 'linear-gradient(135deg, #ef6c00, #ffb74d)',
@@ -411,10 +447,10 @@ const OperatorRankingChart = () => {
               >
                 {formatNumber(stats.total)}
               </Typography>
-              <Typography sx={{ color: '#666', fontSize: '8px' }}>
+              <Typography sx={{ color: '#666', fontSize: isSmallScreen ? '7px' : '8px' }}>
                 Total Samples
               </Typography>
-              <Typography sx={{ color: '#999', fontSize: '7px' }}>
+              <Typography sx={{ color: '#999', fontSize: isSmallScreen ? '6px' : '7px' }}>
                 {chartData.length} Operators
               </Typography>
             </Box>
@@ -431,6 +467,7 @@ const OperatorRankingChart = () => {
         flexWrap: 'wrap',
         gap: 0.5,
         justifyContent: 'center',
+        width: '100%',
       }}
     >
       {chartData.map((item) => (
@@ -442,16 +479,23 @@ const OperatorRankingChart = () => {
           onMouseEnter={() => setHoveredOperator(item.id)}
           onMouseLeave={() => setHoveredOperator(null)}
           sx={{
-            height: 20,
-            fontSize: '9px',
+            height: isSmallScreen ? 22 : 20,
+            fontSize: isSmallScreen ? '10px' : '9px',
             fontWeight: 600,
             backgroundColor: hoveredOperator === item.id ? alpha(item.color, 0.15) : '#f5f5f5',
             border: '1px solid',
             borderColor: hoveredOperator === item.id ? item.color : 'transparent',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            maxWidth: isSmallScreen ? '100%' : '180px',
             '& .MuiChip-icon': { ml: 0.5 },
-            '& .MuiChip-label': { px: 0.5 },
+            '& .MuiChip-label': {
+              px: 0.5,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: isSmallScreen ? 'calc(100vw - 80px)' : '150px',
+            },
           }}
         />
       ))}
@@ -479,15 +523,28 @@ const OperatorRankingChart = () => {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          p: 1.5,
+          justifyContent: 'flex-start',
+          p: { xs: 0.75, sm: 1.5 },
           boxSizing: 'border-box',
           overflow: 'hidden',
-          gap: 1.5,
+          gap: { xs: 0.75, sm: 1.5 },
         }}
       >
-        <MultiRingGauge />
-        <CompactLegend />
+        <Box
+          ref={gaugeHostRef}
+          sx={{
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <MultiRingGauge size={gaugeSize} />
+        </Box>
+        <Box sx={{ width: '100%', flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+          <CompactLegend />
+        </Box>
       </Box>
     </ChartCard>
   );

@@ -1194,7 +1194,7 @@ export default function UnifiedDetailLogs({
         
         {activeTab === "handover" && <HandoverAnalysisTab transitions={technologyTransitions} />}
         
-        {activeTab === "n78" && <N78AnalysisTab n78NeighborData={n78NeighborData} n78NeighborStats={n78NeighborStats} n78NeighborLoading={n78NeighborLoading} thresholds={thresholds} expanded={expanded} primaryData={locations} selectedMetric={selectedMetric} />}
+        {activeTab === "n78" && <N78AnalysisTab n78NeighborData={n78NeighborData} n78NeighborLoading={n78NeighborLoading} thresholds={thresholds} expanded={expanded} primaryData={filteredLocations} />}
       </div>
       </div>
     </Rnd>

@@ -377,22 +377,29 @@ function AppChart() {
           </button>
         </div>
       ) : displayData.length > 0 ? (
-        // ✅ Chart Render
         <div style={{ width: "100%", height: "100%" }}>
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
             <ComposedChart
               data={displayData}
-              margin={{ top: 20, right: 60, left: 20, bottom: 80 }}
+              margin={{ top: 20, right: 60, left: 20, bottom: 95 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
 
               <XAxis
                 dataKey="appName"
-                angle={-45}
-                interval={0}
+                angle={-35}
                 textAnchor="end"
-                height={80}
-                tick={{ fill: "#111827", fontSize: 11, fontWeight: 600 }}
+                interval={0}
+                height={110}
+                tickMargin={14}
+                dy={8}
+                padding={{ left: 12, right: 12 }}
+                tick={{ fontSize: 11 }}
+                tickFormatter={(value) =>
+                  String(value || "").length > 12
+                    ? `${String(value).slice(0, 12)}...`
+                    : String(value || "")
+                }
               />
 
               <YAxis

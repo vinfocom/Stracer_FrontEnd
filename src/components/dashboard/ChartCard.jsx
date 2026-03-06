@@ -188,7 +188,7 @@ const ChartCard = ({
         </div>
       </CardHeader>
 
-      <CardContent className="h-[380px] relative p-6 min-h-0 min-w-0 overflow-hidden">
+      <CardContent className="relative h-[320px] sm:h-[360px] lg:h-[390px] xl:h-[420px] p-3 sm:p-4 lg:p-6 min-h-0 min-w-0 overflow-hidden">
         {error ? (
           <div className="flex flex-col items-center justify-center h-full text-red-400">
             <svg className="h-16 w-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -166,7 +166,7 @@ const DashboardPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-[1920px] mx-auto p-6 space-y-6">
+      <div className="max-w-[1920px] mx-auto p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-6">
        
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -196,16 +196,16 @@ const DashboardPage = () => {
         </div>
 
         {/* KPI Cards */}
-        <div className="flex flex-wrap gap-6">
+        <div className="flex flex-wrap gap-4 sm:gap-6">
           {isKPILoading ? (
             Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex-1 min-w-[280px] max-w-[320px]">
+              <div key={i} className="flex-1 min-w-[240px] sm:min-w-[280px] max-w-[320px]">
                 <StatCardSkeleton />
               </div>
             ))
           ) : (
             stats.map(s => (
-              <div key={s.title} className="flex-1 min-w-[280px] max-w-[320px]">
+              <div key={s.title} className="flex-1 min-w-[240px] sm:min-w-[280px] max-w-[320px]">
                 <MemoizedStatCard {...s} />
               </div>
             ))
@@ -213,7 +213,7 @@ const DashboardPage = () => {
         </div>
 
         {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
 
           {chartStage >= 1 && (
             <MemoizedMonthlySamplesChart

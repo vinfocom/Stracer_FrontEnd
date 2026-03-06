@@ -11,18 +11,19 @@ const MapChild = ({
   title,
   allNeighbors = [],
   allLocations = [],
+  mapRole = "primary",
   onRemove,
   thresholds,
   projectId,
 }) => {
+  const isSecondaryView = mapRole === "secondary";
   const [metric, setMetric] = useState("rsrp");
   const [provider, setProvider] = useState("All");
   const [band, setBand] = useState("All");
   const [tech, setTech] = useState("All");
   const [legendFilter, setLegendFilter] = useState(null);
 
-  // --- 1. Filter Data ---
-  const filteredData = useMemo(() => {
+  const filteredPrimaryData = useMemo(() => {
     if (!allLocations) return [];
     return allLocations.filter((loc) => {
       if (tech !== "All") {
@@ -41,24 +42,118 @@ const MapChild = ({
     });
   }, [allLocations, tech, provider, band]);
 
-  // --- 2. Generate Options ---
+  const filteredNeighborData = useMemo(() => {
+    if (!allNeighbors) return [];
+    return allNeighbors.filter((neighbor) => {
+      const lat = parseFloat(
+        neighbor.lat ?? neighbor.latitude ?? neighbor.Lat,
+      );
+      const lng = parseFloat(
+        neighbor.lng ?? neighbor.longitude ?? neighbor.Lng ?? neighbor.lon,
+      );
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+      const normalizedTech = normalizeTechName(
+        neighbor.networkType || neighbor.technology,
+        neighbor.neighbourBand || neighbor.neighborBand || neighbor.primaryBand,
+      );
+      const normalizedProvider = normalizeProviderName(neighbor.provider);
+      const normalizedBand = String(
+        neighbor.neighbourBand ??
+          neighbor.neighborBand ??
+          neighbor.primaryBand ??
+          neighbor.band ??
+          "",
+      );
+
+      if (tech !== "All" && normalizedTech !== tech) return false;
+      if (provider !== "All" && normalizedProvider !== provider) return false;
+      if (band !== "All" && normalizedBand !== band) return false;
+
+      return true;
+    });
+  }, [allNeighbors, tech, provider, band]);
+
+  const secondaryDisplayData = useMemo(() => {
+    return filteredNeighborData.map((neighbor) => {
+      const neighbourRsrp = parseFloat(
+        neighbor.neighbourRsrp ?? neighbor.neighbour_rsrp,
+      );
+      const neighbourRsrq = parseFloat(
+        neighbor.neighbourRsrq ?? neighbor.neighbour_rsrq,
+      );
+      const neighbourSinr = parseFloat(
+        neighbor.neighbourSinr ?? neighbor.neighbour_sinr,
+      );
+
+      return {
+        ...neighbor,
+        lat: parseFloat(neighbor.lat ?? neighbor.latitude ?? neighbor.Lat),
+        lng: parseFloat(
+          neighbor.lng ?? neighbor.longitude ?? neighbor.Lng ?? neighbor.lon,
+        ),
+        provider: normalizeProviderName(neighbor.provider),
+        technology: normalizeTechName(
+          neighbor.networkType || neighbor.technology,
+          neighbor.neighbourBand || neighbor.neighborBand || neighbor.primaryBand,
+        ),
+        band: String(
+          neighbor.neighbourBand ??
+            neighbor.neighborBand ??
+            neighbor.primaryBand ??
+            neighbor.band ??
+            "",
+        ),
+        pci: neighbor.neighbourPci ?? neighbor.neighbour_pci ?? neighbor.primaryPci,
+        rsrp: Number.isFinite(neighbourRsrp) ? neighbourRsrp : null,
+        rsrq: Number.isFinite(neighbourRsrq) ? neighbourRsrq : null,
+        sinr: Number.isFinite(neighbourSinr) ? neighbourSinr : null,
+      };
+    });
+  }, [filteredNeighborData]);
+
+  const displayData = isSecondaryView ? secondaryDisplayData : filteredPrimaryData;
+
   const options = useMemo(() => {
     const techSet = new Set(["All"]);
     const providerSet = new Set(["All"]);
     const bandSet = new Set(["All"]);
 
-    allLocations.forEach((loc) => {
-      if (loc.technology) techSet.add(normalizeTechName(loc.technology));
-      if (loc.provider) providerSet.add(normalizeProviderName(loc.provider));
-      if (loc.band) bandSet.add(String(loc.band));
-    });
+    if (isSecondaryView) {
+      allNeighbors.forEach((neighbor) => {
+        const normalizedTech = normalizeTechName(
+          neighbor.networkType || neighbor.technology,
+          neighbor.neighbourBand ||
+            neighbor.neighborBand ||
+            neighbor.primaryBand,
+        );
+        const normalizedProvider = normalizeProviderName(neighbor.provider);
+        const normalizedBand = String(
+          neighbor.neighbourBand ??
+            neighbor.neighborBand ??
+            neighbor.primaryBand ??
+            neighbor.band ??
+            "",
+        );
+
+        if (normalizedTech) techSet.add(normalizedTech);
+        if (normalizedProvider) providerSet.add(normalizedProvider);
+        if (normalizedBand) bandSet.add(normalizedBand);
+      });
+    } else {
+      allLocations.forEach((loc) => {
+        if (loc.technology) techSet.add(normalizeTechName(loc.technology));
+        if (loc.provider) providerSet.add(normalizeProviderName(loc.provider));
+        if (loc.band) bandSet.add(String(loc.band));
+      });
+    }
 
     return {
       tech: Array.from(techSet).sort(),
       provs: Array.from(providerSet).sort(),
       bands: Array.from(bandSet).sort(),
     };
-  }, [allLocations]);
+  }, [allLocations, allNeighbors, isSecondaryView]);
 
   return (
     <div className="relative w-full h-full flex flex-col border rounded-lg bg-white shadow-sm overflow-hidden">
@@ -66,6 +161,15 @@ const MapChild = ({
       <div className="flex items-center justify-between p-2 bg-gray-50 border-b h-12">
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm text-gray-700">{title}</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+              isSecondaryView
+                ? "bg-purple-100 text-purple-700"
+                : "bg-green-100 text-green-700"
+            }`}
+          >
+            {isSecondaryView ? "Secondary Logs" : "Primary Logs"}
+          </span>
 
           {/* Metric Selector */}
           <select
@@ -138,17 +242,18 @@ const MapChild = ({
       <div className="flex-grow relative">
         <MapwithMultipleCircle
           isLoaded={true}
-          locations={filteredData}
+          locations={isSecondaryView ? [] : filteredPrimaryData}
           selectedMetric={metric}
           thresholds={thresholds}
-          neighborData={allNeighbors}
-          showNeighbors={true}
+          neighborData={isSecondaryView ? filteredNeighborData : []}
+          showNeighbors={isSecondaryView}
           fitToLocations={true}
           showControls={false}
           projectId={projectId}
           enablePolygonFilter={true}
           polygonSource="map"
           showPolygonBoundary={true}
+          showPoints={!isSecondaryView}
           legendFilter={legendFilter}
         />
 
@@ -157,7 +262,7 @@ const MapChild = ({
             <MapLegend
               thresholds={thresholds}
               selectedMetric={metric}
-              logs={filteredData}
+              logs={displayData}
               activeFilter={legendFilter}
               onFilterChange={setLegendFilter}
               className="relative" // Added to fix positioning
@@ -167,7 +272,7 @@ const MapChild = ({
 
         <div>
           <MapChildFooter
-            data={filteredData}
+            data={displayData}
             metric={metric}
             thresholds={thresholds}
           />
@@ -175,13 +280,13 @@ const MapChild = ({
 
         {/* Stats Overlay */}
         <div className="absolute bottom-2 left-2 bg-white/90 p-1 rounded text-[10px] shadow z-10">
-          Pts: {filteredData.length} | Avg:{" "}
-          {filteredData.length > 0
+          Pts: {displayData.length} | Avg:{" "}
+          {displayData.length > 0
             ? (
-                filteredData.reduce(
+                displayData.reduce(
                   (acc, curr) => acc + (parseFloat(curr[metric]) || 0),
                   0,
-                ) / filteredData.length
+                ) / displayData.length
               ).toFixed(1)
             : 0}
         </div>
