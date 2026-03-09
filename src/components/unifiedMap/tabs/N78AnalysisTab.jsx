@@ -1,10 +1,10 @@
 import React, { memo, useMemo, useState } from 'react';
-import { 
+import {
   Radio, Activity, Wifi, Layers, Server, ArrowRightLeft
 } from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  PieChart, Pie, Cell, AreaChart, Area 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell
 } from 'recharts';
 
 // --- Configuration & Helpers ---
@@ -14,7 +14,7 @@ const METRIC_CONFIG = {
   rsrp: {
     label: 'RSRP',
     unit: 'dBm',
-    neighborKey: 'neighbourRsrp', // Matches your hook
+    neighborKey: 'neighbourRsrp',
     primaryKey: 'rsrp',
     min: -140,
     max: -40,
@@ -64,7 +64,6 @@ const METRIC_OPTIONS = Object.entries(METRIC_CONFIG);
 const getColorFromThresholds = (value, thresholds) => {
   if (value == null || isNaN(value)) return "#9CA3AF";
   if (!thresholds?.length) {
-    // Default fallback colors if no thresholds provided
     if (value >= -80) return "#10B981";
     if (value >= -90) return "#34D399";
     if (value >= -100) return "#FBBF24";
@@ -106,7 +105,7 @@ const CustomTooltip = ({ active, payload, label }) => {
         {payload.map((entry, index) => (
           <div key={index} className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.fill || entry.color }} />
-            <span className="text-slate-300 capitalize">{entry.name}:</span>
+            <span className="text-white capitalize">{entry.name}:</span>
             <span className="text-white font-mono">
               {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
             </span>
@@ -116,6 +115,33 @@ const CustomTooltip = ({ active, payload, label }) => {
     );
   }
   return null;
+};
+
+// White/light text style constants for charts
+const AXIS_TICK_STYLE = { fill: '#FFFFFF', fontSize: 11 };
+const AXIS_TICK_STYLE_SM = { fill: '#FFFFFF', fontSize: 10 };
+const TECHNOLOGY_FIELDS = ['technology', 'networkType', 'network', 'Network', 'primary_network'];
+
+const getTechLabel = (records = []) => {
+  const techs = new Set();
+
+  for (const record of records) {
+    if (!record || typeof record !== 'object') continue;
+    let value = null;
+    for (const key of TECHNOLOGY_FIELDS) {
+      if (record[key] != null && String(record[key]).trim() !== '') {
+        value = record[key];
+        break;
+      }
+    }
+    if (!value) continue;
+    techs.add(String(value).trim());
+  }
+
+  const list = [...techs].sort();
+  if (!list.length) return 'Unknown';
+  if (list.length <= 3) return list.join(', ');
+  return `${list.slice(0, 3).join(', ')} +${list.length - 3}`;
 };
 
 const N78AnalysisTab = ({
@@ -131,7 +157,7 @@ const N78AnalysisTab = ({
   // --- Statistics Calculation ---
   const stats = useMemo(() => {
     if (!n78NeighborData?.length) return null;
-    
+
     const config = METRIC_CONFIG[selectedMetric];
 
     const providers = {};
@@ -142,7 +168,7 @@ const N78AnalysisTab = ({
     const distData = config.buckets.map(b => ({
       name: b.label,
       Primary: 0,
-      Neighbor: 0,
+      Secondary: 0,
       min: b.min,
       max: b.max
     }));
@@ -165,7 +191,7 @@ const N78AnalysisTab = ({
       providers[provider] = (providers[provider] || 0) + 1;
       bands[band] = (bands[band] || 0) + 1;
       techs[tech] = (techs[tech] || 0) + 1;
-      incrementBucket(distData, value, "Neighbor");
+      incrementBucket(distData, value, "Secondary");
     }
 
     let primarySum = 0;
@@ -186,10 +212,10 @@ const N78AnalysisTab = ({
     const primaryMedian = getMedian(primaryValues);
 
     const comparisonSummary = [
-        { name: 'Average', Primary: Number(primaryAvg.toFixed(1)), Neighbor: Number(avg.toFixed(1)) },
-        { name: 'Median', Primary: Number(primaryMedian.toFixed(1)), Neighbor: Number(median.toFixed(1)) },
-        { name: 'Min', Primary: Number((primaryValues[0] ?? 0).toFixed(1)), Neighbor: Number((values[0] ?? 0).toFixed(1)) },
-        { name: 'Max', Primary: Number((primaryValues[primaryValues.length - 1] ?? 0).toFixed(1)), Neighbor: Number((values[values.length - 1] ?? 0).toFixed(1)) },
+      { name: 'Average', Primary: Number(primaryAvg.toFixed(1)), Secondary: Number(avg.toFixed(1)) },
+      { name: 'Median', Primary: Number(primaryMedian.toFixed(1)), Secondary: Number(median.toFixed(1)) },
+      { name: 'Min', Primary: Number((primaryValues[0] ?? 0).toFixed(1)), Secondary: Number((values[0] ?? 0).toFixed(1)) },
+      { name: 'Max', Primary: Number((primaryValues[primaryValues.length - 1] ?? 0).toFixed(1)), Secondary: Number((values[values.length - 1] ?? 0).toFixed(1)) },
     ];
 
     const formatChartData = (obj) => Object.entries(obj)
@@ -199,7 +225,7 @@ const N78AnalysisTab = ({
     return {
       total: n78NeighborData.length,
       sessionCount: sessionIds.size,
-      stats: { min: values[0], max: values[values.length-1], avg, median },
+      stats: { min: values[0], max: values[values.length - 1], avg, median },
       chartData: {
         providers: formatChartData(providers),
         bands: formatChartData(bands),
@@ -212,108 +238,111 @@ const N78AnalysisTab = ({
 
   if (n78NeighborLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-12 text-white">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent mb-2" />
-        <span>Loading N78 Data...</span>
+        <span className="text-white">Loading Secondary Data...</span>
       </div>
     );
   }
 
   if (!stats || stats.total === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-        <Radio className="h-16 w-16 mb-4 opacity-50" />
-        <p className="text-lg font-medium">No unlatched  Data Found</p>
+      <div className="flex flex-col items-center justify-center py-12 text-white">
+        <Radio className="h-16 w-16 mb-4 opacity-60 text-white" />
+        <p className="text-lg font-medium text-white">No Unlatched Data Found</p>
       </div>
     );
   }
 
   const config = METRIC_CONFIG[selectedMetric];
+  const primaryTechLabel = getTechLabel(primaryData);
+  const secondaryTechLabel = getTechLabel(n78NeighborData);
+  const primaryLegendName = `Primary (${primaryTechLabel})`;
+  const secondaryLegendName = `Secondary (${secondaryTechLabel})`;
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
-      
+
       {/* 1. Header with Metric Selector */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-800/50 p-3 rounded-lg border border-slate-700 gap-3">
         <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500/20 rounded-lg">
-                <Radio className="h-6 w-6 text-purple-400" />
-            </div>
-            <div>
-                <h3 className="font-bold text-white">Unlateched</h3>
-                <p className="text-xs text-slate-400">{stats.total} samples | {stats.sessionCount} sessions</p>
-            </div>
+          <div className="p-2 bg-purple-500/20 rounded-lg">
+            <Radio className="h-6 w-6 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="font-bold text-white">Unlatched</h3>
+            <p className="text-xs text-slate-300">{stats.total} samples | {stats.sessionCount} sessions</p>
+          </div>
         </div>
 
         {/* Metric Selector Buttons */}
         <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
-            {METRIC_OPTIONS.map(([key, conf]) => (
-                <button
-                    key={key}
-                    onClick={() => setSelectedMetric(key)}
-                    className={`
-                        px-3 py-1.5 text-xs font-medium rounded-md transition-all
-                        ${selectedMetric === key 
-                            ? 'bg-blue-600 text-white shadow-lg' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'}
-                    `}
-                >
-                    {conf.label}
-                </button>
-            ))}
+          {METRIC_OPTIONS.map(([key, conf]) => (
+            <button
+              key={key}
+              onClick={() => setSelectedMetric(key)}
+              className={`
+                px-3 py-1.5 text-xs font-medium rounded-md transition-all
+                ${selectedMetric === key
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'}
+              `}
+            >
+              {conf.label}
+            </button>
+          ))}
         </div>
 
         <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-400">{config.label} Avg</div>
-            <div className="text-lg font-bold" style={{ color: selectedMetric === 'rsrp' ? getColorFromThresholds(stats.stats.avg, rsrpThresholds) : '#fff' }}>
-                {stats.stats.avg?.toFixed(1) ?? '--'} <span className="text-xs text-slate-500">{config.unit}</span>
-            </div>
+          <div className="text-xs text-slate-300">{config.label} Avg</div>
+          <div className="text-lg font-bold" style={{ color: selectedMetric === 'rsrp' ? getColorFromThresholds(stats.stats.avg, rsrpThresholds) : '#fff' }}>
+            {stats.stats.avg?.toFixed(1) ?? '--'} <span className="text-xs text-slate-300">{config.unit}</span>
+          </div>
         </div>
       </div>
 
       {/* 2. Comparative Analysis Section */}
-      <div className="grid grid-cols-2 md:grid-cols-1 gap-6 ">
-        
+      <div className="grid grid-cols-2 md:grid-cols-1 gap-6">
+
         {/* Metric Comparison (Bar Chart) */}
         <div className="bg-slate-800/50 p-10 rounded-lg border border-slate-700 h-[300px]">
-           <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4 text-cyan-400" /> Primary vs Neighbor ({config.label})
+          <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <ArrowRightLeft className="h-4 w-4 text-cyan-400" /> Primary vs Secondary ({config.label})
           </h4>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stats.chartData.summary} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={true} vertical={false}/>
-              <XAxis type="number" tick={{fill: '#94a3b8', fontSize: 10}} />
-              <YAxis dataKey="name" type="category" tick={{fill: '#94a3b8', fontSize: 11}} width={50} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={true} vertical={false} />
+              <XAxis type="number" tick={AXIS_TICK_STYLE_SM} />
+              <YAxis dataKey="name" type="category" tick={AXIS_TICK_STYLE} width={50} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey="Primary" fill="#3B82F6" name="Primary" radius={[0, 4, 4, 0]} barSize={20} />
-              <Bar dataKey="Neighbor" fill="#8B5CF6" name="Secondary" radius={[0, 4, 4, 0]} barSize={20} />
+              <Legend formatter={(value) => <span style={{ color: '#FFFFFF' }}>{value}</span>} />
+              <Bar dataKey="Primary" fill="#3B82F6" name={primaryLegendName} radius={[0, 4, 4, 0]} barSize={20} />
+              <Bar dataKey="Secondary" fill="#8B5CF6" name={secondaryLegendName} radius={[0, 4, 4, 0]} barSize={20} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-    
         <div className="bg-slate-800/50 p-10 rounded-lg border border-slate-700 h-[300px]">
-           <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <Activity className="h-4 w-4 text-pink-400" /> {config.label} Distribution
           </h4>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={stats.chartData.distribution}>
+            <BarChart data={stats.chartData.distribution}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="name" tick={{fill: '#94a3b8', fontSize: 10}} interval={0} />
-              <YAxis tick={{fill: '#94a3b8', fontSize: 10}} />
+              <XAxis dataKey="name" tick={AXIS_TICK_STYLE_SM} interval={0} />
+              <YAxis tick={AXIS_TICK_STYLE_SM} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area type="monotone" dataKey="Primary" stackId="1" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.3} />
-              <Area type="monotone" dataKey="Neighbor" stackId="2" stroke="#8B5CF6" fill="#8B5CF6" fillOpacity={0.3} />
-            </AreaChart>
+              <Legend formatter={(value) => <span style={{ color: '#FFFFFF' }}>{value}</span>} />
+              <Bar dataKey="Primary" fill="#3B82F6" name={primaryLegendName} radius={[4, 4, 0, 0]} barSize={20} />
+              <Bar dataKey="Secondary" fill="#8B5CF6" name={secondaryLegendName} radius={[4, 4, 0, 0]} barSize={20} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       {/* 3. Detailed Breakdown Charts (Context) */}
       <div className={`grid ${expanded ? "grid-cols-2" : "grid-cols-1 md:grid-cols-1"} gap-4`}>
-        
+
         {/* Provider Distribution */}
         <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-[250px]">
           <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
@@ -335,21 +364,27 @@ const N78AnalysisTab = ({
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
-              <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{fontSize: '10px'}}/>
+              <Legend
+                layout="vertical"
+                verticalAlign="middle"
+                align="right"
+                wrapperStyle={{ fontSize: '10px' }}
+                formatter={(value) => <span style={{ color: '#FFFFFF' }}>{value}</span>}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
         {/* Band Distribution */}
         <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-[250px]">
-           <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+          <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
             <Layers className="h-4 w-4 text-purple-400" /> Bands
           </h4>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stats.chartData.bands} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
               <XAxis type="number" hide />
-              <YAxis dataKey="name" type="category" width={60} tick={{fill: '#94a3b8', fontSize: 10}} />
+              <YAxis dataKey="name" type="category" width={60} tick={AXIS_TICK_STYLE_SM} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="value" fill="#8B5CF6" radius={[0, 4, 4, 0]} barSize={15} />
             </BarChart>
@@ -358,7 +393,7 @@ const N78AnalysisTab = ({
 
         {/* Tech Distribution */}
         <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-[250px]">
-           <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+          <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
             <Server className="h-4 w-4 text-orange-400" /> Technology
           </h4>
           <ResponsiveContainer width="100%" height="100%">
@@ -370,6 +405,8 @@ const N78AnalysisTab = ({
                 outerRadius={60}
                 dataKey="value"
                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                labelLine={{ stroke: '#FFFFFF' }}
+                style={{ fontSize: '11px', fill: '#858585' }}
               >
                 {stats.chartData.techs.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />

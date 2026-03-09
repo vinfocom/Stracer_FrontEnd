@@ -242,6 +242,7 @@ function DrawingToolsLayerComponent({
   map,
   enabled,
   shapeMode, 
+  showDrawingControl = false,
   logs,
   sessions,
   selectedMetric,
@@ -258,6 +259,7 @@ function DrawingToolsLayerComponent({
   const shapesRef = useRef([]);
   const collectedDrawingRef = useRef([]);
   const lastClearSignalRef = useRef(clearSignal);
+  const missingLibraryNotifiedRef = useRef(false);
   const callbacksRef = useRef({ onSummary, onDrawingsChange, onUIChange });
 
   useEffect(() => {
@@ -320,7 +322,15 @@ function DrawingToolsLayerComponent({
 
   // ✅ Initialize Manager with drawingControl: false
   useEffect(() => {
-    if (!map || !window.google?.maps?.drawing) return;
+    if (!map) return;
+    if (!window.google?.maps?.drawing) {
+      if (enabled && !missingLibraryNotifiedRef.current) {
+        missingLibraryNotifiedRef.current = true;
+        toast.error("Google Drawing library is not loaded.");
+      }
+      return;
+    }
+    missingLibraryNotifiedRef.current = false;
     
     if (managerRef.current) {
       managerRef.current.setMap(null);
@@ -331,7 +341,11 @@ function DrawingToolsLayerComponent({
 
     const dm = new window.google.maps.drawing.DrawingManager({
       drawingMode: null, // Start with nothing
-      drawingControl: false, // 🛑 HIDE NATIVE CONTROLS
+      drawingControl: Boolean(showDrawingControl),
+      drawingControlOptions: {
+        position: window.google.maps.ControlPosition.TOP_CENTER,
+        drawingModes: [window.google.maps.drawing.OverlayType.POLYGON],
+      },
       polygonOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.08 },
       rectangleOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.06 },
       circleOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.06 },
@@ -397,7 +411,7 @@ function DrawingToolsLayerComponent({
       managerRef.current?.setMap(null);
       managerRef.current = null;
     };
-  }, [map, enabled, reAnalyzeShape]);
+  }, [map, enabled, reAnalyzeShape, showDrawingControl]);
 
   // Keep DrawingManager mode in sync when tool or enabled state changes.
   useEffect(() => {
@@ -433,3 +447,5 @@ function DrawingToolsLayerComponent({
 }
 
 export default memo(DrawingToolsLayerComponent);
+
+

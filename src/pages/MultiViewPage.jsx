@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { Trash2, Map as MapIcon, ChevronRight } from "lucide-react";
@@ -15,6 +15,13 @@ import Header from "@/components/multiMap/Header";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
+
+const toCoordinateKey = (latValue, lngValue) => {
+  const lat = Number(latValue);
+  const lng = Number(lngValue);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return `${lat.toFixed(6)}|${lng.toFixed(6)}`;
+};
 
 const MultiViewPage = () => {
   const [searchParams] = useSearchParams();
@@ -50,11 +57,21 @@ const MultiViewPage = () => {
   const locations = hasPassedLocations ? passedLocations : fetchedLocations;
   const neighborData = hasPassedNeighbors ? passedNeighbors : fetchedNeighbors;
   const thresholds = passedThresholds || hookThresholds;
+  const [metchOnly, setMetchOnly] = useState(false);
+  const [ui, setUi] = useState({
+    drawEnabled: false,
+    shapeMode: null,
+    drawPixelateRect: false,
+    drawCellSizeMeters: 100,
+    drawClearSignal: 0,
+    colorizeCells: true,
+  });
+  const [polygonDrawingsByMap, setPolygonDrawingsByMap] = useState({});
 
   // --- Map State Management ---
   const [maps, setMaps] = useState([
-    { id: 1, title: "Primary Map", role: "primary" },
-    { id: 2, title: "Secondary Map", role: "secondary" },
+    { id: 1, title: "Map 1", role: "primary" },
+    { id: 2, title: "Map 2", role: "secondary" },
   ]);
 
   // Controls which map is displayed in the first slot
@@ -63,12 +80,24 @@ const MultiViewPage = () => {
   const addMap = () => {
     const newId = maps.length > 0 ? Math.max(...maps.map((m) => m.id)) + 1 : 1;
     const role = newId % 2 === 0 ? "secondary" : "primary";
-    const titlePrefix = role === "secondary" ? "Secondary Map" : "Primary Map";
-    const newMaps = [...maps, { id: newId, title: `${titlePrefix} ${newId}`, role }];
+    const newMaps = [...maps, { id: newId, title: `Map ${newId}`, role }];
     setMaps(newMaps);
     if (newMaps.length > 2) {
       setActiveStartIndex(newMaps.length - 2); 
     }
+  };
+
+  const setMapRole = (id, role, e) => {
+    if (e) e.stopPropagation();
+    setMaps((prevMaps) =>
+      prevMaps.map((mapInstance) => {
+        if (mapInstance.id !== id) return mapInstance;
+        return {
+          ...mapInstance,
+          role,
+        };
+      }),
+    );
   };
 
   const removeMap = (id, e) => {
@@ -85,6 +114,94 @@ const MultiViewPage = () => {
   const visibleMaps = useMemo(() => {
     return maps.slice(activeStartIndex, activeStartIndex + 2);
   }, [maps, activeStartIndex]);
+
+  const normalizedNeighbors = useMemo(() => {
+    if (!Array.isArray(neighborData)) return [];
+    return neighborData.filter((neighbor) => {
+      const lat = Number(neighbor?.lat ?? neighbor?.latitude ?? neighbor?.Lat);
+      const lng = Number(
+        neighbor?.lng ?? neighbor?.longitude ?? neighbor?.Lng ?? neighbor?.lon,
+      );
+      return Number.isFinite(lat) && Number.isFinite(lng);
+    });
+  }, [neighborData]);
+
+  const metchData = useMemo(() => {
+    if (!metchOnly) {
+      return {
+        locations,
+        neighbors: normalizedNeighbors,
+      };
+    }
+
+    const primaryCoordinateKeys = new Set(
+      (locations || [])
+        .map((loc) => toCoordinateKey(loc?.lat ?? loc?.latitude, loc?.lng ?? loc?.longitude ?? loc?.lon))
+        .filter(Boolean),
+    );
+    const secondaryCoordinateKeys = new Set(
+      normalizedNeighbors
+        .map((neighbor) =>
+          toCoordinateKey(
+            neighbor?.lat ?? neighbor?.latitude ?? neighbor?.Lat,
+            neighbor?.lng ?? neighbor?.longitude ?? neighbor?.Lng ?? neighbor?.lon,
+          ),
+        )
+        .filter(Boolean),
+    );
+
+    const commonKeys = new Set();
+    primaryCoordinateKeys.forEach((key) => {
+      if (secondaryCoordinateKeys.has(key)) commonKeys.add(key);
+    });
+
+    return {
+      locations: (locations || []).filter((loc) => {
+        const key = toCoordinateKey(
+          loc?.lat ?? loc?.latitude,
+          loc?.lng ?? loc?.longitude ?? loc?.lon,
+        );
+        return key && commonKeys.has(key);
+      }),
+      neighbors: normalizedNeighbors.filter((neighbor) => {
+        const key = toCoordinateKey(
+          neighbor?.lat ?? neighbor?.latitude ?? neighbor?.Lat,
+          neighbor?.lng ?? neighbor?.longitude ?? neighbor?.Lng ?? neighbor?.lon,
+        );
+        return key && commonKeys.has(key);
+      }),
+    };
+  }, [locations, normalizedNeighbors, metchOnly]);
+
+  const handleMapDrawingsChange = useCallback((mapId, drawings = []) => {
+    const polygons = (Array.isArray(drawings) ? drawings : [])
+      .filter((d) => d?.type === "polygon" && Array.isArray(d?.geometry?.polygon))
+      .map((d, idx) => {
+        const path = d.geometry.polygon
+          .map((pt) => ({ lat: Number(pt?.lat), lng: Number(pt?.lng) }))
+          .filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng));
+        if (path.length < 3) return null;
+        return {
+          id: `map-${mapId}-${d.id ?? idx}`,
+          path,
+          bbox: d?.geometry?.bounds || null,
+        };
+      })
+      .filter(Boolean);
+
+    setPolygonDrawingsByMap((prev) => ({
+      ...prev,
+      [mapId]: polygons,
+    }));
+  }, []);
+
+  const sharedPolygons = useMemo(() => {
+    return Object.values(polygonDrawingsByMap).flat();
+  }, [polygonDrawingsByMap]);
+
+  const handleDrawingUiChange = useCallback((nextUi) => {
+    setUi((prev) => ({ ...prev, ...(nextUi || {}) }));
+  }, []);
 
   const isLoading =
     (shouldFetch && (samplesLoading || neighborsLoading)) || !isLoaded;
@@ -103,9 +220,13 @@ const MultiViewPage = () => {
         projectId={projectId}
         sessionIds={sessionIds} // Pass sessionIds here
         addMap={addMap} 
-        locations={locations}
-        neighborData={neighborData}
+        locations={metchData.locations}
+        neighborData={metchData.neighbors}
         thresholds={thresholds}
+        metchOnly={metchOnly}
+        onMetchOnlyChange={setMetchOnly}
+        ui={ui}
+        onUIChange={handleDrawingUiChange}
       />
 
       {/* Main Content Area with Sidebar */}
@@ -147,10 +268,16 @@ const MultiViewPage = () => {
                           className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
                             mapInstance.role === "secondary"
                               ? "bg-purple-100 text-purple-700"
-                              : "bg-green-100 text-green-700"
+                              : mapInstance.role === "all"
+                                ? "bg-sky-100 text-sky-700"
+                                : "bg-green-100 text-green-700"
                           }`}
                         >
-                          {mapInstance.role === "secondary" ? "Secondary" : "Primary"}
+                          {mapInstance.role === "secondary"
+                            ? "Secondary"
+                            : mapInstance.role === "all"
+                              ? "All"
+                              : "Primary"}
                         </span>
                         <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-1.5 rounded">
                           #{index + 1}
@@ -162,15 +289,17 @@ const MultiViewPage = () => {
                       <div className="text-[10px] text-gray-500">
                         {isActive ? (isPrimary ? "View (Left)" : "View (Right)") : "Hidden"}
                       </div>
-                      
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => removeMap(mapInstance.id, e)}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
+
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => removeMap(mapInstance.id, e)}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
                     </div>
                   </Card>
                 );
@@ -193,12 +322,22 @@ const MultiViewPage = () => {
                   id={mapInstance.id}
                   title={mapInstance.title}
                   projectId={projectId}
-                  allLocations={locations}
-                  allNeighbors={neighborData}
+                  allLocations={metchData.locations}
+                  allNeighbors={metchData.neighbors}
                   mapRole={mapInstance.role}
                   thresholds={thresholds}
                   project={project}
                   onRemove={(id) => removeMap(id)}
+                  onRoleChange={(id, role) => setMapRole(id, role)}
+                  sharedPolygons={sharedPolygons}
+                  drawEnabled={Boolean(ui.drawEnabled)}
+                  drawShapeMode={ui.shapeMode || "polygon"}
+                  drawClearSignal={ui.drawClearSignal || 0}
+                  onDrawingComplete={() => {}}
+                  onDrawingsChange={(drawings) =>
+                    handleMapDrawingsChange(mapInstance.id, drawings)
+                  }
+                  onDrawingUiChange={handleDrawingUiChange}
                 />
               ))
             ) : (

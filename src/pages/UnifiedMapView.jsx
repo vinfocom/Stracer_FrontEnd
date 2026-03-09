@@ -1160,7 +1160,8 @@ const UnifiedMapView = () => {
   );
   const siteLayerPolygonFiltering = Boolean(enableSiteToggle && rawFilteringPolygons.length > 0);
 
-  const shouldFetchSamples = isSampleMode && sessionIds.length > 0;
+  const shouldFetchSamples =
+    isSampleMode && sessionIds.length > 0 && !hasPassedLocations;
 
   const {
     locations: fetchedSamples,

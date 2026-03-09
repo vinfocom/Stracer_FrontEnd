@@ -5,6 +5,7 @@ import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
 import MapwithMultipleCircle from "../unifiedMap/MapwithMultipleCircle";
 import MapLegend from "@/components/map/MapLegend";
 import MapChildFooter from "./MapChildFooter";
+import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 
 const MapChild = ({
   id,
@@ -13,15 +14,25 @@ const MapChild = ({
   allLocations = [],
   mapRole = "primary",
   onRemove,
+  onRoleChange,
   thresholds,
   projectId,
+  sharedPolygons = [],
+  drawEnabled = false,
+  drawShapeMode = "polygon",
+  drawClearSignal = 0,
+  onDrawingComplete,
+  onDrawingsChange,
+  onDrawingUiChange,
 }) => {
   const isSecondaryView = mapRole === "secondary";
+  const isAllView = mapRole === "all";
   const [metric, setMetric] = useState("rsrp");
   const [provider, setProvider] = useState("All");
   const [band, setBand] = useState("All");
   const [tech, setTech] = useState("All");
   const [legendFilter, setLegendFilter] = useState(null);
+  const [mapRef, setMapRef] = useState(null);
 
   const filteredPrimaryData = useMemo(() => {
     if (!allLocations) return [];
@@ -112,7 +123,11 @@ const MapChild = ({
     });
   }, [filteredNeighborData]);
 
-  const displayData = isSecondaryView ? secondaryDisplayData : filteredPrimaryData;
+  const displayData = isAllView
+    ? [...filteredPrimaryData, ...secondaryDisplayData]
+    : isSecondaryView
+      ? secondaryDisplayData
+      : filteredPrimaryData;
 
   const options = useMemo(() => {
     const techSet = new Set(["All"]);
@@ -120,6 +135,32 @@ const MapChild = ({
     const bandSet = new Set(["All"]);
 
     if (isSecondaryView) {
+      allNeighbors.forEach((neighbor) => {
+        const normalizedTech = normalizeTechName(
+          neighbor.networkType || neighbor.technology,
+          neighbor.neighbourBand ||
+            neighbor.neighborBand ||
+            neighbor.primaryBand,
+        );
+        const normalizedProvider = normalizeProviderName(neighbor.provider);
+        const normalizedBand = String(
+          neighbor.neighbourBand ??
+            neighbor.neighborBand ??
+            neighbor.primaryBand ??
+            neighbor.band ??
+            "",
+        );
+
+        if (normalizedTech) techSet.add(normalizedTech);
+        if (normalizedProvider) providerSet.add(normalizedProvider);
+        if (normalizedBand) bandSet.add(normalizedBand);
+      });
+    } else if (isAllView) {
+      allLocations.forEach((loc) => {
+        if (loc.technology) techSet.add(normalizeTechName(loc.technology));
+        if (loc.provider) providerSet.add(normalizeProviderName(loc.provider));
+        if (loc.band) bandSet.add(String(loc.band));
+      });
       allNeighbors.forEach((neighbor) => {
         const normalizedTech = normalizeTechName(
           neighbor.networkType || neighbor.technology,
@@ -153,7 +194,7 @@ const MapChild = ({
       provs: Array.from(providerSet).sort(),
       bands: Array.from(bandSet).sort(),
     };
-  }, [allLocations, allNeighbors, isSecondaryView]);
+  }, [allLocations, allNeighbors, isSecondaryView, isAllView]);
 
   return (
     <div className="relative w-full h-full flex flex-col border rounded-lg bg-white shadow-sm overflow-hidden">
@@ -165,11 +206,26 @@ const MapChild = ({
             className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
               isSecondaryView
                 ? "bg-purple-100 text-purple-700"
-                : "bg-green-100 text-green-700"
+                : isAllView
+                  ? "bg-sky-100 text-sky-700"
+                  : "bg-green-100 text-green-700"
             }`}
           >
-            {isSecondaryView ? "Secondary Logs" : "Primary Logs"}
+            {isSecondaryView
+              ? "Secondary Logs"
+              : isAllView
+                ? "All Logs"
+                : "Primary Logs"}
           </span>
+          <select
+            value={mapRole}
+            onChange={(e) => onRoleChange?.(id, e.target.value)}
+            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 bg-white"
+          >
+            <option value="all">All</option>
+            <option value="primary">Primary</option>
+            <option value="secondary">Secondary</option>
+          </select>
 
           {/* Metric Selector */}
           <select
@@ -245,17 +301,38 @@ const MapChild = ({
           locations={isSecondaryView ? [] : filteredPrimaryData}
           selectedMetric={metric}
           thresholds={thresholds}
-          neighborData={isSecondaryView ? filteredNeighborData : []}
-          showNeighbors={isSecondaryView}
+          neighborData={isSecondaryView || isAllView ? filteredNeighborData : []}
+          showNeighbors={isSecondaryView || isAllView}
           fitToLocations={true}
           showControls={false}
           projectId={projectId}
           enablePolygonFilter={true}
           polygonSource="map"
           showPolygonBoundary={true}
+          filterPolygons={sharedPolygons.length > 0 ? sharedPolygons : null}
+          filterInsidePolygons={sharedPolygons.length > 0}
           showPoints={!isSecondaryView}
           legendFilter={legendFilter}
-        />
+          onLoad={(map) => {
+            // Keep a local map reference for drawing tools.
+            setMapRef(map);
+          }}
+        >
+        <DrawingToolsLayer
+          map={mapRef}
+          enabled={drawEnabled}
+          shapeMode={drawShapeMode}
+          showDrawingControl={false}
+          logs={displayData}
+            sessions={[]}
+            selectedMetric={metric}
+            thresholds={thresholds}
+            clearSignal={drawClearSignal}
+            onSummary={onDrawingComplete}
+            onUIChange={onDrawingUiChange}
+            onDrawingsChange={onDrawingsChange}
+          />
+        </MapwithMultipleCircle>
 
         <div className="absolute top-14 right-2 z-20 pointer-events-auto">
           <div className="scale-90 origin-top-right">

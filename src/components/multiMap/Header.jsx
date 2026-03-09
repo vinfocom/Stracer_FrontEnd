@@ -4,9 +4,10 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { LogOut, Plus, BarChart3 } from "lucide-react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { mapViewApi } from "@/api/apiEndpoints";
 import MultiAnalytics from "./MultiAnalytics";
+import DrawingControlsPanel from "@/components/map/layout/DrawingControlsPanel";
 
 export default function Header({
   projectId,
@@ -16,9 +17,12 @@ export default function Header({
   locations,
   neighborData,
   thresholds,
+  metchOnly = false,
+  onMetchOnlyChange,
+  ui,
+  onUIChange,
 }) {
   const { logout } = useAuth();
-  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -59,6 +63,7 @@ export default function Header({
         neighborData,
         thresholds,
         project: displayProject,
+        sessionIds,
       },
     });
   };
@@ -116,6 +121,17 @@ export default function Header({
         >
           <Plus size={16} /> Add View
         </button>
+
+        <DrawingControlsPanel position="relative" onUIChange={onUIChange} ui={ui} />
+
+        <label className="flex items-center gap-2 text-xs text-white ml-2">
+          <input
+            type="checkbox"
+            checked={metchOnly}
+            onChange={(e) => onMetchOnlyChange?.(e.target.checked)}
+          />
+          Metch
+        </label>
 
         <Button
           onClick={logout}

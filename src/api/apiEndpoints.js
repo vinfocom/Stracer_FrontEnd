@@ -778,7 +778,7 @@ export const mapViewApi = {
         '/api/MapView/GetN78Neighbours',
         {
           params: {
-            session_Ids: idsParam
+            session_ids: idsParam
           },
           signal,
           dedupe: false
