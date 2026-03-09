@@ -837,7 +837,7 @@ export default function UnifiedDetailLogs({
       tabs = tabs.filter(tab => tab.id !== 'handover');
     }
     if (showN78Neighbors && n78NeighborData?.length > 0) {
-      tabs.push({ id: "n78", label: "Unlatched Analysis" });
+      tabs.push({ id: "n78", label: "Anchor" });
     }
     return tabs;
   }, [techHandOver, showN78Neighbors, n78NeighborData]);

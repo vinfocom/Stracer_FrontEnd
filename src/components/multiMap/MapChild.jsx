@@ -7,6 +7,66 @@ import MapLegend from "@/components/map/MapLegend";
 import MapChildFooter from "./MapChildFooter";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 
+
+const EMPTY_SESSIONS = [];
+const toPoint = (item) => {
+  const lat = Number(item?.lat ?? item?.latitude ?? item?.Lat);
+  const lng = Number(item?.lng ?? item?.longitude ?? item?.Lng ?? item?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+};
+
+const getPathBounds = (path = []) => {
+  if (!Array.isArray(path) || path.length < 3) return null;
+  let south = Infinity;
+  let north = -Infinity;
+  let west = Infinity;
+  let east = -Infinity;
+  path.forEach((pt) => {
+    const lat = Number(pt?.lat);
+    const lng = Number(pt?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (lat < south) south = lat;
+    if (lat > north) north = lat;
+    if (lng < west) west = lng;
+    if (lng > east) east = lng;
+  });
+  if (![south, north, west, east].every(Number.isFinite)) return null;
+  return { south, north, west, east };
+};
+
+const isPointInsidePolygon = (point, path = [], bounds = null) => {
+  if (!point || !Array.isArray(path) || path.length < 3) return false;
+  if (
+    bounds &&
+    (point.lat < bounds.south ||
+      point.lat > bounds.north ||
+      point.lng < bounds.west ||
+      point.lng > bounds.east)
+  ) {
+    return false;
+  }
+
+  let inside = false;
+  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+    const yi = Number(path[i]?.lat);
+    const xi = Number(path[i]?.lng);
+    const yj = Number(path[j]?.lat);
+    const xj = Number(path[j]?.lng);
+    if (
+      ![yi, xi, yj, xj].every(Number.isFinite) ||
+      yi === yj
+    ) {
+      continue;
+    }
+    const intersect =
+      yi > point.lat !== yj > point.lat &&
+      point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 const MapChild = ({
   id,
   title,
@@ -24,6 +84,7 @@ const MapChild = ({
   onDrawingComplete,
   onDrawingsChange,
   onDrawingUiChange,
+  onActivateForDrawing,
 }) => {
   const isSecondaryView = mapRole === "secondary";
   const isAllView = mapRole === "all";
@@ -85,8 +146,46 @@ const MapChild = ({
     });
   }, [allNeighbors, tech, provider, band]);
 
+  const normalizedPolygons = useMemo(() => {
+    if (!Array.isArray(sharedPolygons) || sharedPolygons.length === 0) return [];
+    return sharedPolygons
+      .map((polygon) => {
+        const path = Array.isArray(polygon?.path)
+          ? polygon.path
+              .map((pt) => ({ lat: Number(pt?.lat), lng: Number(pt?.lng) }))
+              .filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng))
+          : [];
+        if (path.length < 3) return null;
+        const bounds = polygon?.bbox || getPathBounds(path);
+        return { path, bounds };
+      })
+      .filter(Boolean);
+  }, [sharedPolygons]);
+
+  const primaryDataForRender = useMemo(() => {
+    if (normalizedPolygons.length === 0) return filteredPrimaryData;
+    return filteredPrimaryData.filter((item) => {
+      const point = toPoint(item);
+      if (!point) return false;
+      return normalizedPolygons.some((poly) =>
+        isPointInsidePolygon(point, poly.path, poly.bounds),
+      );
+    });
+  }, [filteredPrimaryData, normalizedPolygons]);
+
+  const neighborDataForRender = useMemo(() => {
+    if (normalizedPolygons.length === 0) return filteredNeighborData;
+    return filteredNeighborData.filter((item) => {
+      const point = toPoint(item);
+      if (!point) return false;
+      return normalizedPolygons.some((poly) =>
+        isPointInsidePolygon(point, poly.path, poly.bounds),
+      );
+    });
+  }, [filteredNeighborData, normalizedPolygons]);
+
   const secondaryDisplayData = useMemo(() => {
-    return filteredNeighborData.map((neighbor) => {
+    return neighborDataForRender.map((neighbor) => {
       const neighbourRsrp = parseFloat(
         neighbor.neighbourRsrp ?? neighbor.neighbour_rsrp,
       );
@@ -121,13 +220,15 @@ const MapChild = ({
         sinr: Number.isFinite(neighbourSinr) ? neighbourSinr : null,
       };
     });
-  }, [filteredNeighborData]);
+  }, [neighborDataForRender]);
 
   const displayData = isAllView
-    ? [...filteredPrimaryData, ...secondaryDisplayData]
+    ? [...primaryDataForRender, ...secondaryDisplayData]
     : isSecondaryView
       ? secondaryDisplayData
-      : filteredPrimaryData;
+      : primaryDataForRender;
+
+  const footerData = displayData;
 
   const options = useMemo(() => {
     const techSet = new Set(["All"]);
@@ -142,7 +243,7 @@ const MapChild = ({
             neighbor.neighborBand ||
             neighbor.primaryBand,
         );
-        const normalizedProvider = normalizeProviderName(neighbor.provider);
+         const normalizedProvider = normalizeProviderName(neighbor.provider);
         const normalizedBand = String(
           neighbor.neighbourBand ??
             neighbor.neighborBand ??
@@ -295,21 +396,27 @@ const MapChild = ({
       </div>
 
       {/* --- The Map --- */}
-      <div className="flex-grow relative">
+      <div
+        className="flex-grow relative"
+        onMouseDown={() => onActivateForDrawing?.(id)}
+      >
         <MapwithMultipleCircle
           isLoaded={true}
-          locations={isSecondaryView ? [] : filteredPrimaryData}
+          locations={isSecondaryView ? [] : primaryDataForRender}
           selectedMetric={metric}
           thresholds={thresholds}
-          neighborData={isSecondaryView || isAllView ? filteredNeighborData : []}
+          neighborData={isSecondaryView || isAllView ? neighborDataForRender : []}
           showNeighbors={isSecondaryView || isAllView}
+          neighborSquareSize={30}
+          neighborMinSquareSize={8}
+          disableDeckInteractions={drawEnabled && Boolean(drawShapeMode)}
           fitToLocations={true}
           showControls={false}
           projectId={projectId}
           enablePolygonFilter={true}
           polygonSource="map"
           showPolygonBoundary={true}
-          filterPolygons={sharedPolygons.length > 0 ? sharedPolygons : null}
+          filterPolygons={sharedPolygons}
           filterInsidePolygons={sharedPolygons.length > 0}
           showPoints={!isSecondaryView}
           legendFilter={legendFilter}
@@ -318,13 +425,14 @@ const MapChild = ({
             setMapRef(map);
           }}
         >
-        <DrawingToolsLayer
-          map={mapRef}
-          enabled={drawEnabled}
-          shapeMode={drawShapeMode}
-          showDrawingControl={false}
-          logs={displayData}
-            sessions={[]}
+        {mapRef && (
+          <DrawingToolsLayer
+            map={mapRef}
+            enabled={drawEnabled}
+            shapeMode={drawShapeMode}
+            showDrawingControl={false}
+            logs={displayData}
+            sessions={EMPTY_SESSIONS}
             selectedMetric={metric}
             thresholds={thresholds}
             clearSignal={drawClearSignal}
@@ -332,6 +440,7 @@ const MapChild = ({
             onUIChange={onDrawingUiChange}
             onDrawingsChange={onDrawingsChange}
           />
+        )}
         </MapwithMultipleCircle>
 
         <div className="absolute top-14 right-2 z-20 pointer-events-auto">
@@ -339,7 +448,7 @@ const MapChild = ({
             <MapLegend
               thresholds={thresholds}
               selectedMetric={metric}
-              logs={displayData}
+              logs={footerData}
               activeFilter={legendFilter}
               onFilterChange={setLegendFilter}
               className="relative" // Added to fix positioning
@@ -349,7 +458,7 @@ const MapChild = ({
 
         <div>
           <MapChildFooter
-            data={displayData}
+            data={footerData}
             metric={metric}
             thresholds={thresholds}
           />
@@ -357,13 +466,13 @@ const MapChild = ({
 
         {/* Stats Overlay */}
         <div className="absolute bottom-2 left-2 bg-white/90 p-1 rounded text-[10px] shadow z-10">
-          Pts: {displayData.length} | Avg:{" "}
-          {displayData.length > 0
+          Pts: {footerData.length} | Avg:{" "}
+          {footerData.length > 0
             ? (
-                displayData.reduce(
+                footerData.reduce(
                   (acc, curr) => acc + (parseFloat(curr[metric]) || 0),
                   0,
-                ) / displayData.length
+                ) / footerData.length
               ).toFixed(1)
             : 0}
         </div>

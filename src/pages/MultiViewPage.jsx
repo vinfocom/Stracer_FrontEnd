@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { Trash2, Map as MapIcon, ChevronRight } from "lucide-react";
@@ -21,6 +21,36 @@ const toCoordinateKey = (latValue, lngValue) => {
   const lng = Number(lngValue);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   return `${lat.toFixed(6)}|${lng.toFixed(6)}`;
+};
+
+const arePolygonsEqual = (a = [], b = []) => {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+
+  for (let i = 0; i < a.length; i += 1) {
+    const pa = a[i];
+    const pb = b[i];
+    if (!pa || !pb || pa.id !== pb.id) return false;
+    const pathA = Array.isArray(pa.path) ? pa.path : [];
+    const pathB = Array.isArray(pb.path) ? pb.path : [];
+    if (pathA.length !== pathB.length) return false;
+    for (let j = 0; j < pathA.length; j += 1) {
+      const aLat = Number(pathA[j]?.lat);
+      const aLng = Number(pathA[j]?.lng);
+      const bLat = Number(pathB[j]?.lat);
+      const bLng = Number(pathB[j]?.lng);
+      if (
+        !Number.isFinite(aLat) ||
+        !Number.isFinite(aLng) ||
+        !Number.isFinite(bLat) ||
+        !Number.isFinite(bLng)
+      ) {
+        return false;
+      }
+      if (Math.abs(aLat - bLat) > 1e-9 || Math.abs(aLng - bLng) > 1e-9) return false;
+    }
+  }
+  return true;
 };
 
 const MultiViewPage = () => {
@@ -66,13 +96,14 @@ const MultiViewPage = () => {
     drawClearSignal: 0,
     colorizeCells: true,
   });
-  const [polygonDrawingsByMap, setPolygonDrawingsByMap] = useState({});
+  const [sharedPolygons, setSharedPolygons] = useState([]);
 
   // --- Map State Management ---
   const [maps, setMaps] = useState([
     { id: 1, title: "Map 1", role: "primary" },
     { id: 2, title: "Map 2", role: "secondary" },
   ]);
+  const [drawSourceMapId, setDrawSourceMapId] = useState(1);
 
   // Controls which map is displayed in the first slot
   const [activeStartIndex, setActiveStartIndex] = useState(0);
@@ -114,6 +145,13 @@ const MultiViewPage = () => {
   const visibleMaps = useMemo(() => {
     return maps.slice(activeStartIndex, activeStartIndex + 2);
   }, [maps, activeStartIndex]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleMaps.map((m) => m.id));
+    if (!drawSourceMapId || !visibleIds.has(drawSourceMapId)) {
+      setDrawSourceMapId(visibleMaps[0]?.id ?? null);
+    }
+  }, [visibleMaps, drawSourceMapId]);
 
   const normalizedNeighbors = useMemo(() => {
     if (!Array.isArray(neighborData)) return [];
@@ -173,7 +211,7 @@ const MultiViewPage = () => {
     };
   }, [locations, normalizedNeighbors, metchOnly]);
 
-  const handleMapDrawingsChange = useCallback((mapId, drawings = []) => {
+  const handleMapDrawingsChange = useCallback((drawings = []) => {
     const polygons = (Array.isArray(drawings) ? drawings : [])
       .filter((d) => d?.type === "polygon" && Array.isArray(d?.geometry?.polygon))
       .map((d, idx) => {
@@ -182,22 +220,17 @@ const MultiViewPage = () => {
           .filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng));
         if (path.length < 3) return null;
         return {
-          id: `map-${mapId}-${d.id ?? idx}`,
+          id: `shared-${d.id ?? idx}`,
           path,
           bbox: d?.geometry?.bounds || null,
         };
       })
       .filter(Boolean);
 
-    setPolygonDrawingsByMap((prev) => ({
-      ...prev,
-      [mapId]: polygons,
-    }));
+    // MultiMap uses only the latest polygon as the active spatial filter.
+    const latestPolygon = polygons.length > 0 ? [polygons[polygons.length - 1]] : [];
+    setSharedPolygons((prev) => (arePolygonsEqual(prev, latestPolygon) ? prev : latestPolygon));
   }, []);
-
-  const sharedPolygons = useMemo(() => {
-    return Object.values(polygonDrawingsByMap).flat();
-  }, [polygonDrawingsByMap]);
 
   const handleDrawingUiChange = useCallback((nextUi) => {
     setUi((prev) => ({ ...prev, ...(nextUi || {}) }));
@@ -330,14 +363,13 @@ const MultiViewPage = () => {
                   onRemove={(id) => removeMap(id)}
                   onRoleChange={(id, role) => setMapRole(id, role)}
                   sharedPolygons={sharedPolygons}
-                  drawEnabled={Boolean(ui.drawEnabled)}
+                  drawEnabled={Boolean(ui.drawEnabled) && mapInstance.id === drawSourceMapId}
                   drawShapeMode={ui.shapeMode || "polygon"}
                   drawClearSignal={ui.drawClearSignal || 0}
                   onDrawingComplete={() => {}}
-                  onDrawingsChange={(drawings) =>
-                    handleMapDrawingsChange(mapInstance.id, drawings)
-                  }
+                  onDrawingsChange={handleMapDrawingsChange}
                   onDrawingUiChange={handleDrawingUiChange}
+                  onActivateForDrawing={(mapId) => setDrawSourceMapId(mapId)}
                 />
               ))
             ) : (

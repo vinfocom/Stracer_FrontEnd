@@ -538,7 +538,9 @@ const MapWithMultipleCircles = ({
   neighborData = [],
   showNeighbors = false,
   neighborSquareSize = 10,
+  neighborMinSquareSize = 3,
   neighborOpacity = 0.7,
+  disableDeckInteractions = false,
   onNeighborClick,
   onFilteredNeighborsChange,
   debugMode = false,
@@ -553,6 +555,7 @@ const MapWithMultipleCircles = ({
   } = useColorForLog();
 
   const [map, setMap] = useState(null);
+  const [mapZoom, setMapZoom] = useState(defaultZoom);
   const [hoveredCell, setHoveredCell] = useState(null);
   const [polygonData, setPolygonData] = useState([]);
   const [polygonsFetched, setPolygonsFetched] = useState(false);
@@ -970,6 +973,40 @@ const MapWithMultipleCircles = ({
     setMap(null);
   }, []);
 
+  useEffect(() => {
+    if (!map || typeof map.getZoom !== "function" || typeof map.addListener !== "function") return;
+
+    const updateZoom = () => {
+      const nextZoom = Number(map.getZoom());
+      if (!Number.isFinite(nextZoom)) return;
+      setMapZoom((prev) => (prev === nextZoom ? prev : nextZoom));
+    };
+
+    updateZoom();
+    const zoomListener = map.addListener("zoom_changed", updateZoom);
+    const idleListener = map.addListener("idle", updateZoom);
+
+    return () => {
+      if (window.google?.maps?.event?.removeListener) {
+        window.google.maps.event.removeListener(zoomListener);
+        window.google.maps.event.removeListener(idleListener);
+      }
+    };
+  }, [map]);
+
+  const dynamicNeighborSquareSize = useMemo(() => {
+    const zoom = Number(mapZoom);
+    const base = Number(neighborSquareSize);
+    const minSize = Number(neighborMinSquareSize);
+    const safeBase = Number.isFinite(base) && base > 0 ? base : 20;
+    const safeMin = Number.isFinite(minSize) && minSize > 0 ? minSize : 3;
+    if (!Number.isFinite(zoom)) return safeBase;
+
+    // Stronger zoom scaling so neighbour size visibly changes with zoom.
+    const scaled = safeBase * Math.pow(2, 14 - zoom);
+    return Math.max(safeMin, Math.min(150, scaled));
+  }, [mapZoom, neighborSquareSize, neighborMinSquareSize]);
+
   const handlePrimaryClick = useCallback((index, loc) => {
     setSelectedLog(loc);
     setSelectedNeighbor(null);
@@ -1045,10 +1082,12 @@ const MapWithMultipleCircles = ({
             onHover={handleHover}
             neighbors={processedNeighbors}
             getNeighborColor={getNeighborColor}
-            neighborSquareSize={neighborSquareSize}
+            neighborSquareSize={dynamicNeighborSquareSize}
             neighborOpacity={neighborOpacity}
             onNeighborClick={handleNeighborClick}
             showNeighbors={showNeighbors}
+            pickable={!disableDeckInteractions}
+            autoHighlight={!disableDeckInteractions}
           />
         )}
 

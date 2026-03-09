@@ -2280,26 +2280,32 @@ const UnifiedMapView = () => {
   }, []);
 
   const handleDrawingsChange = useCallback((drawings) => {
-    let newPoints = null;
-    if (drawings && drawings.length > 0) {
-      const uniqueLogs = new Map();
-      let hasLogs = false;
-      drawings.forEach((drawing) => {
-        if (drawing.logs?.length > 0) {
-          hasLogs = true;
-          drawing.logs.forEach((log) => {
-            const key = log.id || `${log.lat}-${log.lng}-${log.timestamp}`;
-            uniqueLogs.set(key, log);
-          });
-        }
-      });
-      if (hasLogs) newPoints = Array.from(uniqueLogs.values());
-      else newPoints = [];
+    // If drawings array is empty/null → clear the filter (show all logs)
+    if (!drawings || drawings.length === 0) {
+      setDrawnPoints(null);
+      return;
     }
+
+    // Check whether any drawing has a computed `logs` array (even empty).
+    // Geometry-only snapshots have `logs: undefined` (key absent).
+    // Skip updating if this is a geometry-only call — the log-enriched update arrives next.
+    const hasLogsKey = drawings.some((drawing) => Object.prototype.hasOwnProperty.call(drawing, "logs"));
+    if (!hasLogsKey) return;
+
+    // Collect all unique logs from inside all drawn shapes
+    const uniqueLogs = new Map();
+    drawings.forEach((drawing) => {
+      if (Array.isArray(drawing.logs)) {
+        drawing.logs.forEach((log) => {
+          const key = log.id || `${log.lat}-${log.lng}-${log.timestamp}`;
+          uniqueLogs.set(key, log);
+        });
+      }
+    });
+
+    const newPoints = Array.from(uniqueLogs.values());
     setDrawnPoints((prev) => {
-      if (prev === null && newPoints === null) return prev;
-      if (prev === null && newPoints !== null) return newPoints;
-      if (prev !== null && newPoints === null) return null;
+      if (prev === null) return newPoints;
       if (prev.length !== newPoints.length) return newPoints;
       const prevIds = new Set(prev.map((p) => p.id));
       const hasDiff = newPoints.some((p) => !prevIds.has(p.id));

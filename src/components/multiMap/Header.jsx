@@ -79,6 +79,7 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-3">
+        <DrawingControlsPanel position="relative" onUIChange={onUIChange} ui={ui} />
         {/* Navigation Buttons */}
         <Button
           size="sm"
@@ -122,7 +123,7 @@ export default function Header({
           <Plus size={16} /> Add View
         </button>
 
-        <DrawingControlsPanel position="relative" onUIChange={onUIChange} ui={ui} />
+        
 
         <label className="flex items-center gap-2 text-xs text-white ml-2">
           <input
@@ -130,7 +131,7 @@ export default function Header({
             checked={metchOnly}
             onChange={(e) => onMetchOnlyChange?.(e.target.checked)}
           />
-          Metch
+          Matched
         </label>
 
         <Button

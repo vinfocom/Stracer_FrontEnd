@@ -261,10 +261,15 @@ function DrawingToolsLayerComponent({
   const lastClearSignalRef = useRef(clearSignal);
   const missingLibraryNotifiedRef = useRef(false);
   const callbacksRef = useRef({ onSummary, onDrawingsChange, onUIChange });
+  const reAnalyzeShapeRef = useRef(null);
+  const shapeModeRef = useRef(shapeMode);
 
   useEffect(() => {
     callbacksRef.current = { onSummary, onDrawingsChange, onUIChange };
   }, [onSummary, onDrawingsChange, onUIChange]);
+  useEffect(() => {
+    shapeModeRef.current = shapeMode;
+  }, [shapeMode]);
 
   const reAnalyzeShape = useCallback((shapeObj) => {
     const { type, overlay, id } = shapeObj;
@@ -319,6 +324,166 @@ function DrawingToolsLayerComponent({
     callbacksRef.current.onSummary?.(entry);
     return entry;
   }, [logs, sessions, selectedMetric, thresholds, pixelateRect, cellSizeMeters, map, colorizeCells]);
+  useEffect(() => {
+    reAnalyzeShapeRef.current = reAnalyzeShape;
+  }, [reAnalyzeShape]);
+
+  const registerCompletedShape = useCallback((type, overlay, drawingManager = null) => {
+    if (!overlay) return;
+    const shapeObj = {
+      id: Date.now(),
+      type,
+      overlay,
+      gridOverlays: [],
+      createdAt: new Date().toISOString(),
+    };
+    shapesRef.current.push(shapeObj);
+    const entry = reAnalyzeShapeRef.current?.(shapeObj);
+    const listeners = [];
+    const update = () => reAnalyzeShapeRef.current?.(shapeObj);
+
+    if (type === "polyline") {
+      const updateDistanceLabel = () => {
+        const { length, center } = getPolylineDetails(overlay);
+        const text = length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`;
+        if (!shapeObj.labelMarker) {
+          shapeObj.labelMarker = new window.google.maps.Marker({
+            map,
+            position: center,
+            icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 0 },
+            label: { text, color: "#000000", fontWeight: "bold", fontSize: "12px" },
+            zIndex: 100,
+          });
+        } else {
+          shapeObj.labelMarker.setPosition(center);
+          const lbl = shapeObj.labelMarker.getLabel();
+          shapeObj.labelMarker.setLabel({ ...lbl, text });
+        }
+        update();
+      };
+      const path = overlay.getPath();
+      ["set_at", "insert_at", "remove_at"].forEach((ev) =>
+        listeners.push(window.google.maps.event.addListener(path, ev, updateDistanceLabel)),
+      );
+      updateDistanceLabel();
+    } else if (type === "polygon") {
+      const path = overlay.getPath();
+      ["set_at", "insert_at", "remove_at"].forEach((ev) =>
+        listeners.push(window.google.maps.event.addListener(path, ev, update)),
+      );
+    } else if (type === "rectangle") {
+      listeners.push(window.google.maps.event.addListener(overlay, "bounds_changed", update));
+    } else if (type === "circle") {
+      ["radius_changed", "center_changed"].forEach((ev) =>
+        listeners.push(window.google.maps.event.addListener(overlay, ev, update)),
+      );
+    }
+
+    shapeObj.listeners = listeners;
+
+    // reAnalyzeShape (called above at line 341) already fires onDrawingsChange with
+    // the full data including logs, geometry, and stats. No additional snapshot needed.
+    drawingManager?.setDrawingMode(null);
+    callbacksRef.current.onUIChange?.({ drawEnabled: false, shapeMode: null });
+
+    if (type !== "polyline") {
+      const sessionMsg =
+        entry?.intersectingSessions?.length > 0
+          ? ` Found ${entry.intersectingSessions.length} sessions.`
+          : "";
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} drawn.${sessionMsg}`, {
+        position: "bottom-right",
+        autoClose: 3000,
+      });
+    } else {
+      toast.success("Distance measured.", { position: "bottom-right", autoClose: 2000 });
+    }
+  }, [map]);
+
+  // Manual polygon drawing path to avoid DrawingManager crashes on deprecated API.
+  useEffect(() => {
+    if (!map || !enabled || shapeMode !== "polygon") return;
+    if (!window.google?.maps?.event) return;
+
+    const gm = window.google.maps;
+    const path = [];
+    let previewLine = null;
+
+    const clearPreview = () => {
+      if (previewLine) {
+        previewLine.setMap(null);
+        previewLine = null;
+      }
+    };
+
+    const renderPreview = () => {
+      if (path.length === 0) {
+        clearPreview();
+        return;
+      }
+      if (!previewLine) {
+        previewLine = new gm.Polyline({
+          map,
+          path: [...path],
+          strokeWeight: 2,
+          strokeColor: "#1d4ed8",
+          strokeOpacity: 0.9,
+          clickable: false,
+          zIndex: 120,
+        });
+      } else {
+        previewLine.setPath([...path]);
+      }
+    };
+
+    const finishPolygon = () => {
+      if (path.length < 3) {
+        toast.info("Click at least 3 points to create a polygon.", {
+          position: "bottom-right",
+          autoClose: 1800,
+        });
+        return;
+      }
+
+      const polygon = new gm.Polygon({
+        map,
+        paths: [...path],
+        clickable: true,
+        editable: true,
+        draggable: true,
+        strokeWeight: 2,
+        strokeColor: "#1d4ed8",
+        fillColor: "#1d4ed8",
+        fillOpacity: 0.08,
+      });
+      clearPreview();
+      registerCompletedShape("polygon", polygon, null);
+    };
+
+    const clickListener = gm.event.addListener(map, "click", (e) => {
+      if (!e?.latLng) return;
+      path.push(e.latLng);
+      renderPreview();
+    });
+
+    const dblClickListener = gm.event.addListener(map, "dblclick", (e) => {
+      e?.domEvent?.preventDefault?.();
+      e?.domEvent?.stopPropagation?.();
+      finishPolygon();
+    });
+
+    const rightClickListener = gm.event.addListener(map, "rightclick", (e) => {
+      e?.domEvent?.preventDefault?.();
+      finishPolygon();
+    });
+
+    return () => {
+      gm.event.removeListener(clickListener);
+      gm.event.removeListener(dblClickListener);
+      gm.event.removeListener(rightClickListener);
+      clearPreview();
+    };
+  }, [map, enabled, shapeMode, registerCompletedShape]);
 
   // ✅ Initialize Manager with drawingControl: false
   useEffect(() => {
@@ -337,14 +502,19 @@ function DrawingToolsLayerComponent({
       managerRef.current = null;
     }
 
-    if (!enabled) return;
+    if (!enabled || shapeMode === "polygon") return;
 
     const dm = new window.google.maps.drawing.DrawingManager({
       drawingMode: null, // Start with nothing
       drawingControl: Boolean(showDrawingControl),
       drawingControlOptions: {
         position: window.google.maps.ControlPosition.TOP_CENTER,
-        drawingModes: [window.google.maps.drawing.OverlayType.POLYGON],
+        drawingModes: [
+          window.google.maps.drawing.OverlayType.POLYGON,
+          window.google.maps.drawing.OverlayType.RECTANGLE,
+          window.google.maps.drawing.OverlayType.CIRCLE,
+          window.google.maps.drawing.OverlayType.POLYLINE,
+        ],
       },
       polygonOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.08 },
       rectangleOptions: { clickable: true, editable: true, draggable: true, strokeWeight: 2, strokeColor: "#1d4ed8", fillColor: "#1d4ed8", fillOpacity: 0.06 },
@@ -353,54 +523,10 @@ function DrawingToolsLayerComponent({
     });
 
     dm.setMap(map);
+    dm.setDrawingMode(shapeModeRef.current);
 
     const handleComplete = (e) => {
-      const shapeObj = { id: Date.now(), type: e.type, overlay: e.overlay, gridOverlays: [], createdAt: new Date().toISOString() };
-      shapesRef.current.push(shapeObj);
-      const entry = reAnalyzeShape(shapeObj);
-      const listeners = [];
-      const update = () => reAnalyzeShape(shapeObj);
-
-      if (e.type === "polyline") {
-        const updateDistanceLabel = () => {
-          const { length, center } = getPolylineDetails(e.overlay);
-          const text = length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`;
-          if (!shapeObj.labelMarker) {
-            shapeObj.labelMarker = new window.google.maps.Marker({
-              map: map, position: center, icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 0 },
-              label: { text: text, color: "#000000", fontWeight: "bold", fontSize: "12px" }, zIndex: 100,
-            });
-          } else {
-            shapeObj.labelMarker.setPosition(center);
-            const lbl = shapeObj.labelMarker.getLabel();
-            shapeObj.labelMarker.setLabel({ ...lbl, text });
-          }
-          update();
-        };
-        const path = e.overlay.getPath();
-        ["set_at", "insert_at", "remove_at"].forEach(ev => listeners.push(window.google.maps.event.addListener(path, ev, updateDistanceLabel)));
-        updateDistanceLabel();
-      } else if (e.type === "polygon") {
-        const path = e.overlay.getPath();
-        ["set_at", "insert_at", "remove_at"].forEach(ev => listeners.push(window.google.maps.event.addListener(path, ev, update)));
-      } else if (e.type === "rectangle") {
-        listeners.push(window.google.maps.event.addListener(e.overlay, "bounds_changed", update));
-      } else if (e.type === "circle") {
-        ["radius_changed", "center_changed"].forEach(ev => listeners.push(window.google.maps.event.addListener(e.overlay, ev, update)));
-      }
-      
-      shapeObj.listeners = listeners;
-      
-      // ✅ RESET UI STATE to "Cursor" after drawing
-      dm.setDrawingMode(null);
-      callbacksRef.current.onUIChange?.({ drawEnabled: false, shapeMode: null });
-
-      if (e.type !== "polyline") {
-        const sessionMsg = entry.intersectingSessions?.length > 0 ? ` Found ${entry.intersectingSessions.length} sessions.` : "";
-        toast.success(`${e.type.charAt(0).toUpperCase() + e.type.slice(1)} drawn.${sessionMsg}`, { position: "bottom-right", autoClose: 3000 });
-      } else {
-        toast.success("Distance measured.", { position: "bottom-right", autoClose: 2000 });
-      }
+      registerCompletedShape(e.type, e.overlay, dm);
     };
 
     const listener = window.google.maps.event.addListener(dm, "overlaycomplete", handleComplete);
@@ -411,14 +537,60 @@ function DrawingToolsLayerComponent({
       managerRef.current?.setMap(null);
       managerRef.current = null;
     };
-  }, [map, enabled, reAnalyzeShape, showDrawingControl]);
+  }, [map, enabled, shapeMode, showDrawingControl, registerCompletedShape]);
 
   // Keep DrawingManager mode in sync when tool or enabled state changes.
   useEffect(() => {
     if (managerRef.current) {
       managerRef.current.setDrawingMode(enabled ? shapeMode : null);
     }
-  }, [enabled, shapeMode]);
+  }, [map, enabled, shapeMode]);
+
+  // Keep map and overlay cursor in sync with active drawing mode.
+  useEffect(() => {
+    if (!map || typeof map.getDiv !== "function") return;
+
+    const isDrawingActive = Boolean(enabled && shapeMode);
+    const mapDiv = map.getDiv();
+    const originalDraggable = map.get("draggable");
+    const originalDisableDoubleClickZoom = map.get("disableDoubleClickZoom");
+    const originalMapCursor = mapDiv.style.cursor;
+    const canvases = Array.from(mapDiv.querySelectorAll("canvas"));
+    const originalCanvasCursors = canvases.map((canvas) => canvas.style.cursor);
+
+    try {
+      map.setOptions({
+        draggable: isDrawingActive ? false : originalDraggable,
+        disableDoubleClickZoom: isDrawingActive ? true : originalDisableDoubleClickZoom,
+        draggableCursor: isDrawingActive ? "crosshair" : "",
+        draggingCursor: isDrawingActive ? "crosshair" : "",
+      });
+    } catch {
+      // Map can unmount while effects are flushing.
+    }
+
+    mapDiv.style.cursor = isDrawingActive ? "crosshair" : "";
+    canvases.forEach((canvas) => {
+      canvas.style.cursor = isDrawingActive ? "crosshair" : "";
+    });
+
+    return () => {
+      try {
+        map.setOptions({
+          draggable: originalDraggable,
+          disableDoubleClickZoom: originalDisableDoubleClickZoom,
+          draggableCursor: "",
+          draggingCursor: "",
+        });
+      } catch {
+        // Ignore map teardown edge cases.
+      }
+      mapDiv.style.cursor = originalMapCursor;
+      canvases.forEach((canvas, idx) => {
+        canvas.style.cursor = originalCanvasCursors[idx] ?? "";
+      });
+    };
+  }, [map, enabled, shapeMode]);
 
   // (Clear signal effect remains the same...)
   useEffect(() => {
@@ -447,5 +619,3 @@ function DrawingToolsLayerComponent({
 }
 
 export default memo(DrawingToolsLayerComponent);
-
-
