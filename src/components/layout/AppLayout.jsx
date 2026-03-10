@@ -3,14 +3,11 @@ import { Outlet, useLocation } from "react-router-dom";
 import SideBar from "../SideBar";
 import Header from "../Header";
 import { cancelAllRequests } from "@/api/apiService"; // Import the cancel function
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const AppLayout = ({ children }) => {
-  const [visible, setVisible] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-
-  const changeValue = () => {
-    setVisible(!visible);
-  };
 
   // ✅ NEW: Clear the API queue whenever the route changes
   useEffect(() => {
@@ -39,39 +36,40 @@ const AppLayout = ({ children }) => {
   );
 
   return (
-    <div className="flex h-screen bg-gray-100 ">
+    <div className="flex h-screen bg-slate-950">
 
-      {/* Sidebar */}
+      {/* Sidebar — always visible, just changes width */}
       {shouldShowSidebar && (
-        <>
         <div
-          className={`fixed left-0 top-0 h-full z-40 transform transition-transform duration-500 ease-in-out
-          ${visible ? "translate-x-0" : "-translate-x-full"} 
-          bg-slate-900 shadow-xl flex`}
-          style={{ width: "250px" }}
+          className={`fixed left-0 top-0 h-full z-40 bg-slate-900 shadow-xl flex flex-col
+            transition-all duration-300 ease-in-out
+            ${collapsed ? "w-16" : "w-[250px]"}`}
         >
-
-          <div className="flex-1">
-            <SideBar collapsed={!visible} />
+          {/* SideBar content (icon-only when collapsed) */}
+          <div className="flex-1 overflow-hidden">
+            <SideBar collapsed={collapsed} />
           </div>
-          <div className="w-2  relative">
+
+          {/* Collapse toggle button — pinned to bottom of sidebar */}
+          <div className="flex justify-center p-3 border-t border-slate-700 flex-shrink-0">
             <button
-              onClick={changeValue}
-              className="absolute top-1/2 -right-4 transform -translate-y-1/2 rounded-r-2xl 
-                bg-slate-950 text-white p-2 hover:bg-purple-500 transition-all duration-300"
+              onClick={() => setCollapsed(!collapsed)}
+              className="text-gray-400 hover:text-white hover:bg-slate-700 p-1.5 rounded-lg transition-all duration-200"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              {visible ? "⟨" : "⟩"}
+              {collapsed
+                ? <PanelLeftOpen className="h-5 w-5" />
+                : <PanelLeftClose className="h-5 w-5" />
+              }
             </button>
           </div>
         </div>
-
-        </>
       )}
 
-      {/* Main content */}
+      {/* Main content — margin shifts based on sidebar width */}
       <div
-        className={`flex-1 flex flex-col transition-all duration-500 ease-in-out 
-        ${shouldShowSidebar && visible ? "ml-[250px]" : "ml-0"}`}
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out
+        ${shouldShowSidebar ? (collapsed ? "ml-16" : "ml-[250px]") : "ml-0"}`}
       >
         {shouldShowHeader && <Header />}
 

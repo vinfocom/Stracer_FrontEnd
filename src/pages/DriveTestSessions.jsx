@@ -477,7 +477,7 @@ const DriveTestSessionsPage = () => {
   }
 
   return (
-    <div className="p-6 h-full flex flex-col">
+    <div className="p-6 h-full flex flex-col bg-white">
       <div className="flex items-center justify-between mb-4 gap-4">
         <h1 className="text-2xl font-bold whitespace-nowrap">
           Manage Drive Test Sessions

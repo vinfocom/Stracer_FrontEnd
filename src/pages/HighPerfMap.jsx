@@ -292,6 +292,7 @@ export default function HighPerfMap() {
   const [visibleBounds, setVisibleBounds] = useState(null);
   const idleListenerRef = useRef(null);
   const idleTimerRef = useRef(null);
+  const allSessionsRef = useRef([]);
   const [appSummary, setAppSummary] = useState(null);
   const [neighbourAppSummary, setNeighbourAppSummary] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -427,7 +428,7 @@ export default function HighPerfMap() {
     fetchThresholds();
   }, []);
 
-  const fetchAllSessions = useCallback(async () => {
+  const fetchAllSessions = useCallback(async (mapInstance) => {
     setIsLoading(true);
     try {
       const data = await adminApi.getSessions();
@@ -435,6 +436,15 @@ export default function HighPerfMap() {
         (s) => Number.isFinite(parseFloat(s.start_lat)) && Number.isFinite(parseFloat(s.start_lon))
       );
       setAllSessions(valid);
+      allSessionsRef.current = valid;
+
+      // Auto-fit to session locations if no saved viewport exists
+      const currentMap = mapInstance;
+      if (currentMap && valid.length > 0 && !loadSavedViewport()) {
+        const bounds = new window.google.maps.LatLngBounds();
+        valid.forEach((s) => bounds.extend({ lat: parseFloat(s.start_lat), lng: parseFloat(s.start_lon) }));
+        currentMap.fitBounds(bounds, 80);
+      }
     } catch (e) {
       toast.error(`Failed to fetch sessions: ${e?.message || "Unknown error"}`);
     } finally {
@@ -444,8 +454,8 @@ export default function HighPerfMap() {
 
   useEffect(() => {
     if (!isLoaded) return;
-    if (!activeFilters) fetchAllSessions();
-  }, [isLoaded, activeFilters, fetchAllSessions]);
+    if (!activeFilters) fetchAllSessions(map);
+  }, [isLoaded, activeFilters, fetchAllSessions, map]);
 
   const fetchLogsFromApi = useCallback(async (dateFilters) => {
     setLogsLoading(true);
@@ -673,6 +683,15 @@ export default function HighPerfMap() {
     if (saved) {
       m.setCenter({ lat: saved.lat, lng: saved.lng });
       m.setZoom(saved.zoom);
+    } else {
+      // No saved viewport: fit to already-loaded sessions (handles case where
+      // sessions API returns before the Google Maps instance is ready)
+      const sessions = allSessionsRef.current;
+      if (sessions.length > 0 && window.google?.maps) {
+        const bounds = new window.google.maps.LatLngBounds();
+        sessions.forEach((s) => bounds.extend({ lat: parseFloat(s.start_lat), lng: parseFloat(s.start_lon) }));
+        m.fitBounds(bounds, 80);
+      }
     }
     idleListenerRef.current = m.addListener("idle", () => {
       clearTimeout(idleTimerRef.current);
