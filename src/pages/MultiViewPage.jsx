@@ -213,12 +213,43 @@ const MultiViewPage = () => {
 
   const handleMapDrawingsChange = useCallback((drawings = []) => {
     const polygons = (Array.isArray(drawings) ? drawings : [])
-      .filter((d) => d?.type === "polygon" && Array.isArray(d?.geometry?.polygon))
       .map((d, idx) => {
-        const path = d.geometry.polygon
-          .map((pt) => ({ lat: Number(pt?.lat), lng: Number(pt?.lng) }))
-          .filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng));
-        if (path.length < 3) return null;
+        if (!d?.type || !d?.geometry) return null;
+        let path = null;
+
+        if (d.type === "polygon" && Array.isArray(d.geometry?.polygon)) {
+          // Polygon: use path directly
+          path = d.geometry.polygon
+            .map((pt) => ({ lat: Number(pt?.lat), lng: Number(pt?.lng) }))
+            .filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng));
+
+        } else if (d.type === "rectangle" && d.geometry?.rectangle) {
+          // Rectangle: convert 2-corner bounds to 4-point polygon path
+          const { sw, ne } = d.geometry.rectangle;
+          if (sw && ne) {
+            path = [
+              { lat: Number(sw.lat), lng: Number(sw.lng) }, // bottom-left
+              { lat: Number(sw.lat), lng: Number(ne.lng) }, // bottom-right
+              { lat: Number(ne.lat), lng: Number(ne.lng) }, // top-right
+              { lat: Number(ne.lat), lng: Number(sw.lng) }, // top-left
+            ].filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng));
+          }
+
+        } else if (d.type === "circle" && d.geometry?.circle) {
+          // Circle: approximate as 32-point polygon
+          const { center, radius } = d.geometry.circle;
+          if (center && Number.isFinite(radius) && radius > 0) {
+            const numPoints = 32;
+            path = Array.from({ length: numPoints }, (_, i) => {
+              const angle = (i / numPoints) * 2 * Math.PI;
+              const lat = center.lat + (radius / 111320) * Math.cos(angle);
+              const lng = center.lng + (radius / (111320 * Math.cos((center.lat * Math.PI) / 180))) * Math.sin(angle);
+              return { lat: Number(lat), lng: Number(lng) };
+            }).filter((pt) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng));
+          }
+        }
+
+        if (!path || path.length < 3) return null;
         return {
           id: `shared-${d.id ?? idx}`,
           path,
@@ -227,7 +258,7 @@ const MultiViewPage = () => {
       })
       .filter(Boolean);
 
-    // MultiMap uses only the latest polygon as the active spatial filter.
+    // Use only the most recent drawn shape as the active spatial filter.
     const latestPolygon = polygons.length > 0 ? [polygons[polygons.length - 1]] : [];
     setSharedPolygons((prev) => (arePolygonsEqual(prev, latestPolygon) ? prev : latestPolygon));
   }, []);

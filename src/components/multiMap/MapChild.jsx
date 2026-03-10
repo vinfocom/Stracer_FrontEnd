@@ -6,6 +6,7 @@ import MapwithMultipleCircle from "../unifiedMap/MapwithMultipleCircle";
 import MapLegend from "@/components/map/MapLegend";
 import MapChildFooter from "./MapChildFooter";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
+import { PolygonF } from "@react-google-maps/api";
 
 
 const EMPTY_SESSIONS = [];
@@ -425,6 +426,27 @@ const MapChild = ({
             setMapRef(map);
           }}
         >
+        {/* Render shared polygon visually on sibling (non-drawing) maps.
+             The draw-source map already has the native polygon from DrawingToolsLayer,
+             so we only add PolygonF on maps that are NOT currently drawing. */}
+        {!drawEnabled && normalizedPolygons.map((poly, i) => (
+          <PolygonF
+            key={`shared-poly-${i}`}
+            paths={poly.path}
+            options={{
+              strokeColor: "#1d4ed8",
+              strokeWeight: 2,
+              strokeOpacity: 1,
+              fillColor: "#1d4ed8",
+              fillOpacity: 0.08,
+              clickable: false,
+              editable: false,
+              draggable: false,
+              zIndex: 100,
+            }}
+          />
+        ))}
+
         {mapRef && (
           <DrawingToolsLayer
             map={mapRef}
