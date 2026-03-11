@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { adminApi } from '../api/apiEndpoints';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import DataTable from '../components/common/DataTable';
 import Spinner from '../components/common/Spinner';
@@ -19,13 +20,15 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from '@/components/ui/label';
 
 const ManageUsersPage = () => {
+    const { user } = useAuth();
+    const isSuperAdmin = user?.m_user_type_id === 3;
     const [searchParams] = useSearchParams();
     const companyIdQuery = searchParams.get('companyId');
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
-    const [filters, setFilters] = useState({ UserName: '', MobileNo: '', EmailId: '' });
+    const [filters, setFilters] = useState({ UserName: '', MobileNo: '', EmailId: '', CompanyId: '' });
     const [isFetchingDetails, setIsFetchingDetails] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [usersPerPage] = useState(10);
@@ -37,6 +40,7 @@ const ManageUsersPage = () => {
                 ...(filters.UserName?.trim() ? { UserName: filters.UserName.trim() } : {}),
                 ...(filters.MobileNo?.trim() ? { Mobile: filters.MobileNo.trim() } : {}),
                 ...(filters.EmailId?.trim() ? { Email: filters.EmailId.trim() } : {}),
+                ...(isSuperAdmin && filters.CompanyId?.trim() ? { company_id: Number(filters.CompanyId.trim()) } : {}),
                 ...(companyIdQuery ? { company_id: Number(companyIdQuery) } : {})
             };
             const response = await adminApi.getUsers(apiFilters);
@@ -201,7 +205,7 @@ const ManageUsersPage = () => {
     };
 
     const handleReset = () => {
-        setFilters({ UserName: '', MobileNo: '', EmailId: '' });
+        setFilters({ UserName: '', MobileNo: '', EmailId: '', CompanyId: '' });
     };
 
     useEffect(() => {
@@ -337,7 +341,7 @@ const ManageUsersPage = () => {
 
             <Card className="bg-white border border-gray-200 shadow-sm">
                 <CardContent className="pt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div className={`grid grid-cols-1 gap-4 items-end ${isSuperAdmin ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
                         <div className="space-y-1.5">
                             <Label htmlFor="UserName" className="text-gray-700 font-medium">User Name</Label>
                             <Input
@@ -371,6 +375,20 @@ const ManageUsersPage = () => {
                                 className="bg-white border-gray-300 text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500"
                             />
                         </div>
+                        {isSuperAdmin && (
+                            <div className="space-y-1.5">
+                                <Label htmlFor="CompanyId" className="text-gray-700 font-medium">Company ID</Label>
+                                <Input
+                                    id="CompanyId"
+                                    name="CompanyId"
+                                    type="number"
+                                    placeholder="Search by company ID..."
+                                    value={filters.CompanyId}
+                                    onChange={handleFilterChange}
+                                    className="bg-white border-gray-300 text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500"
+                                />
+                            </div>
+                        )}
                         <div className="flex gap-2">
                             <Button 
                                 onClick={fetchUsers} 

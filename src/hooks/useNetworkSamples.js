@@ -9,20 +9,20 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isRequestCancelled = (error) => {
   if (!error) return false;
-  
+
   // 1. Check custom property from apiService.js
   if (error.isCancelled === true) return true;
-  
+
   // 2. Check standard Axios/Browser cancellation names
   if (
-    error.name === 'AbortError' || 
-    error.name === 'CanceledError' || 
+    error.name === 'AbortError' ||
+    error.name === 'CanceledError' ||
     error.code === 'ERR_CANCELED' ||
     error.message === 'Request cancelled' // Matches apiService.js message
   ) {
     return true;
   }
-  
+
   return false;
 };
 
@@ -137,7 +137,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
   const [technologyTransitions, setTechnologyTransitions] = useState([]);
   const [bandTransitions, setBandTransitions] = useState([]);
   const [pciTransitions, setPciTransitions] = useState([]);
-  
+
   const abortControllerRef = useRef(null);
   const isFetchingRef = useRef(false);
   const activeFetchKeyRef = useRef('');
@@ -173,7 +173,8 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
     setError(null);
     setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
 
-    const PAGE_SIZE = 20000;
+    const PAGE_SIZE = 10000;  // Reduced from 20000 to limit memory
+    const MAX_PAGES = 10;      // Hard cap: max 100k rows (was 100 pages = 2M rows)
     const allParsedLogs = [];
     let summaryData = { app: {}, io: {}, tpt: null };
     const startTime = performance.now();
@@ -247,7 +248,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
             apiBody?.Count ||
             0;
           if (totalCount === 0 && logsArray.length > 0) totalCount = logsArray.length;
-          totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+          totalPages = Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, MAX_PAGES);
           if (apiBody?.app_summary) summaryData.app = apiBody.app_summary;
           if (apiBody?.io_summary) summaryData.io = apiBody.io_summary;
           if (apiBody?.tpt_volume) summaryData.tpt = apiBody.tpt_volume;
@@ -269,7 +270,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
           });
         }
 
-        if (currentPage >= totalPages || logsArray.length < PAGE_SIZE || currentPage > 100) {
+        if (currentPage >= totalPages || logsArray.length < PAGE_SIZE || currentPage >= MAX_PAGES) {
           hasMoreData = false;
         } else {
           currentPage++;
@@ -280,13 +281,13 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
       let finalLogs = allParsedLogs;
 
       if (filterEnabled && polygons?.length > 0) {
-        finalLogs = allParsedLogs.filter(log => 
+        finalLogs = allParsedLogs.filter(log =>
           polygons.some(poly => isPointInPolygon(log, poly))
         );
       }
 
       const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
-      setLocations(finalLogs); 
+      setLocations(finalLogs);
       setAppSummary(summaryData.app);
       setInpSummary(summaryData.io);
       setTptVolume(summaryData.tpt);
@@ -299,7 +300,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
         toast.warn('No valid log data found');
       }
 
-      
+
 
     } catch (err) {
       if (isRequestCancelled(err)) return;
@@ -307,8 +308,8 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
         setError(err.message);
         toast.error(`Error: ${err.message}`);
         if (allParsedLogs.length > 0) {
-           // Fallback to what we have
-           setLocations(allParsedLogs);
+          // Fallback to what we have
+          setLocations(allParsedLogs);
         }
       }
     } finally {
@@ -328,7 +329,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
       setPciTransitions([]);
       return;
     }
-    
+
     const techTrans = [];
     const bandTrans = [];
     const pciTrans = [];
@@ -339,7 +340,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
 
     for (let i = 1; i < locations.length; i++) {
       const loc = locations[i];
-      
+
       // Technology Transition
       const currTech = normalizeTechName(loc.technology);
       if (currTech && prevTech && currTech !== prevTech) {
@@ -360,14 +361,14 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
       const currBand = loc.band;
       if (currBand && prevBand && String(currBand) !== String(prevBand)) {
         bandTrans.push({
-            from: String(prevBand),
-            to: String(currBand),
-            atIndex: i,
-            lat: loc.lat,
-            lng: loc.lng,
-            timestamp: loc.timestamp,
-            session_id: loc.session_id,
-            type: 'band'
+          from: String(prevBand),
+          to: String(currBand),
+          atIndex: i,
+          lat: loc.lat,
+          lng: loc.lng,
+          timestamp: loc.timestamp,
+          session_id: loc.session_id,
+          type: 'band'
         });
       }
       prevBand = currBand;
@@ -376,15 +377,15 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
       const currPci = loc.pci;
       // Ensure we treat 0 as a valid PCI value, but skip null/undefined/empty string
       if (currPci !== '' && currPci !== null && prevPci !== '' && prevPci !== null && String(currPci) !== String(prevPci)) {
-         pciTrans.push({
-            from: String(prevPci),
-            to: String(currPci),
-            atIndex: i,
-            lat: loc.lat,
-            lng: loc.lng,
-            timestamp: loc.timestamp,
-            session_id: loc.session_id,
-            type: 'pci'
+        pciTrans.push({
+          from: String(prevPci),
+          to: String(currPci),
+          atIndex: i,
+          lat: loc.lat,
+          lng: loc.lng,
+          timestamp: loc.timestamp,
+          session_id: loc.session_id,
+          type: 'pci'
         });
       }
       prevPci = currPci;
@@ -421,7 +422,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
       fetchData(true);
     }, [fetchData]),
     technologyTransitions,
-    bandTransitions, 
+    bandTransitions,
     pciTransitions,
   };
 };

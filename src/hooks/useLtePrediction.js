@@ -47,11 +47,13 @@ export const useLtePrediction = ({
   const [error, setError] = useState(null);
 
   const isMountedRef = useRef(true);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, []);
 
@@ -67,6 +69,10 @@ export const useLtePrediction = ({
       });
       return;
     }
+
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     setLoading(true);
     setError(null);
@@ -86,7 +92,7 @@ export const useLtePrediction = ({
       if (siteId && siteId.includes(",")) {
         const ids = siteId.split(",").map(id => id.trim()).filter(Boolean);
         const promises = ids.map(id =>
-          mapViewApi.getLtePfrection({ ...params, siteId: id }).catch(e => null)
+          mapViewApi.getLtePfrection({ ...params, siteId: id }, { signal }).catch(e => null)
         );
         const responses = await Promise.all(promises);
 
@@ -107,7 +113,7 @@ export const useLtePrediction = ({
         if (siteId) {
           params.siteId = siteId;
         }
-        combinedResponse = await mapViewApi.getLtePfrection(params);
+        combinedResponse = await mapViewApi.getLtePfrection(params, { signal });
         console.log(`[LTE PREDICTION RESPONSE]`, combinedResponse);
         rawData = Array.isArray(combinedResponse?.Data) ? combinedResponse.Data : [];
       }

@@ -1316,28 +1316,22 @@ const UnifiedMapView = () => {
 
   const allNeighbors = rawAllNeighbors || [];
 
-  // ... (Effect hooks for duration, neighbor data, etc. remain unchanged) ...
+  // Effect hooks for duration, distance, and IO — each with active guards to prevent stale state updates
   useEffect(() => {
-    const timeData = async () => {
-      if (!sessionIds?.length) return;
+    if (!sessionIds?.length) return;
+    let active = true;
+    const fetchDuration = async () => {
       try {
         const res = await mapViewApi.getDuration({
           sessionIds: sessionIds.join(","),
         });
-
+        if (!active) return;
         const dataArray = res?.Data || res?.data?.data || res?.data || [];
-
         if (Array.isArray(dataArray)) {
           setDurationTime(
             dataArray.map((item) => ({
-              provider: normalizeProviderName(
-                item.Provider || item.provider || "",
-              ),
-
-              networkType: normalizeTechName(
-                item.Network || item.network || "",
-              ),
-
+              provider: normalizeProviderName(item.Provider || item.provider || ""),
+              networkType: normalizeTechName(item.Network || item.network || ""),
               totaltime: item.TotalDurationHours
                 ? `${item.TotalDurationHours.toFixed(2)} hrs`
                 : item.timeReadable || "0s",
@@ -1345,36 +1339,44 @@ const UnifiedMapView = () => {
           );
         }
       } catch (err) {
-        console.error("Failed to fetch duration data", err);
+        if (active) console.error("Failed to fetch duration data", err);
       }
     };
-    timeData();
+    fetchDuration();
+    return () => { active = false; };
   }, [sessionIds]);
 
   useEffect(() => {
-    const neighbordata = async () => {
-      if (!sessionIds?.length) return;
+    if (!sessionIds?.length) return;
+    let active = true;
+    const fetchDistance = async () => {
       try {
         const res = await mapViewApi.getDistanceSession({
           sessionIds: sessionIds.join(","),
         });
-        setDistance(res?.TotalDistanceKm || null);
+        if (active) setDistance(res?.TotalDistanceKm || null);
       } catch (error) { }
     };
-    neighbordata();
+    fetchDistance();
+    return () => { active = false; };
   }, [sessionIds]);
 
   useEffect(() => {
-    const ioAnalysis = async () => {
+    if (!sessionIds?.length) return;
+    let active = true;
+    const fetchIO = async () => {
       try {
         const res = await mapViewApi.getIOAnalysis({
           sessionIds: sessionIds.join(","),
         });
-        setIndoor(res?.Indoor);
-        setOutdoor(res?.Outdoor);
+        if (active) {
+          setIndoor(res?.Indoor);
+          setOutdoor(res?.Outdoor);
+        }
       } catch (error) { }
     };
-    ioAnalysis();
+    fetchIO();
+    return () => { active = false; };
   }, [sessionIds]);
 
   useEffect(() => {
@@ -2157,16 +2159,22 @@ const UnifiedMapView = () => {
     [updateViewportRef],
   );
 
+  const mapListenerHandlesRef = useRef([]);
+
   const handleMapLoad = useCallback(
     (map) => {
       mapRef.current = map;
-      map.addListener("maptypeid_changed", () => {
+      // Store all listener handles so we can remove them on unmount / re-mount
+      const handles = [];
+
+      handles.push(map.addListener("maptypeid_changed", () => {
         const currentType = map.getMapTypeId();
         setUi((prev) => {
           if (prev.basemapStyle === currentType) return prev;
           return { ...prev, basemapStyle: currentType };
         });
-      });
+      }));
+
       const updateViewport = () => {
         const bounds = map.getBounds();
         if (!bounds) return;
@@ -2200,7 +2208,7 @@ const UnifiedMapView = () => {
         }
       };
 
-      map.addListener("zoom_changed", () => {
+      handles.push(map.addListener("zoom_changed", () => {
         const currentZoom = map.getZoom?.();
         if (!Number.isFinite(currentZoom)) return;
 
@@ -2214,13 +2222,13 @@ const UnifiedMapView = () => {
         }
 
         setMapZoom((prev) => (prev === currentZoom ? prev : currentZoom));
-      });
+      }));
 
-      map.addListener("idle", updateViewport);
+      handles.push(map.addListener("idle", updateViewport));
       updateViewport();
 
       // Add site click listener
-      map.addListener("click", (e) => {
+      handles.push(map.addListener("click", (e) => {
         if (
           zoomLockEnabledRef.current &&
           Number.isFinite(lockedZoomRef.current)
@@ -2242,10 +2250,24 @@ const UnifiedMapView = () => {
           addSiteModeRef.current = false;
           setShowAddSiteDialog(true);
         }
-      });
+      }));
+
+      mapListenerHandlesRef.current = handles;
     },
     [debouncedSetViewport],
   );
+
+  // Clean up Google Maps listeners when the component unmounts
+  useEffect(() => {
+    return () => {
+      mapListenerHandlesRef.current.forEach((handle) => {
+        if (handle && window.google?.maps?.event) {
+          window.google.maps.event.removeListener(handle);
+        }
+      });
+      mapListenerHandlesRef.current = [];
+    };
+  }, []);
 
   const handleResetZoom = useCallback(() => {
     const map = mapRef.current;

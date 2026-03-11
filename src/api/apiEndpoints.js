@@ -383,6 +383,38 @@ export const predictionApi = {
     }
   },
 
+  runLtePrediction: async (params) => {
+    try {
+      if (!params.project_id) throw new Error("project_id is required");
+      if (!params.session_ids || !Array.isArray(params.session_ids) || params.session_ids.length === 0) {
+        throw new Error("session_ids array is required and must not be empty");
+      }
+
+      const payload = {
+        project_id: params.project_id,
+        session_ids: params.session_ids,
+        grid_value: params.grid_value ?? 25.0,
+        radius_m: params.radius_m ?? 5000.0,
+        polygon_area: params.polygon_area || [],
+        building: params.building ?? true
+      };
+
+      const response = await pythonApi.post("/api/lte-prediction/run", payload, {
+        timeout: 600000, // 10 minutes
+      });
+      return response;
+    } catch (error) {
+      console.error("LTE Prediction run error:", error);
+      if (error.code === "ECONNABORTED") {
+        throw new Error("LTE Prediction timed out.");
+      }
+      if (error.response?.data?.detail) {
+        throw new Error(`LTE Prediction failed: ${error.response.data.detail}`);
+      }
+      throw error;
+    }
+  },
+
 
   debugDatabase: async (projectId) => {
     try {

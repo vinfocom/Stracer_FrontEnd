@@ -10,6 +10,7 @@ let isRedirecting = false;
 export const setAuthErrorHandler = (handler) => {
   authErrorHandler = handler;
 };
+// yeh function is used to set a global handler for authentication errors (like 401/403). When such an error occurs, the handler will be called to, for example, redirect the user to the login page. This allows us to centralize auth error handling in one place (like AuthProvider) instead of having to handle it in every API call.
 
 
 class RequestQueue {

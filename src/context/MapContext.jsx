@@ -16,7 +16,6 @@ const DEFAULT_FILTERS = {
   dataSource: 'all'
 };
 
-// Default available filter options
 const DEFAULT_AVAILABLE_FILTERS = {
   providers: [],
   bands: [],

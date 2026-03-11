@@ -304,7 +304,7 @@ const MapChild = ({
       <div className="flex items-center justify-between p-2 bg-gray-50 border-b h-12">
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm text-gray-700">{title}</span>
-          <span
+          {/* <span
             className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
               isSecondaryView
                 ? "bg-purple-100 text-purple-700"
@@ -318,7 +318,7 @@ const MapChild = ({
               : isAllView
                 ? "All Logs"
                 : "Primary Logs"}
-          </span>
+          </span> */}
           <select
             value={mapRole}
             onChange={(e) => onRoleChange?.(id, e.target.value)}

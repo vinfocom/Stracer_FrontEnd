@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";  
 import { useNavigate } from "react-router-dom";
+import { Alert,AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { MoreHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import {
     DropdownMenu,
@@ -31,7 +32,7 @@ const SuperAdminCompanies = () => {
   
   const handleInactiveUser = async (id) =>{
     try{
-      const res = await companyApi.deleteCompany(id);
+      const res = await companyApi.revokeLicense(id);
       if(res?.Status === 1 ){
         toast.success("status updated Successfully")
         fetchCompanies();
@@ -43,6 +44,9 @@ const SuperAdminCompanies = () => {
   }
 
   const handleDeleteUser = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this company? This action cannot be undone.')) {
+      return;
+    }
     try{
       const res = await companyApi.deleteCompany(id);
       if(res?.Status === 1 ){
@@ -159,7 +163,7 @@ const SuperAdminCompanies = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 ">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold tracking-tight">Company Management</h1>
         <Button onClick={() => navigate("/company-form")}> <Plus /> Add Company</Button>

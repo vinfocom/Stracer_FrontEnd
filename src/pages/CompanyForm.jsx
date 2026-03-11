@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { companyApi } from "../api/apiEndpoints";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ChevronLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
 
 const CompanyForm = () => {
   const location = useLocation();
@@ -164,7 +167,16 @@ const CompanyForm = () => {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center scrollbar-hide ">
       <div className="bg-white w-full  overflow-hidden">
         <div className="px-8 py-4 ">
+          
           <h2 className="text-2xl font-bold text-black">
+            <Button
+            variant="outline"
+            size="icon"
+            onClick={() => navigate("/companies")}
+            className="h-10 w-10 bg-white border-gray-300 hover:bg-gray-100 text-gray-700"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
             {isEditMode ? "Edit Company" : "Company Registration"}
           </h2>
           <p className="text-black text-sm mt-1">

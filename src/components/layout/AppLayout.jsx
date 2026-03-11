@@ -36,7 +36,7 @@ const AppLayout = ({ children }) => {
   );
 
   return (
-    <div className="flex h-screen bg-slate-950">
+    <div className="flex h-screen ">
 
       {/* Sidebar — always visible, just changes width */}
       {shouldShowSidebar && (
