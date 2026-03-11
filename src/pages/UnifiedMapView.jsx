@@ -1585,7 +1585,7 @@ const UnifiedMapView = () => {
     areaLoading ||
     (shouldFetchNeighbors && sessionNeighborLoading);
 
-  const error = sampleError || predictionError || sessionNeighborError;
+  const error = sampleError || predictionError;
 
   const polygonFilteredNeighborData = useMemo(() => {
     const data = sessionNeighborData || [];
@@ -2523,7 +2523,7 @@ const UnifiedMapView = () => {
     );
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-800">
+    <div className="h-screen flex flex-col bg-gray-800">
       <UnifiedHeader
         onSettingsSaved={refetchColors}
         onToggleControls={() => setIsSideOpen(!isSideOpen)}

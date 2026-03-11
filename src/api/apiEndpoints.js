@@ -772,7 +772,7 @@ export const mapViewApi = {
 
   // ==================== Network Logs ====================
   // In apiEndpoints.js
-  getNetworkLog: async ({ session_ids, page = 1, limit = 10000, signal }) => {
+  getNetworkLog: async ({ session_ids, page = 1, limit = 20000, signal }) => {
     const sid = Array.isArray(session_ids) ? session_ids.join(",") : session_ids;
 
     debugUnifiedMapApi("getNetworkLog:start", { sid, page, limit });
@@ -830,13 +830,18 @@ export const mapViewApi = {
       return response;
 
     } catch (error) {
-      // ✅ Don't log cancelled requests as errors
+      // Silently re-throw cancelled requests - the calling hook will handle this
       if (isCancelledError(error) || isRequestCancelled(error)) {
-        // Silently re-throw - the calling hook will handle this
         throw error;
       }
-
-      console.error(" N78 API Error:", error);
+      // Network/connection errors are transient - warn instead of error to avoid
+      // false-positive noise in the console. Real bugs (e.g. 500s) will have a
+      // proper HTTP status attached.
+      if (error?.isNetworkError) {
+        console.warn('[N78 API] No response (network or cancelled):', error.message);
+      } else {
+        console.error(' N78 API Error:', error);
+      }
       throw error;
     }
   },

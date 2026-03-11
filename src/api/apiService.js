@@ -75,7 +75,7 @@ const dedupeRequest = async (key, fn) => {
 // ============================================
 const csharpAxios = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, 
+  timeout: 60000,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -91,11 +91,11 @@ csharpAxios.interceptors.request.use(
   (config) => {
     // Add request timestamp for performance tracking
     config.metadata = { startTime: Date.now() };
-    
+
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }
-    
+
     return config;
   },
   (error) => Promise.reject(error)
@@ -118,15 +118,33 @@ csharpAxios.interceptors.response.use(
       return Promise.reject(createError('Request cancelled', { isCancelled: true }));
     }
 
+    // AbortController / fetch abort signals can appear in multiple shapes depending
+    // on Axios version and browser. Check all known patterns.
+    const isBrowserAbort =
+      error.name === 'CanceledError' ||      // Axios v1+ wraps AbortController as this
+      error.name === 'AbortError' ||          // native DOMException
+      error.code === 'ERR_CANCELED' ||        // Axios v1+ code
+      (error instanceof DOMException && error.name === 'AbortError') ||
+      error.message === 'canceled' ||         // Axios v0 CancelToken message
+      error.message === 'Request cancelled';  // our own createError
+
+    if (isBrowserAbort) {
+      return Promise.reject(createError('Request cancelled', { isCancelled: true }));
+    }
+
     if (!error.response) {
-      return Promise.reject(
-        createError(
-          error.request 
-            ? 'No response from server. Please check your connection.' 
-            : error.message,
-          { isNetworkError: true }
-        )
-      );
+      // If there is no `error.request` the error happened before the request
+      // left the browser (e.g. bad URL, missing CORS preflight). Only in that
+      // case do we show a user-facing network error.
+      if (!error.request) {
+        return Promise.reject(createError(error.message || 'Request setup failed', { isNetworkError: true }));
+      }
+      // The request WAS sent but no response arrived. Could be: server down,
+      // network cut, or a race-condition abort that slipped past the checks above.
+      // Treat as a soft network error (warn, not error) so it doesn't pollute
+      // the console when it's just a cancelled in-flight request.
+      console.warn('[apiService] No response received for request to:', error.config?.url ?? 'unknown');
+      return Promise.reject(createError('No response from server. Please check your connection.', { isNetworkError: true }));
     }
 
     const { status, data, config } = error.response;
@@ -134,17 +152,17 @@ csharpAxios.interceptors.response.use(
     if (status === 401 || status === 403) {
       handleAuthError(config);
       return Promise.reject(
-        createError('Session expired. Please login again.', { 
-          isAuthError: true, 
-          status 
+        createError('Session expired. Please login again.', {
+          isAuthError: true,
+          status
         })
       );
     }
 
     return Promise.reject(
-      createError(`HTTP ${status}: ${extractErrorMessage(data)}`, { 
-        status, 
-        data 
+      createError(`HTTP ${status}: ${extractErrorMessage(data)}`, {
+        status,
+        data
       })
     );
   }
@@ -167,12 +185,12 @@ const extractErrorMessage = (data) => {
 
 const handleAuthError = (config) => {
   sessionStorage.removeItem('user');
-  
+
   const isAuthEndpoint = config?.url?.includes('/auth/');
   if (isRedirecting || isAuthEndpoint) return;
-  
+
   isRedirecting = true;
-  
+
   if (authErrorHandler) {
     try {
       authErrorHandler();
@@ -182,7 +200,7 @@ const handleAuthError = (config) => {
   } else {
     redirectToLogin();
   }
-  
+
   setTimeout(() => { isRedirecting = false; }, 1000);
 };
 
@@ -201,7 +219,7 @@ const redirectToLogin = () => {
 
 const apiService = async (endpoint, options = {}) => {
   const { priority = 0, dedupe = true, ...axiosOptions } = options;
-  
+
   const makeRequest = async () => {
     const response = await csharpAxios({ url: endpoint, ...axiosOptions });
     return response.status === 204 ? null : response.data;
@@ -216,11 +234,11 @@ const apiService = async (endpoint, options = {}) => {
       params: axiosOptions.params,
       data: axiosOptions.data
     });
-    
+
     if (dedupe) {
       return dedupeRequest(cacheKey, () => requestQueue.add(makeRequest, priority));
     }
-    
+
     return requestQueue.add(makeRequest, priority);
   }
 
@@ -247,9 +265,9 @@ export const api = {
     apiService(endpoint, { ...options, method: 'DELETE' }),
 
   upload: (endpoint, formData, options = {}) =>
-    apiService(endpoint, { 
-      ...options, 
-      method: 'POST', 
+    apiService(endpoint, {
+      ...options,
+      method: 'POST',
       data: formData,
       timeout: 120000,
       priority: 1 // High priority

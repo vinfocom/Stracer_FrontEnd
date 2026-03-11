@@ -173,8 +173,8 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
     setError(null);
     setProgress({ current: 0, total: 0, page: 0, totalPages: 0 });
 
-    const PAGE_SIZE = 10000;  // Reduced from 20000 to limit memory
-    const MAX_PAGES = 10;      // Hard cap: max 100k rows (was 100 pages = 2M rows)
+    const PAGE_SIZE = 20000;  // Reduced from 20000 to limit memory
+    const MAX_PAGES = 100;      // Hard cap: max 100k rows (was 100 pages = 2M rows)
     const allParsedLogs = [];
     let summaryData = { app: {}, io: {}, tpt: null };
     const startTime = performance.now();
