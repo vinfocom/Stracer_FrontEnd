@@ -400,90 +400,6 @@ function DrawingToolsLayerComponent({
     }
   }, [map]);
 
-  // Manual polygon drawing path to avoid DrawingManager crashes on deprecated API.
-  useEffect(() => {
-    if (!map || !enabled || shapeMode !== "polygon") return;
-    if (!window.google?.maps?.event) return;
-
-    const gm = window.google.maps;
-    const path = [];
-    let previewLine = null;
-
-    const clearPreview = () => {
-      if (previewLine) {
-        previewLine.setMap(null);
-        previewLine = null;
-      }
-    };
-
-    const renderPreview = () => {
-      if (path.length === 0) {
-        clearPreview();
-        return;
-      }
-      if (!previewLine) {
-        previewLine = new gm.Polyline({
-          map,
-          path: [...path],
-          strokeWeight: 2,
-          strokeColor: "#1d4ed8",
-          strokeOpacity: 0.9,
-          clickable: false,
-          zIndex: 120,
-        });
-      } else {
-        previewLine.setPath([...path]);
-      }
-    };
-
-    const finishPolygon = () => {
-      if (path.length < 3) {
-        toast.info("Click at least 3 points to create a polygon.", {
-          position: "bottom-right",
-          autoClose: 1800,
-        });
-        return;
-      }
-
-      const polygon = new gm.Polygon({
-        map,
-        paths: [...path],
-        clickable: true,
-        editable: true,
-        draggable: true,
-        strokeWeight: 2,
-        strokeColor: "#1d4ed8",
-        fillColor: "#1d4ed8",
-        fillOpacity: 0.08,
-      });
-      clearPreview();
-      registerCompletedShape("polygon", polygon, null);
-    };
-
-    const clickListener = gm.event.addListener(map, "click", (e) => {
-      if (!e?.latLng) return;
-      path.push(e.latLng);
-      renderPreview();
-    });
-
-    const dblClickListener = gm.event.addListener(map, "dblclick", (e) => {
-      e?.domEvent?.preventDefault?.();
-      e?.domEvent?.stopPropagation?.();
-      finishPolygon();
-    });
-
-    const rightClickListener = gm.event.addListener(map, "rightclick", (e) => {
-      e?.domEvent?.preventDefault?.();
-      finishPolygon();
-    });
-
-    return () => {
-      gm.event.removeListener(clickListener);
-      gm.event.removeListener(dblClickListener);
-      gm.event.removeListener(rightClickListener);
-      clearPreview();
-    };
-  }, [map, enabled, shapeMode, registerCompletedShape]);
 
   // ✅ Initialize Manager with drawingControl: false
   useEffect(() => {
@@ -502,7 +418,7 @@ function DrawingToolsLayerComponent({
       managerRef.current = null;
     }
 
-    if (!enabled || shapeMode === "polygon") return;
+    if (!enabled) return;
 
     const dm = new window.google.maps.drawing.DrawingManager({
       drawingMode: null, // Start with nothing

@@ -7,6 +7,15 @@ import {
   PieChart, Pie, Cell
 } from 'recharts';
 
+import {
+  normalizeProviderName,
+  normalizeTechName,
+  normalizeBandName,
+  getBandColor,
+  getTechnologyColor,
+  getProviderColor,
+} from '@/utils/colorUtils';
+
 // --- Configuration & Helpers ---
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
 
@@ -184,9 +193,9 @@ const N78AnalysisTab = ({
       values.push(value);
       neighborSum += value;
 
-      const provider = neighbor.provider || "Unknown";
-      const band = neighbor.neighbourBand || neighbor.primaryBand || "Unknown";
-      const tech = neighbor.networkType || "Unknown";
+      const provider = normalizeProviderName(neighbor.provider || 'Unknown');
+      const band = normalizeBandName(neighbor.neighbourBand || neighbor.primaryBand || '');
+      const tech = normalizeTechName(neighbor.networkType || '');
 
       providers[provider] = (providers[provider] || 0) + 1;
       bands[band] = (bands[band] || 0) + 1;
@@ -218,7 +227,9 @@ const N78AnalysisTab = ({
       { name: 'Max', Primary: Number((primaryValues[primaryValues.length - 1] ?? 0).toFixed(1)), Secondary: Number((values[values.length - 1] ?? 0).toFixed(1)) },
     ];
 
+    const UNKNOWN_LABELS = new Set(['unknown', '', 'n/a', 'nan', 'null', 'undefined']);
     const formatChartData = (obj) => Object.entries(obj)
+      .filter(([name]) => !UNKNOWN_LABELS.has(String(name).trim().toLowerCase()))
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
@@ -360,7 +371,7 @@ const N78AnalysisTab = ({
                 dataKey="value"
               >
                 {stats.chartData.providers.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell key={`cell-${index}`} fill={getProviderColor(entry.name)} />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
@@ -386,7 +397,11 @@ const N78AnalysisTab = ({
               <XAxis type="number" hide />
               <YAxis dataKey="name" type="category" width={60} tick={AXIS_TICK_STYLE_SM} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="value" fill="#8B5CF6" radius={[0, 4, 4, 0]} barSize={15} />
+              <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={15}>
+                {stats.chartData.bands.map((entry, index) => (
+                  <Cell key={`cell-band-${index}`} fill={getBandColor(entry.name)} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -409,7 +424,7 @@ const N78AnalysisTab = ({
                 style={{ fontSize: '11px', fill: '#858585' }}
               >
                 {stats.chartData.techs.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell key={`cell-${index}`} fill={getTechnologyColor(entry.name)} />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
