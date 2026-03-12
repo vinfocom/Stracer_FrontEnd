@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { companyApi } from "../api/apiEndpoints";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
 
 const CompanyForm = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
   const editCompany = location.state?.company || null;
   const isEditMode = Boolean(editCompany?.id);
   const [loading, setLoading] = useState(false);
@@ -20,8 +20,10 @@ const CompanyForm = () => {
     address: editCompany?.address || "",
     pincode: editCompany?.pincode || "",
     gst_id: editCompany?.gst_id || "",
-    license_validity_in_months: editCompany?.license_validity_in_months?.toString?.() || "",
-    total_granted_licenses: editCompany?.total_granted_licenses?.toString?.() || "",
+    license_validity_in_months:
+      editCompany?.license_validity_in_months?.toString?.() || "",
+    total_granted_licenses:
+      editCompany?.total_granted_licenses?.toString?.() || "",
     otp_phone_number: editCompany?.otp_phone_number || "",
     ask_for_otp: editCompany ? editCompany?.ask_for_otp === 1 : false,
     blacklisted_phone_number: editCompany?.blacklisted_phone_number || "",
@@ -33,15 +35,15 @@ const CompanyForm = () => {
   const [country, setCountry] = useState(editCompany?.country_code || "IN");
 
   const toggleCountry = () => {
-  const newCountry = country === "IN" ? "TW" : "IN";
+    const newCountry = country === "IN" ? "TW" : "IN";
 
-  setCountry(newCountry);
+    setCountry(newCountry);
 
-  setFormData((prev) => ({
-    ...prev,
-    country_code: newCountry,
-  }));
-};
+    setFormData((prev) => ({
+      ...prev,
+      country_code: newCountry,
+    }));
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -66,7 +68,7 @@ const CompanyForm = () => {
       address: formData.address || "",
       pincode: formData.pincode || "",
       gst_id: formData.gst_id || "",
-      company_code: "", 
+      company_code: "",
       country_code: formData.country_code || "",
       isd_code: formData.isd_code || "",
 
@@ -82,7 +84,9 @@ const CompanyForm = () => {
       total_granted_licenses: formData.total_granted_licenses
         ? parseInt(formData.total_granted_licenses, 10)
         : 0,
-      total_used_licenses: isEditMode ? editCompany?.total_used_licenses || 0 : 0,
+      total_used_licenses: isEditMode
+        ? editCompany?.total_used_licenses || 0
+        : 0,
 
       // Booleans (DTO defines these as bool, not int)
       ask_for_otp: formData.ask_for_otp ? 1 : 0,
@@ -122,7 +126,10 @@ const CompanyForm = () => {
           });
         }
       } else {
-        alert(data?.Message || `Failed to ${isEditMode ? "update" : "create"} company (Unknown Status).`);
+        alert(
+          data?.Message ||
+            `Failed to ${isEditMode ? "update" : "create"} company (Unknown Status).`,
+        );
       }
     } catch (error) {
       console.error(" API Error Object:", error);
@@ -167,16 +174,15 @@ const CompanyForm = () => {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center scrollbar-hide ">
       <div className="bg-white w-full  overflow-hidden">
         <div className="px-8 py-4 ">
-          
           <h2 className="text-2xl font-bold text-black">
             <Button
-            variant="outline"
-            size="icon"
-            onClick={() => navigate("/companies")}
-            className="h-10 w-10 bg-white border-gray-300 hover:bg-gray-100 text-gray-700"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
+              variant="outline"
+              size="icon"
+              onClick={() => navigate("/companies")}
+              className="h-10 w-10 bg-white border-gray-300 hover:bg-gray-100 text-gray-700"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
             {isEditMode ? "Edit Company" : "Company Registration"}
           </h2>
           <p className="text-black text-sm mt-1">
@@ -254,15 +260,30 @@ const CompanyForm = () => {
               <label className={labelClass}>
                 Password <span className="text-red-500">*</span>
               </label>
-              <input
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={handleChange}
-                required={!isEditMode}
-                className={inputClass}
-              />
+
+              <div className="relative">
+                <input
+                  name="password"
+                  type={open ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required={!isEditMode}
+                  className={`${inputClass} pr-10`}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setOpen(!open)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                >
+                  {open ? (
+                    <Eye className="h-4 w-4" />
+                  ) : (
+                    <EyeOff className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Optional Fields */}
@@ -302,19 +323,19 @@ const CompanyForm = () => {
 
             <div>
               <label className={labelClass}>Isd Code</label>
-              <input type="text"
-              name="isd_code"
-              placeholder="e.g. +91"
-              value={formData.isd_code}
-              onChange={handleChange}
-              className={inputClass}
-               />
-
+              <input
+                type="text"
+                name="isd_code"
+                placeholder="e.g. +91"
+                value={formData.isd_code}
+                onChange={handleChange}
+                className={inputClass}
+              />
             </div>
 
             <br />
             <button
-             type="button"
+              type="button"
               onClick={toggleCountry}
               className="relative w-20 h-10 bg-gray-200 rounded-full 
                  transition-colors duration-300
