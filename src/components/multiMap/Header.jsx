@@ -15,7 +15,9 @@ export default function Header({
   sessionIds,
   addMap,
   locations,
+  rawLocations,
   neighborData,
+  rawNeighborData,
   thresholds,
   metchOnly = false,
   onMetchOnlyChange,
@@ -57,10 +59,19 @@ export default function Header({
   }, [effectiveProjectId, project]);
 
   const handleUnifiedNavigation = () => {
+    const locationsToPass =
+      Array.isArray(rawLocations) && rawLocations.length > 0
+        ? rawLocations
+        : locations;
+    const neighborsToPass =
+      Array.isArray(rawNeighborData) && rawNeighborData.length > 0
+        ? rawNeighborData
+        : neighborData;
+
     navigate(`/unified-map?${searchParams.toString()}`, {
       state: {
-        locations,
-        neighborData,
+        locations: locationsToPass,
+        neighborData: neighborsToPass,
         thresholds,
         project: displayProject,
         sessionIds,

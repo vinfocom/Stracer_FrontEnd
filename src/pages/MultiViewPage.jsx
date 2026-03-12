@@ -285,7 +285,9 @@ const MultiViewPage = () => {
         sessionIds={sessionIds} // Pass sessionIds here
         addMap={addMap} 
         locations={metchData.locations}
+        rawLocations={locations}
         neighborData={metchData.neighbors}
+        rawNeighborData={normalizedNeighbors}
         thresholds={thresholds}
         metchOnly={metchOnly}
         onMetchOnlyChange={setMetchOnly}

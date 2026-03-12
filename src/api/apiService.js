@@ -75,7 +75,7 @@ const dedupeRequest = async (key, fn) => {
 // ============================================
 const csharpAxios = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000,
+  timeout: 300000, // 5 minutes for long-running operations
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
