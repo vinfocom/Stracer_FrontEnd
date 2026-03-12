@@ -834,9 +834,7 @@ export const mapViewApi = {
       if (isCancelledError(error) || isRequestCancelled(error)) {
         throw error;
       }
-      // Network/connection errors are transient - warn instead of error to avoid
-      // false-positive noise in the console. Real bugs (e.g. 500s) will have a
-      // proper HTTP status attached.
+      
       if (error?.isNetworkError) {
         console.warn('[N78 API] No response (network or cancelled):', error.message);
       } else {

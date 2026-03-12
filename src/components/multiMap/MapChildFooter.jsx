@@ -68,7 +68,6 @@ const MapChildFooter = ({
       return acc;
     }, {});
 
-    // --- Histogram Bins ---
     const binCount = 25;
     const range = max - min;
     const safeRange = range === 0 ? 1 : range;
@@ -93,7 +92,6 @@ const MapChildFooter = ({
       bins[index].count += 1;
     });
 
-    // --- Merge CDF into histogram bins ---
     let runningTotal = 0;
     const merged = bins.map((bin) => {
       runningTotal += bin.count;
@@ -225,10 +223,8 @@ const MapChildFooter = ({
                   cursor={{ fill: "rgba(0,0,0,0.04)" }}
                 />
 
-                {/* Bars rendered first (background) */}
                 <Bar yAxisId="left" dataKey="count" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Count" barSize={20} />
 
-                {/* Line rendered second (foreground) */}
                 {showCDF && (
                   <Line
                     yAxisId="right"
