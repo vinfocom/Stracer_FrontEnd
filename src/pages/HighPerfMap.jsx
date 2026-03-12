@@ -976,7 +976,7 @@ const rectCoords = [
           <div className="absolute bottom-4 left-4 z-30 bg-white rounded-lg shadow-lg w-[260px] border border-gray-200">
             <div className="flex items-center justify-between px-3 py-2 bg-blue-600 rounded-t-lg">
               <h3 className="font-semibold text-white text-sm">
-                {selectedMetric.toUpperCase()} Analysis
+                Polygon Analysis
               </h3>
               <button onClick={handleClearAnalysis} className="text-white/80 hover:text-white">
                 <X className="h-4 w-4" />
@@ -1116,7 +1116,7 @@ const rectCoords = [
         <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
           <DialogContent className="sm:max-w-[425px] bg-white">
             <DialogHeader>
-              <DialogTitle className="text-gray-800">Save Polygon Analysis</DialogTitle>
+              <DialogTitle className="text-gray-800">Polygon Analysis</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
