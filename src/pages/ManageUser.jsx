@@ -280,11 +280,14 @@ const ManageUsersPage = () => {
             accessor: 'created_on',
             render: (row) => row.created_on ? new Date(row.created_on).toLocaleDateString() : '-'
         },
-        {
-            header: 'Licenses Code',
-            accessor: 'licenses_code',
-            render: (row) => <span className="text-gray-700">{row.license_code || '-'}</span>
-        },
+        
+         ...(isSuperAdmin ? [{
+        header: 'Licenses Code',
+        accessor: 'licenses_code',
+        render: (row) => (
+            <span className="text-gray-700">{row.license_code || '-'}</span>
+        )
+    }] : []),
         {
             header: 'Status',
             accessor: 'user_isactive',

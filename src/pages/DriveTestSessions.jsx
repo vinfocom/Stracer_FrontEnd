@@ -428,7 +428,7 @@ const DriveTestSessionsPage = () => {
   };
 
   const handleViewOnMap = (sessionId) => {
-    console.log("🗺️ Navigating to map for session:", sessionId);
+    console.log(" Navigating to map for session:", sessionId);
     navigate(`/debug-map?sessionId=${encodeURIComponent(String(sessionId))}`);
   };
 
@@ -440,7 +440,7 @@ const DriveTestSessionsPage = () => {
     }
 
     const sessionIdsParam = selectedSessions.join(",");
-    console.log("🗺️ Navigating to map for sessions:", selectedSessions);
+    console.log(" Navigating to map for sessions:", selectedSessions);
     navigate(`/debug-map?sessionId=${encodeURIComponent(sessionIdsParam)}`);
   };
 
