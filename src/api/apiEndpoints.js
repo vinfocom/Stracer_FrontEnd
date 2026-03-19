@@ -869,9 +869,10 @@ export const mapViewApi = {
       });
 
       if (response?.data && typeof response.data === "object") {
+        console.log("Sub-session analytics API Response:", response.data);
         return response.data;
       }
-
+      console.log("Sub-session analytics API Response:", response);
       return response;
     } catch (error) {
       if (isCancelledError(error) || isRequestCancelled(error)) {

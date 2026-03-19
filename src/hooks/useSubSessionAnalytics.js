@@ -78,15 +78,32 @@ const normalizeSessionItem = (item = {}, index = 0) => {
 
   const markers = [];
 
+  let lastKnownPos = sessionStart;
+
   subSessions.forEach((sub, subIndex) => {
-    if (!sub.start) return;
+    let position = sub.start;
+
+    if (!position && subIndex === 0) {
+      position = sessionStart;
+    } else if (!position) {
+      position = lastKnownPos;
+    }
+
+    if (sub.end) {
+      lastKnownPos = sub.end;
+    } else if (position) {
+      lastKnownPos = position;
+    }
+
+    if (!position) return;
+
     markers.push({
       id: `sub-${sessionId}-${sub.subSessionId ?? subIndex}`,
       markerType: "sub-session-start",
       sessionId,
       subSessionId: sub.subSessionId,
-      position: sub.start,
-      start: sub.start,
+      position: position,
+      start: position,
       end: sub.end,
       sessionStart,
       sessionEnd,
@@ -124,10 +141,21 @@ const normalizeSessionItem = (item = {}, index = 0) => {
 };
 
 const normalizeResponse = (response) => {
-  const body =
-    response?.data && !Array.isArray(response.data) ? response.data : response || {};
+  let body = response || {};
+  let data = [];
 
-  const data = Array.isArray(body?.data) ? body.data : [];
+  if (Array.isArray(response)) {
+    data = response;
+  } else if (response?.data && Array.isArray(response.data)) {
+    data = response.data;
+    body = response;
+  } else if (response?.data) {
+    body = response.data;
+    data = Array.isArray(body.data) ? body.data : [];
+  } else if (Array.isArray(body.data)) {
+    data = body.data;
+  }
+
   const sessions = data.map((item, index) => normalizeSessionItem(item, index));
   const markers = sessions.flatMap((session) => session.markers || []);
 
@@ -139,12 +167,44 @@ const normalizeResponse = (response) => {
     .map((id) => String(id ?? "").trim())
     .filter(Boolean);
 
+  let rawSummary = body?.summary;
+  if (!rawSummary && data.length > 0) {
+    let total_duration = 0;
+    let avg_duration_sum = 0;
+    let total_speed = 0;
+    let avg_speed_sum = 0;
+    let total_file_size = 0;
+    let avg_file_size_sum = 0;
+    let countWithData = 0;
+
+    data.forEach((item) => {
+      const m = item.metrics || {};
+      let hasData = false;
+      if (m.total_duration != null) { total_duration += Number(m.total_duration); hasData = true; }
+      if (m.avg_duration != null) { avg_duration_sum += Number(m.avg_duration); hasData = true; }
+      if (m.total_speed != null) { total_speed += Number(m.total_speed); hasData = true; }
+      if (m.avg_speed != null) { avg_speed_sum += Number(m.avg_speed); hasData = true; }
+      if (m.total_file_size != null) { total_file_size += Number(m.total_file_size); hasData = true; }
+      if (m.avg_file_size != null) { avg_file_size_sum += Number(m.avg_file_size); hasData = true; }
+      if (hasData) countWithData++;
+    });
+
+    rawSummary = {
+      total_duration,
+      avg_duration: countWithData > 0 ? avg_duration_sum / countWithData : 0,
+      total_speed,
+      avg_speed: countWithData > 0 ? avg_speed_sum / countWithData : 0,
+      total_file_size,
+      avg_file_size: countWithData > 0 ? avg_file_size_sum / countWithData : 0,
+    };
+  }
+
   return {
     requestedSessionIds,
     sessions,
-    summary: normalizeMetrics(body?.summary || {}),
+    summary: normalizeMetrics(rawSummary || {}),
     markers,
-    rawResponse: body,
+    rawResponse: response,
   };
 };
 
