@@ -33,21 +33,34 @@ const AuthProvider = ({ children }) => {
         if (response?.user) {
           setUser(response.user);
           sessionStorage.setItem('user', JSON.stringify(response.user));
+        } else if (cachedUser && cachedUser !== 'undefined') {
+          // API returned success but no user object — trust the cache
+          try {
+            setUser(JSON.parse(cachedUser));
+          } catch {
+            clearSession();
+          }
         } else {
           clearSession();
         }
       } catch (error) {
-        if (error.status === 401 || error.status === 403) {
-          clearSession();
-        } else {
-          const cachedUser = sessionStorage.getItem('user');
-          if (cachedUser && cachedUser !== 'undefined') {
-            try {
-              setUser(JSON.parse(cachedUser));
-            } catch {
-              clearSession();
-            }
+        // On 401/403, only clear session if there's no cached user. 
+        // If there IS a cached user, trust it — the session cookie may just be 
+        // slow to propagate right after a fresh login.
+        const cachedUser = sessionStorage.getItem('user');
+        const isAuth = error.status === 401 || error.status === 403 || error.isAuthError;
+        
+        if (isAuth && (!cachedUser || cachedUser === 'undefined')) {
+          clearSession(); // Truly not logged in
+        } else if (cachedUser && cachedUser !== 'undefined') {
+          // Keep the cached session alive
+          try {
+            setUser(JSON.parse(cachedUser));
+          } catch {
+            clearSession();
           }
+        } else {
+          clearSession();
         }
       } finally {
         setLoading(false);

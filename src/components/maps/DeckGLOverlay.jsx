@@ -121,7 +121,7 @@ const DeckGLOverlay = ({
 
     if (!overlayRef.current) {
       overlayRef.current = new GoogleMapsOverlay({ 
-        interleaved: true,
+        interleaved: false,
         glOptions: { preserveDrawingBuffer: true } 
       });
     }
@@ -200,6 +200,10 @@ const DeckGLOverlay = ({
       computedColor: getColor ? parseColorToRGB(getColor(loc)) : [16, 185, 129, 200],
     }));
   }, [locations, showPrimaryLogs, getColor]);
+
+  useEffect(() => {
+    console.log("[DEBUG] DeckGLOverlay primaryData:", primaryData?.length || 0);
+  }, [primaryData]);
 
   const neighborData = useMemo(() => {
     if (!showNeighbors || !neighbors?.length) return [];

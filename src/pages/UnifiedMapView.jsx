@@ -27,6 +27,7 @@ import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 import LoadingProgress from "@/components/LoadingProgress";
 import TechHandoverMarkers from "@/components/unifiedMap/TechHandoverMarkers";
+import SubSessionMarkers from "@/components/unifiedMap/SubSessionMarkers";
 import AddSiteFormDialog from "@/components/unifiedMap/AddSiteFormDialog";
 import LtePredictionLocationLayer from "@/components/unifiedMap/LtePredictionLocationLayer";
 import { normalizeBandName } from "@/utils/colorUtils";
@@ -44,6 +45,7 @@ import {
 import { useNetworkSamples } from "@/hooks/useNetworkSamples";
 import { usePredictionData } from "@/hooks/usePredictionData";
 import { useSessionNeighbors } from "@/hooks/useSessionNeighbors";
+import { useSubSessionAnalytics } from "@/hooks/useSubSessionAnalytics";
 import { useProjectPolygons } from "@/hooks/useProjectPolygons";
 import { useAreaPolygons } from "@/hooks/useAreaPolygons";
 
@@ -823,10 +825,11 @@ const UnifiedMapView = () => {
   const [showSiteMarkers, setShowSiteMarkers] = useState(true);
   const [showSiteSectors, setShowSiteSectors] = useState(true);
   const [showNeighbors, setShowNeighbors] = useState(false);
+  const [showSubSession, setShowSubSession] = useState(false);
 
   const [showPolygons, setShowPolygons] = useState(false);
   const [polygonSource, setPolygonSource] = useState("map");
-  const [onlyInsidePolygons] = useState(true);
+  const [onlyInsidePolygons] = useState(false); // Changed to false for debugging
   const [areaEnabled, setAreaEnabled] = useState(false);
   const [coverageViolationThreshold, setCoverageViolationThreshold] =
     useState(null);
@@ -1129,7 +1132,8 @@ const UnifiedMapView = () => {
     getMetricColor: getMetricColorForLog,
     refetch: refetchColors,
   } = useColorForLog();
-  const shouldLoadProjectPolygons = showPolygons || enableSiteToggle || onlyInsidePolygons;
+  // Always load polygons when a project is open so boundary always draws and polygon-based filtering works
+  const shouldLoadProjectPolygons = Boolean(projectId);
   const {
     polygons,
     loading: polygonLoading,
@@ -1237,6 +1241,15 @@ const UnifiedMapView = () => {
   const sessionNeighborData = hasPassedNeighbors
     ? passedNeighbors
     : fetchedNeighbors;
+
+  const {
+    sessions: subSessionData,
+    summary: subSessionSummary,
+    requestedSessionIds: subSessionRequestedIds,
+    markers: subSessionMarkers,
+    loading: subSessionLoading,
+    refetch: refetchSubSessionAnalytics,
+  } = useSubSessionAnalytics(sessionIds, showSubSession);
 
   useEffect(() => {
     debugMapFlow("fetch-gates", {
@@ -1576,6 +1589,21 @@ const UnifiedMapView = () => {
     filteringPolygonChecker,
   ]);
 
+  useEffect(() => {
+    console.log("[DEBUG] UnifiedMapView locations check:", {
+      onlyInsidePolygons,
+      hasFilteringPolygons,
+      sampleLocationsLength: sampleLocations?.length || 0,
+      locationsLength: locations?.length || 0,
+      sessionIds,
+      sessionIdsCount: sessionIds?.length || 0,
+      isSampleMode,
+      shouldFetchSamples,
+      querySessionParam,
+      fallbackSessionParam,
+    });
+  }, [onlyInsidePolygons, hasFilteringPolygons, sampleLocations, locations, sessionIds, isSampleMode, shouldFetchSamples, querySessionParam, fallbackSessionParam]);
+
   const isLoading =
     (shouldFetchSamples && sampleLoading) ||
     predictionLoading ||
@@ -1862,6 +1890,14 @@ const UnifiedMapView = () => {
     hasFilteringPolygons,
     filteringPolygonChecker,
   ]);
+
+  useEffect(() => {
+    console.log("[DEBUG] UnifiedMapView finalDisplayLocations check:", {
+      drawnPointsLength: drawnPoints?.length,
+      filteredLocationsLength: filteredLocations?.length || 0,
+      finalDisplayLocationsLength: finalDisplayLocations?.length || 0,
+    });
+  }, [drawnPoints, filteredLocations, finalDisplayLocations]);
 
   useEffect(() => {
     debugMapFlow("data-counts", {
@@ -2349,6 +2385,7 @@ const UnifiedMapView = () => {
     if (areaEnabled) refetchAreaPolygons();
     if (showNeighbors) refetchNeighbors();
     if (showSessionNeighbors) refetchSessionNeighbors();
+    if (showSubSession) refetchSubSessionAnalytics();
     if (shouldFetchDominanceDetails) refetchDominanceDetails();
   }, [
     enableDataToggle,
@@ -2359,6 +2396,7 @@ const UnifiedMapView = () => {
     areaEnabled,
     showNeighbors,
     showSessionNeighbors,
+    showSubSession,
     refetchSample,
     refetchPrediction,
     refetchPolygons,
@@ -2366,6 +2404,7 @@ const UnifiedMapView = () => {
     refetchSites,
     refetchNeighbors,
     refetchSessionNeighbors,
+    refetchSubSessionAnalytics,
     shouldFetchDominanceDetails,
     refetchDominanceDetails,
   ]);
@@ -2586,6 +2625,11 @@ const UnifiedMapView = () => {
           showN78Neighbors={showSessionNeighbors}
           n78NeighborStats={sessionNeighborStats}
           n78NeighborData={filteredNeighbors}
+          showSubSession={showSubSession}
+          subSessionData={subSessionData}
+          subSessionSummary={subSessionSummary}
+          subSessionLoading={subSessionLoading}
+          subSessionRequestedIds={subSessionRequestedIds}
         />
       )}
 
@@ -2652,6 +2696,10 @@ const UnifiedMapView = () => {
         onResetZoom={handleResetZoom}
         showNeighbors={showNeighbors}
         setShowNeighbors={setShowNeighbors}
+        showSubSession={showSubSession}
+        setShowSubSession={setShowSubSession}
+        subSessionMarkerCount={subSessionMarkers?.length || 0}
+        subSessionLoading={subSessionLoading}
         neighborStats={neighborStats}
         areaEnabled={areaEnabled}
         setAreaEnabled={setAreaEnabled}
@@ -2928,6 +2976,11 @@ const UnifiedMapView = () => {
                 show={pciHandover}
                 type="pci"
                 showConnections={false}
+              />
+
+              <SubSessionMarkers
+                show={showSubSession}
+                markers={subSessionMarkers}
               />
 
             </MapWithMultipleCircles>

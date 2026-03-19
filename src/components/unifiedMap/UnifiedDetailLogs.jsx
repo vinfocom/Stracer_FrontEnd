@@ -40,6 +40,7 @@ import { PerformanceTab } from "./tabs/PerformanceTab";
 import { ApplicationTab } from "./tabs/ApplicationTab";
 import { IOAnalysis } from "./tabs/IOAnalysis";
 import N78AnalysisTab from "./tabs/N78AnalysisTab";
+import SubSessionAnalyticsTab from "./tabs/SubSessionAnalyticsTab";
 
 import { TabButton } from "./common/TabButton";
 import { LoadingSpinner } from "./common/LoadingSpinner";
@@ -724,6 +725,11 @@ export default function UnifiedDetailLogs({
   n78NeighborLoading = false,
   dataFilters = DEFAULT_DATA_FILTERS,
   onFilteredDataChange,
+  showSubSession = false,
+  subSessionData = [],
+  subSessionSummary = null,
+  subSessionLoading = false,
+  subSessionRequestedIds = [],
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -839,8 +845,17 @@ export default function UnifiedDetailLogs({
     if (showN78Neighbors && n78NeighborData?.length > 0) {
       tabs.push({ id: "n78", label: "Anchor" });
     }
+    if (showSubSession) {
+      tabs.push({ id: "subSession", label: "Sub Session" });
+    }
     return tabs;
-  }, [techHandOver, showN78Neighbors, n78NeighborData]);
+  }, [techHandOver, showN78Neighbors, n78NeighborData, showSubSession]);
+
+  useEffect(() => {
+    if (!availableTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(availableTabs[0]?.id || "overview");
+    }
+  }, [availableTabs, activeTab]);
 
   useEffect(() => {
     setIsFilterLoading(true);
@@ -1195,6 +1210,15 @@ export default function UnifiedDetailLogs({
         {activeTab === "handover" && <HandoverAnalysisTab transitions={technologyTransitions} />}
         
         {activeTab === "n78" && <N78AnalysisTab n78NeighborData={n78NeighborData} n78NeighborLoading={n78NeighborLoading} thresholds={thresholds} expanded={expanded} primaryData={filteredLocations} />}
+
+        {activeTab === "subSession" && (
+          <SubSessionAnalyticsTab
+            subSessionData={subSessionData}
+            subSessionSummary={subSessionSummary}
+            requestedSessionIds={subSessionRequestedIds}
+            loading={subSessionLoading}
+          />
+        )}
       </div>
       </div>
     </Rnd>

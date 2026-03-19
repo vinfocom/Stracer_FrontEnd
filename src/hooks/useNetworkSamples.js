@@ -286,6 +286,13 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
         );
       }
 
+      console.log("[DEBUG] useNetworkSamples fetched data:", {
+        rawParsedLogs: allParsedLogs?.length,
+        finalLogs: finalLogs?.length,
+        filterEnabled,
+        polygonsLength: polygons?.length
+      });
+
       const fetchTime = ((performance.now() - startTime) / 1000).toFixed(2);
       setLocations(finalLogs);
       setAppSummary(summaryData.app);

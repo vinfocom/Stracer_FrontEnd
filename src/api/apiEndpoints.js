@@ -619,6 +619,7 @@ export const adminApi = {
   saveUserDetails: (data) => api.post("/Admin/SaveUserDetails", data),
   deleteUser: (id) => api.post(`/Admin/DeleteUser`, { id }),
   activateUser: (id) => api.post(`/Admin/ActivateUser`, { id }),
+  inactivateUser: (id) => api.post(`/Admin/InactivateUser`, { id }),
   userResetPassword: (data) => api.post("/Admin/UserResetPassword", data),
   changePassword: (data) => api.post("/Admin/ChangePassword", data),
   getSessions: () => api.get("/Admin/GetSessions"),
@@ -840,6 +841,43 @@ export const mapViewApi = {
       } else {
         console.error(' N78 API Error:', error);
       }
+      throw error;
+    }
+  },
+
+  getSubSessionAnalytics: async ({ sessionIds, signal } = {}) => {
+    try {
+      const idsParam = Array.isArray(sessionIds)
+        ? sessionIds.map((id) => String(id ?? "").trim()).filter(Boolean).join(",")
+        : String(sessionIds ?? "").trim();
+
+      if (!idsParam) {
+        return {
+          requested_session_ids: [],
+          data: [],
+          summary: null,
+        };
+      }
+
+      const response = await api.get("/api/MapView/GetSubSessionAnalytics", {
+        params: {
+          sessionIds: idsParam,
+          session_ids: idsParam,
+        },
+        signal,
+        dedupe: false,
+      });
+
+      if (response?.data && typeof response.data === "object") {
+        return response.data;
+      }
+
+      return response;
+    } catch (error) {
+      if (isCancelledError(error) || isRequestCancelled(error)) {
+        throw error;
+      }
+      console.error(" Sub-session analytics API Error:", error);
       throw error;
     }
   },

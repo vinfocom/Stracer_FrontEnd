@@ -34,6 +34,13 @@ export class PolygonChecker {
 
   filter(data, latKey = 'lat', lngKey = 'lng') {
     if (!this.hasPolygons || !data?.length) return data;
-    return data.filter(item => this.isInside(item[latKey], item[lngKey]));
+    return data.filter(item => {
+      const latRaw = item[latKey] ?? item.latitude ?? item.Lat ?? item.Latitude ?? item.LAT;
+      const lngRaw = item[lngKey] ?? item.lon ?? item.longitude ?? item.Lng ?? item.Longitude ?? item.LNG;
+      const lat = Number(latRaw);
+      const lng = Number(lngRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+      return this.isInside(lat, lng);
+    });
   }
 }

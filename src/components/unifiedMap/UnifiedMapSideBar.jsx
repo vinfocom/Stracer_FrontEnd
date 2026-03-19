@@ -20,6 +20,7 @@ import {
   ArrowLeftRight,
   PlusCircle,
   Check,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -351,6 +352,10 @@ const UnifiedMapSidebar = ({
   onResetZoom,
   showNeighbors,
   setShowNeighbors,
+  showSubSession,
+  setShowSubSession,
+  subSessionMarkerCount = 0,
+  subSessionLoading = false,
   neighborStats,
   areaEnabled,
   setAreaEnabled,
@@ -634,6 +639,34 @@ const UnifiedMapSidebar = ({
                   onChange={setShowNumCells}
                 />
               </>
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Sub Sessions"
+            icon={MapPin}
+            badge={showSubSession ? subSessionMarkerCount : null}
+          >
+            <ToggleRow
+              label="Enable Sub Sessions"
+              description="Load sub-session analytics and map markers"
+              checked={Boolean(showSubSession)}
+              onChange={setShowSubSession}
+              useSwitch={true}
+            />
+
+            {showSubSession && (
+              <div className="bg-slate-800/50 rounded p-2 text-xs">
+                <InfoBadge
+                  label="Start Markers"
+                  value={subSessionLoading ? "Loading..." : subSessionMarkerCount}
+                  color="orange"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Click any marker to view sub-session details. A new analytics tab
+                  is available in the detail logs panel.
+                </p>
+              </div>
             )}
           </CollapsibleSection>
 

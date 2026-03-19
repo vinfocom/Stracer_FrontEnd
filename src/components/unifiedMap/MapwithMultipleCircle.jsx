@@ -130,8 +130,12 @@ class PolygonChecker {
     
     for (let i = 0; i < locations.length; i++) {
       const loc = locations[i];
-      if (typeof loc.lat === 'number' && typeof loc.lng === 'number' &&
-          this.isInside(loc.lat, loc.lng)) {
+      const latRaw = loc.lat ?? loc.latitude ?? loc.Lat ?? loc.Latitude ?? loc.LAT;
+      const lngRaw = loc.lng ?? loc.lon ?? loc.longitude ?? loc.Lng ?? loc.Longitude ?? loc.LNG;
+      const lat = Number(latRaw);
+      const lng = Number(lngRaw);
+      
+      if (Number.isFinite(lat) && Number.isFinite(lng) && this.isInside(lat, lng)) {
         result[count++] = loc;
       }
     }
@@ -688,13 +692,16 @@ const MapWithMultipleCircles = ({
     
     let filtered = locations;
 
-    // A. Apply Polygon Filter
+    // A. Apply Polygon Filter — only when filtering is explicitly requested
     if (filterInsidePolygons && enablePolygonFilter) {
+      // Wait for polygons to be ready before filtering — prevents flash of all points
       if (!activePolygonsReady) return [];
       if (hasActivePolygons) {
         filtered = activePolygonChecker.filterLocations(filtered);
       }
     }
+    // NOTE: When filterInsidePolygons is false, we must NEVER block on activePolygonsReady.
+    //       Polygons may still be loading (for boundary drawing) but that doesn't affect point visibility.
 
     // B. Apply Legend Filter (Highlight)
     if (legendFilter) {
@@ -746,6 +753,10 @@ const MapWithMultipleCircles = ({
     activePolygonsReady,
     hasActivePolygons,
   ]);
+
+  useEffect(() => {
+    console.log("[DEBUG] MapWithMultipleCircles locationsToRender:", locationsToRender?.length || 0);
+  }, [locationsToRender]);
 
   const handleHover = useCallback((info) => {
     if (info.object) {

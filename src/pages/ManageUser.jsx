@@ -199,6 +199,48 @@ const ManageUsersPage = () => {
         }
     };
 
+    const handleDeactivateUser = async (userOrId) => {
+        const userId = typeof userOrId === 'object'
+            ? (userOrId.user_id ?? userOrId.id ?? userOrId.UserId ?? userOrId.userId)
+            : userOrId;
+
+        if (!userId) {
+            toast.error('Cannot determine user id for deactivation.');
+            return;
+        }
+
+        if (!window.confirm('Are you sure you want to deactivate this user?')) {
+            return;
+        }
+
+        try {
+            const response = await adminApi.inactivateUser(userId);
+            const ok =
+                response?.Status === 1 ||
+                response?.Status === '1' ||
+                response?.status === 200 ||
+                response?.status === '200' ||
+                response?.Success === true ||
+                response?.success === true ||
+                response?.IsSuccess === true ||
+                (typeof response?.Message === 'string' && /success/i.test(response.Message));
+
+            if (ok) {
+                const successMsg = response?.Message || 'User deactivated successfully!';
+                toast.success(successMsg);
+                fetchUsers();
+                if (typeof window !== 'undefined' && window.fetchCompanies) {
+                    window.fetchCompanies();
+                }
+            } else {
+                const msg = response?.Message || response?.message || 'Failed to deactivate user.';
+                toast.error(msg);
+            }
+        } catch (error) {
+            toast.error(error?.message || 'Failed to deactivate user.');
+        }
+    };
+
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFilters(prev => ({ ...prev, [name]: value }));
@@ -305,22 +347,39 @@ const ManageUsersPage = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-white border border-gray-200 shadow-lg">
                         <DropdownMenuLabel className="text-gray-800">Actions</DropdownMenuLabel>
-                        {(user.user_isactive === 1) ? (
+                        {user.user_isactive === 1 && (
                             <>
-                                {/*<DropdownMenuItem 
-                                    onClick={() => handleOpenDialog(user)}
-                                    className="text-gray-700 hover:bg-gray-100 cursor-pointer"
+                                <DropdownMenuItem
+                                    onClick={() => handleDeactivateUser(user)}
+                                    className="text-yellow-600 hover:bg-yellow-50 cursor-pointer"
                                 >
-                                    Edit
-                                </DropdownMenuItem> */}
+                                    Make Inactive
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={() => handleDeleteUser(user)}
                                     className="text-red-600 hover:bg-red-50 cursor-pointer"
                                 >
                                     Delete
-                                </DropdownMenuItem> 
+                                </DropdownMenuItem>
                             </>
-                        ) : (
+                        )}
+                        {user.user_isactive === 0 && (
+                            <>
+                                <DropdownMenuItem
+                                    onClick={() => handleActivateUser(user)}
+                                    className="text-green-600 hover:bg-green-50 cursor-pointer"
+                                >
+                                    Make Active
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => handleDeleteUser(user)}
+                                    className="text-red-600 hover:bg-red-50 cursor-pointer"
+                                >
+                                    Delete
+                                </DropdownMenuItem>
+                            </>
+                        )}
+                        {user.user_isactive === 2 && (
                             <DropdownMenuItem
                                 onClick={() => handleActivateUser(user)}
                                 className="text-green-600 hover:bg-green-50 cursor-pointer"
