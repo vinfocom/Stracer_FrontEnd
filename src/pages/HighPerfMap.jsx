@@ -827,7 +827,12 @@ const rectCoords = [
       toast.error("Could not convert the drawn shape to WKT format.");
       return;
     }
-    const payload = { Name: polygonName, WKT: wktString, SessionIds: Array.isArray(analysis.session) ? analysis.session : [] };
+    const payload = {
+      Name: polygonName,
+      WKT: wktString,
+      SessionIds: Array.isArray(analysis.session) ? analysis.session : [],
+      Area: Number.isFinite(Number(analysis.area)) ? Number(analysis.area) : null,
+    };
     setIsLoading(true);
     try {
       const response = await mapViewApi.savePolygon(payload);

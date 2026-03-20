@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Trash2, Map, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -54,7 +55,7 @@ const DriveTestSessionsPage = () => {
   const [endDate, setEndDate] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [sessionsPerPage] = useState(10);
+  const [sessionsPerPage, setSessionsPerPage] = useState(10); // ✅ fixed: added setter
 
   const [projectName, setProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -140,7 +141,7 @@ const DriveTestSessionsPage = () => {
       const sortedRows = [...rows].sort((a, b) => {
         const aId = Number(a?.id ?? 0);
         const bId = Number(b?.id ?? 0);
-        return bId - aId; // newest session first
+        return bId - aId;
       });
       setSessions(sortedRows);
     } catch (error) {
@@ -195,7 +196,6 @@ const DriveTestSessionsPage = () => {
   const filteredSessions = sessions.filter((session) => {
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
 
-    // Global text search filter
     const matchesGlobalSearch =
       !searchTerm ||
       session.id.toString().toLowerCase().includes(lowerCaseSearchTerm) ||
@@ -208,7 +208,6 @@ const DriveTestSessionsPage = () => {
       (session.end_address &&
         session.end_address.toLowerCase().includes(lowerCaseSearchTerm));
 
-    // Column-specific filters
     const matchesSessionId =
       !columnFilters.sessionId ||
       session.id
@@ -304,7 +303,6 @@ const DriveTestSessionsPage = () => {
           .toLowerCase()
           .includes(columnFilters.sessionRemarks.toLowerCase()));
 
-    // Date range filter (for the date picker filters)
     let matchesDateRange = true;
     if (startDate || endDate) {
       const sessionDate = session.start_time
@@ -351,7 +349,25 @@ const DriveTestSessionsPage = () => {
     );
   });
 
-  // Toggle select all on current page
+  // Pagination logic (must come before toggleSelectAll uses currentSessions)
+  const indexOfLastSession = currentPage * sessionsPerPage;
+  const indexOfFirstSession = indexOfLastSession - sessionsPerPage;
+  const currentSessions = filteredSessions.slice(
+    indexOfFirstSession,
+    indexOfLastSession,
+  );
+  const totalPages = Math.ceil(filteredSessions.length / sessionsPerPage);
+
+  const allCurrentPageSelected =
+    currentSessions.length > 0 &&
+    currentSessions.every((s) => selectedSessions.includes(s.id));
+
+  const paginate = (pageNumber) => {
+    if (pageNumber > 0 && pageNumber <= totalPages) {
+      setCurrentPage(pageNumber);
+    }
+  };
+
   const toggleSelectAll = () => {
     const currentPageIds = currentSessions.map((s) => s.id);
     const allSelectedOnPage = currentPageIds.every((id) =>
@@ -367,7 +383,6 @@ const DriveTestSessionsPage = () => {
     }
   };
 
-  // Clear all selections
   const clearSelection = () => {
     setSelectedSessions([]);
   };
@@ -422,48 +437,24 @@ const DriveTestSessionsPage = () => {
         setIsDialogOpen(false);
       }
     } catch (error) {
-      console.error(" Project creation error:", error);
+      console.error("Project creation error:", error);
       toast.error(`Failed to create project: ${error.message}`);
     }
   };
 
   const handleViewOnMap = (sessionId) => {
-    console.log(" Navigating to map for session:", sessionId);
     navigate(`/debug-map?sessionId=${encodeURIComponent(String(sessionId))}`);
   };
 
-  // View multiple selected sessions on map
   const handleViewSelectedOnMap = () => {
     if (selectedSessions.length === 0) {
       toast.warning("Please select at least one session");
       return;
     }
-
     const sessionIdsParam = selectedSessions.join(",");
-    console.log(" Navigating to map for sessions:", selectedSessions);
     navigate(`/debug-map?sessionId=${encodeURIComponent(sessionIdsParam)}`);
   };
 
-  // Pagination logic
-  const indexOfLastSession = currentPage * sessionsPerPage;
-  const indexOfFirstSession = indexOfLastSession - sessionsPerPage;
-  const currentSessions = filteredSessions.slice(
-    indexOfFirstSession,
-    indexOfLastSession,
-  );
-  const totalPages = Math.ceil(filteredSessions.length / sessionsPerPage);
-
-  const allCurrentPageSelected =
-    currentSessions.length > 0 &&
-    currentSessions.every((s) => selectedSessions.includes(s.id));
-
-  const paginate = (pageNumber) => {
-    if (pageNumber > 0 && pageNumber <= totalPages) {
-      setCurrentPage(pageNumber);
-    }
-  };
-
-  // Check if any column filters are active
   const hasActiveColumnFilters = Object.values(columnFilters).some(
     (filter) => filter !== "",
   );
@@ -496,7 +487,6 @@ const DriveTestSessionsPage = () => {
               <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {Object.entries(allColumns).map(([key, column]) => {
-                // Skip default visible columns that can't be toggled
                 if (
                   key === "sessionId" ||
                   key === "userDetails" ||
@@ -556,12 +546,10 @@ const DriveTestSessionsPage = () => {
                       <h2 className="text-xl font-semibold text-gray-800">
                         Create New Project
                       </h2>
-
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-600">
                           Project Name
                         </label>
-
                         <input
                           type="text"
                           value={projectName}
@@ -570,7 +558,6 @@ const DriveTestSessionsPage = () => {
                           className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                         />
                       </div>
-
                       <Button
                         onClick={handleCreateProject}
                         className="w-full rounded-xl"
@@ -594,7 +581,7 @@ const DriveTestSessionsPage = () => {
                 variant="default"
                 size="sm"
                 onClick={handleDeleteSelected}
-                className="h-9 border  hover:bg-red-100"
+                className="h-9 border hover:bg-red-100"
               >
                 <Trash2 className="h-4 w-4 mr-2 text-red-500" />
                 Delete Selected
@@ -650,11 +637,8 @@ const DriveTestSessionsPage = () => {
                   aria-label="Select all on this page"
                 />
               </TableHead>
-
               {visibleColumns.sessionId && <TableHead>Session ID</TableHead>}
-              {visibleColumns.userDetails && (
-                <TableHead>User Details</TableHead>
-              )}
+              {visibleColumns.userDetails && <TableHead>User Details</TableHead>}
               {visibleColumns.startDate && (
                 <TableHead>
                   <div className="flex items-center gap-1">
@@ -687,19 +671,11 @@ const DriveTestSessionsPage = () => {
                   </div>
                 </TableHead>
               )}
-              {visibleColumns.startLocation && (
-                <TableHead>Start Location</TableHead>
-              )}
-              {visibleColumns.endLocation && (
-                <TableHead>End Location</TableHead>
-              )}
+              {visibleColumns.startLocation && <TableHead>Start Location</TableHead>}
+              {visibleColumns.endLocation && <TableHead>End Location</TableHead>}
               {visibleColumns.distance && <TableHead>Distance (km)</TableHead>}
-              {visibleColumns.captureFrequency && (
-                <TableHead>Capture Frequency</TableHead>
-              )}
-              {visibleColumns.sessionRemarks && (
-                <TableHead>Session Remarks</TableHead>
-              )}
+              {visibleColumns.captureFrequency && <TableHead>Capture Frequency</TableHead>}
+              {visibleColumns.sessionRemarks && <TableHead>Session Remarks</TableHead>}
               {visibleColumns.actions && (
                 <TableHead className="text-right">Actions</TableHead>
               )}
@@ -717,9 +693,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.sessionId}
-                      onChange={(e) =>
-                        updateColumnFilter("sessionId", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("sessionId", e.target.value)}
                     />
                     {columnFilters.sessionId && (
                       <Button
@@ -743,9 +717,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.userDetails}
-                      onChange={(e) =>
-                        updateColumnFilter("userDetails", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("userDetails", e.target.value)}
                     />
                     {columnFilters.userDetails && (
                       <Button
@@ -769,9 +741,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter date..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.startDate}
-                      onChange={(e) =>
-                        updateColumnFilter("startDate", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("startDate", e.target.value)}
                     />
                     {columnFilters.startDate && (
                       <Button
@@ -795,9 +765,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter time..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.startTime}
-                      onChange={(e) =>
-                        updateColumnFilter("startTime", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("startTime", e.target.value)}
                     />
                     {columnFilters.startTime && (
                       <Button
@@ -821,9 +789,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter date..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.endDate}
-                      onChange={(e) =>
-                        updateColumnFilter("endDate", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("endDate", e.target.value)}
                     />
                     {columnFilters.endDate && (
                       <Button
@@ -847,9 +813,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter time..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.endTime}
-                      onChange={(e) =>
-                        updateColumnFilter("endTime", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("endTime", e.target.value)}
                     />
                     {columnFilters.endTime && (
                       <Button
@@ -873,9 +837,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.startLocation}
-                      onChange={(e) =>
-                        updateColumnFilter("startLocation", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("startLocation", e.target.value)}
                     />
                     {columnFilters.startLocation && (
                       <Button
@@ -899,9 +861,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.endLocation}
-                      onChange={(e) =>
-                        updateColumnFilter("endLocation", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("endLocation", e.target.value)}
                     />
                     {columnFilters.endLocation && (
                       <Button
@@ -925,9 +885,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.distance}
-                      onChange={(e) =>
-                        updateColumnFilter("distance", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("distance", e.target.value)}
                     />
                     {columnFilters.distance && (
                       <Button
@@ -951,9 +909,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.captureFrequency}
-                      onChange={(e) =>
-                        updateColumnFilter("captureFrequency", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("captureFrequency", e.target.value)}
                     />
                     {columnFilters.captureFrequency && (
                       <Button
@@ -977,9 +933,7 @@ const DriveTestSessionsPage = () => {
                       placeholder="Filter..."
                       className="h-8 text-xs pr-7"
                       value={columnFilters.sessionRemarks}
-                      onChange={(e) =>
-                        updateColumnFilter("sessionRemarks", e.target.value)
-                      }
+                      onChange={(e) => updateColumnFilter("sessionRemarks", e.target.value)}
                     />
                     {columnFilters.sessionRemarks && (
                       <Button
@@ -1132,12 +1086,34 @@ const DriveTestSessionsPage = () => {
         </Table>
       </div>
 
+      {/* ✅ Fixed pagination footer: uses DropdownMenu instead of undefined Dropdown */}
       <div className="flex items-center justify-between p-4 border-t">
-        <div className="text-sm text-muted-foreground">
-          
-          Showing {indexOfFirstSession + 1} to{" "}
-          {Math.min(indexOfLastSession, filteredSessions.length)} of{" "}
-          {filteredSessions.length} entries.
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9">
+                {sessionsPerPage} / page
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {[10, 20, 50, 100].map((n) => (
+                <DropdownMenuItem
+                  key={n}
+                  onClick={() => {
+                    setSessionsPerPage(n);
+                    setCurrentPage(1);
+                  }}
+                >
+                  {n}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span>
+            Showing {indexOfFirstSession + 1} to{" "}
+            {Math.min(indexOfLastSession, filteredSessions.length)} of{" "}
+            {filteredSessions.length} entries.
+          </span>
           {selectedSessions.length > 0 && (
             <span className="ml-2 text-blue-400">
               ({selectedSessions.length} selected across all pages)

@@ -567,6 +567,7 @@ const ZoneTooltip = React.memo(
       name,
       pointCount,
       fillColor,
+      area,
       medianValue,
       bestProvider,
       bestProviderValue,
@@ -582,6 +583,13 @@ const ZoneTooltip = React.memo(
       higherIsBetter: true,
     };
     const unit = config.unit || "";
+    const parsedArea = Number(area);
+    const areaLabel =
+      Number.isFinite(parsedArea) && parsedArea > 0
+        ? parsedArea >= 1_000_000
+          ? `${(parsedArea / 1_000_000).toFixed(3)} km²`
+          : `${parsedArea.toFixed(0)} m²`
+        : null;
 
     if (!pointCount || pointCount === 0) {
       return (
@@ -623,6 +631,13 @@ const ZoneTooltip = React.memo(
         </div>
 
         <div className="p-4 space-y-3">
+          {areaLabel && (
+            <div className="flex items-center justify-between pb-2 border-b">
+              <span className="text-sm font-medium text-gray-600">Area:</span>
+              <span className="text-base font-semibold text-gray-900">{areaLabel}</span>
+            </div>
+          )}
+
           {selectedCategory === "provider" && bestProvider && (
             <div className="space-y-1">
               <div className="text-xs font-semibold text-gray-500 uppercase">
@@ -826,10 +841,11 @@ const UnifiedMapView = () => {
   const [showSiteSectors, setShowSiteSectors] = useState(true);
   const [showNeighbors, setShowNeighbors] = useState(false);
   const [showSubSession, setShowSubSession] = useState(false);
+  const [selectedSubSessionTarget, setSelectedSubSessionTarget] = useState(null);
 
   const [showPolygons, setShowPolygons] = useState(false);
   const [polygonSource, setPolygonSource] = useState("map");
-  const [onlyInsidePolygons] = useState(false); // Changed to false for debugging
+  const [onlyInsidePolygons] = useState(true);
   const [areaEnabled, setAreaEnabled] = useState(false);
   const [coverageViolationThreshold, setCoverageViolationThreshold] =
     useState(null);
@@ -853,10 +869,12 @@ const UnifiedMapView = () => {
   });
 
   const [drawnPoints, setDrawnPoints] = useState(null);
+  const [drawnShapeAnalytics, setDrawnShapeAnalytics] = useState([]);
   const [mapVisibleNeighbors, setMapVisibleNeighbors] = useState([]);
   const [legendFilter, setLegendFilter] = useState(null);
-  const [isOpacityCollapsed, setIsOpacityCollapsed] = useState(true);
   const [opacity, setOpacity] = useState(0.8);
+  const [logRadius, setLogRadius] = useState(12);
+  const [neighborSquareSize, setNeighborSquareSize] = useState(5);
   const [showSessionNeighbors, setShowSessionNeighbors] = useState(true);
 
   const [bestNetworkEnabled, setBestNetworkEnabled] = useState(false);
@@ -877,6 +895,7 @@ const UnifiedMapView = () => {
   const [dataFilters, setDataFilters] = useState(DEFAULT_DATA_FILTERS);
   const [enableGrid, setEnableGrid] = useState(false);
   const [gridSizeMeters, setGridSizeMeters] = useState(20);
+  const [gridCellStats, setGridCellStats] = useState({ total: 0, populated: 0 });
   const [lteGridEnabled, setLteGridEnabled] = useState(false);
   const [lteGridSizeMeters, setLteGridSizeMeters] = useState(50);
   const [lteGridAggregationMethod, setLteGridAggregationMethod] =
@@ -905,6 +924,18 @@ const UnifiedMapView = () => {
       setSelectedSites([]);
     }
   }, [enableSiteToggle]);
+
+  useEffect(() => {
+    if (!enableDataToggle) {
+      setShowSessionNeighbors(false);
+    }
+  }, [enableDataToggle]);
+
+  useEffect(() => {
+    if (!showSubSession) {
+      setSelectedSubSessionTarget(null);
+    }
+  }, [showSubSession]);
 
   // ... (All existing useEffects and handlers remain exactly the same) ...
   const handleSitesLoaded = useCallback((data, isLoading) => {
@@ -2341,6 +2372,7 @@ const UnifiedMapView = () => {
     // If drawings array is empty/null → clear the filter (show all logs)
     if (!drawings || drawings.length === 0) {
       setDrawnPoints(null);
+      setDrawnShapeAnalytics([]);
       return;
     }
 
@@ -2369,6 +2401,47 @@ const UnifiedMapView = () => {
       const hasDiff = newPoints.some((p) => !prevIds.has(p.id));
       return hasDiff ? newPoints : prev;
     });
+
+    const drawingAnalytics = drawings.map((drawing) => {
+      const areaMeters = Number(drawing?.area);
+      const areaSqKmFromMeters =
+        Number.isFinite(areaMeters) && areaMeters > 0 ? areaMeters / 1e6 : null;
+      const areaSqKmFromField = Number(drawing?.areaInSqKm);
+      const areaInSqKm = Number.isFinite(areaSqKmFromMeters)
+        ? areaSqKmFromMeters
+        : Number.isFinite(areaSqKmFromField)
+          ? areaSqKmFromField
+          : null;
+
+      const grid = drawing?.grid || null;
+      const gridCells = Number(grid?.cells);
+      const gridCellsWithLogs = Number(grid?.cellsWithLogs);
+
+      return {
+        id: drawing?.id ?? null,
+        type: drawing?.type ?? "shape",
+        count: Number(drawing?.count) || 0,
+        area: Number.isFinite(areaMeters) ? areaMeters : null,
+        areaInSqKm,
+        grid: grid
+          ? {
+            cells: Number.isFinite(gridCells) ? gridCells : 0,
+            cellsWithLogs: Number.isFinite(gridCellsWithLogs) ? gridCellsWithLogs : 0,
+            gridRows: Number.isFinite(Number(grid?.gridRows))
+              ? Number(grid.gridRows)
+              : 0,
+            gridCols: Number.isFinite(Number(grid?.gridCols))
+              ? Number(grid.gridCols)
+              : 0,
+            cellSizeMeters: Number.isFinite(Number(grid?.cellSizeMeters))
+              ? Number(grid.cellSizeMeters)
+              : null,
+          }
+          : null,
+      };
+    });
+
+    setDrawnShapeAnalytics(drawingAnalytics);
   }, []);
 
   const reloadData = useCallback(() => {
@@ -2439,6 +2512,26 @@ const UnifiedMapView = () => {
     dataFilters,
   ]);
 
+  const neighborLogsAvailable = useMemo(() => {
+    const statsTotal =
+      Number(sessionNeighborStats?.total) ||
+      Number(sessionNeighborStats?.count) ||
+      Number(sessionNeighborStats?.totalNeighbors) ||
+      0;
+
+    return Boolean(
+      hasPassedNeighbors ||
+        statsTotal > 0 ||
+        (Array.isArray(sessionNeighborData) && sessionNeighborData.length > 0) ||
+        (Array.isArray(filteredNeighbors) && filteredNeighbors.length > 0),
+    );
+  }, [
+    hasPassedNeighbors,
+    sessionNeighborStats,
+    sessionNeighborData,
+    filteredNeighbors,
+  ]);
+
   const handlePolygonMouseOver = useCallback((poly, e) => {
     setHoveredPolygon(poly);
     setHoverPosition({ x: e.domEvent.clientX, y: e.domEvent.clientY });
@@ -2488,6 +2581,48 @@ const UnifiedMapView = () => {
     setHoveredLog(log);
     setHoveredCellId(normalizedPci);
   }, []);
+
+  const handleSubSessionSelect = useCallback((target) => {
+    if (!target) {
+      setSelectedSubSessionTarget(null);
+      return;
+    }
+
+    setSelectedSubSessionTarget({
+      sessionId: target.sessionId ?? null,
+      subSessionId: target.subSessionId ?? null,
+      markerId: target.markerId ?? null,
+      source: target.source ?? "sub-session",
+    });
+
+    const position = target.position;
+    const lat = Number(position?.lat);
+    const lng = Number(position?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (!mapRef.current) return;
+
+    mapRef.current.panTo({ lat, lng });
+    const currentZoom = mapRef.current.getZoom?.();
+    if (!Number.isFinite(currentZoom) || currentZoom < 17) {
+      mapRef.current.setZoom(17);
+    }
+  }, []);
+
+  const handleSubSessionMarkerSelect = useCallback((marker) => {
+    if (!marker) {
+      setSelectedSubSessionTarget(null);
+      return;
+    }
+
+    handleSubSessionSelect({
+      sessionId: marker.sessionId,
+      subSessionId: marker.subSessionId,
+      markerId: marker.id,
+      position: marker.position,
+      resultStatus: marker.resultStatus,
+      source: "marker",
+    });
+  }, [handleSubSessionSelect]);
 
   const uniqueBands = useMemo(() => {
     if (!siteData || !siteData.length) return [];
@@ -2573,10 +2708,13 @@ const UnifiedMapView = () => {
         sessionIds={sessionIds}
         project={project}
         setProject={setProject}
-        isOpacityCollapsed={isOpacityCollapsed}
-        setIsOpacityCollapsed={setIsOpacityCollapsed}
         opacity={opacity}
         setOpacity={setOpacity}
+        logRadius={logRadius}
+        setLogRadius={setLogRadius}
+        neighborLogsAvailable={neighborLogsAvailable}
+        neighborSquareSize={neighborSquareSize}
+        setNeighborSquareSize={setNeighborSquareSize}
         ui={ui}
         onUIChange={handleUIChange}
       />
@@ -2630,6 +2768,9 @@ const UnifiedMapView = () => {
           subSessionSummary={subSessionSummary}
           subSessionLoading={subSessionLoading}
           subSessionRequestedIds={subSessionRequestedIds}
+          selectedSubSessionTarget={selectedSubSessionTarget}
+          onSubSessionSelect={handleSubSessionSelect}
+          drawnShapeAnalytics={drawnShapeAnalytics}
         />
       )}
 
@@ -2661,6 +2802,7 @@ const UnifiedMapView = () => {
         siteToggle={siteToggle}
         showSessionNeighbors={showSessionNeighbors}
         setShowSessionNeighbors={setShowSessionNeighbors}
+        gridCellStats={gridCellStats}
         showNumCells={showNumCells}
         setShowNumCells={setShowNumCells}
         setSiteToggle={setSiteToggle}
@@ -2820,7 +2962,7 @@ const UnifiedMapView = () => {
               fitToLocations={(locationsToDisplay?.length || 0) > 0}
               showNumCells={showNumCells}
               onLoad={handleMapLoad}
-              pointRadius={12}
+              pointRadius={logRadius}
               projectId={projectId}
               polygonSource={polygonSource}
               enablePolygonFilter={true}
@@ -2830,15 +2972,16 @@ const UnifiedMapView = () => {
               enableGrid={enableGrid}
               gridSizeMeters={gridSizeMeters}
               areaEnabled={areaEnabled}
-              filterInsidePolygons={false}
+              filterInsidePolygons={onlyInsidePolygons}
               onFilteredLocationsChange={setMapVisibleLocations}
               opacity={opacity}
               neighborData={filteredNeighbors}
               showNeighbors={showSessionNeighbors}
-              neighborSquareSize={15}
+              neighborSquareSize={neighborSquareSize}
               neighborOpacity={0.5}
               onNeighborClick={(neighbor) => { }}
               onFilteredNeighborsChange={setMapVisibleNeighbors}
+              onGridCellsStatsChange={setGridCellStats}
               debugNeighbors={true}
               legendFilter={legendFilter}
             >
@@ -2981,6 +3124,8 @@ const UnifiedMapView = () => {
               <SubSessionMarkers
                 show={showSubSession}
                 markers={subSessionMarkers}
+                selectedMarkerId={selectedSubSessionTarget?.markerId ?? null}
+                onMarkerSelect={handleSubSessionMarkerSelect}
               />
 
             </MapWithMultipleCircles>

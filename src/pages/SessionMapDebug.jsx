@@ -475,6 +475,7 @@ function SessionMapDebug() {
       Name: polygonName,
       WKT: wktString,
       SessionIds: sessionIds,
+      Area: Number.isFinite(Number(analysis.area)) ? Number(analysis.area) : null,
     };
 
     setIsSaving(true);

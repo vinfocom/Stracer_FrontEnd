@@ -210,6 +210,10 @@ const ThresholdInput = memo(
   ({ value, onChange, min, max, step, unit, disabled }) => {
     const [inputValue, setInputValue] = useState(String(value));
 
+    useEffect(() => {
+      setInputValue(String(value));
+    }, [value]);
+
     const handleChange = (delta) => {
       const newValue =
         delta > 0
@@ -354,6 +358,9 @@ const UnifiedMapSidebar = ({
   setShowNeighbors,
   showSubSession,
   setShowSubSession,
+  showSessionNeighbors,
+  setShowSessionNeighbors,
+  gridCellStats = { total: 0, populated: 0 },
   subSessionMarkerCount = 0,
   subSessionLoading = false,
   neighborStats,
@@ -603,6 +610,13 @@ const UnifiedMapSidebar = ({
                     onChange={setAreaEnabled}
                   />
                   <ToggleRow
+                    label="Neighbor Logs"
+                    description="Show neighboring signal markers on map"
+                    checked={Boolean(showSessionNeighbors)}
+                    onChange={setShowSessionNeighbors}
+                    useSwitch={true}
+                  />
+                  <ToggleRow
                     label="Grid View"
                     description="Show data as grid cells"
                     checked={enableGrid}
@@ -614,21 +628,27 @@ const UnifiedMapSidebar = ({
                   <div className="pt-1 bg-slate-800/50 rounded-lg p-2">
                     <div className="flex items-center justify-between text-xs mb-2">
                       <span className="text-slate-400">Cell Size</span>
-                      <span className="text-blue-400 font-semibold">
-                        {gridSizeMeters || 50}m
-                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="5"
-                      max="200"
-                      step="10"
-                      value={gridSizeMeters || 50}
-                      onChange={(e) =>
-                        setGridSizeMeters?.(parseInt(e.target.value))
-                      }
-                      className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                    <ThresholdInput
+                      value={Number(gridSizeMeters) || 50}
+                      onChange={(next) => setGridSizeMeters?.(Math.round(next))}
+                      min={5}
+                      max={200}
+                      step={10}
+                      unit="m"
                     />
+                    <div className="mt-2 space-y-1 border-t border-slate-700/50 pt-2">
+                      <InfoBadge
+                        label="Grid Formed"
+                        value={Number(gridCellStats?.total) || 0}
+                        color="blue"
+                      />
+                      <InfoBadge
+                        label="With Logs"
+                        value={Number(gridCellStats?.populated) || 0}
+                        color="green"
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -720,34 +740,16 @@ const UnifiedMapSidebar = ({
                       <div className="pt-1 bg-slate-800/50 rounded-lg p-2">
                         <div className="flex items-center justify-between text-xs mb-2">
                           <span className="text-slate-400">Grid Size</span>
-                          <span className="text-blue-400 font-semibold">
-                            {lteGridSizeMeters || 50}m
-                          </span>
                         </div>
-                        <Input
-                          type="number"
+                        <ThresholdInput
+                          value={Number(lteGridSizeMeters) || 50}
+                          onChange={(next) =>
+                            setLteGridSizeMeters?.(Math.round(next))
+                          }
                           min={5}
                           max={500}
                           step={5}
-                          value={lteGridSizeMeters || 50}
-                          onChange={(e) => {
-                            const next = Number(e.target.value);
-                            if (!Number.isFinite(next)) return;
-                            const clamped = Math.max(5, Math.min(500, Math.round(next)));
-                            setLteGridSizeMeters?.(clamped);
-                          }}
-                          className="bg-slate-800 border-slate-600 text-white h-8 text-sm mb-2"
-                        />
-                        <input
-                          type="range"
-                          min="5"
-                          max="500"
-                          step="5"
-                          value={lteGridSizeMeters || 50}
-                          onChange={(e) =>
-                            setLteGridSizeMeters?.(parseInt(e.target.value, 10))
-                          }
-                          className="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-blue-500"
+                          unit="m"
                         />
                       </div>
 
@@ -974,29 +976,21 @@ const UnifiedMapSidebar = ({
                       <span className="text-xs text-slate-400">
                         PCI Appearance Filter
                       </span>
-                      <span className="text-xs font-mono text-blue-400">
-                        {clampedPciThreshold}%
-                      </span>
                     </div>
 
-                    <div className="px-1">
-                      <input
-                        type="range"
+                    <div className="px-1 flex items-center justify-between gap-2">
+                      <ThresholdInput
+                        value={clampedPciThreshold}
+                        onChange={(next) => setPciThreshold(parseFloat(next))}
                         min={normalizedPciRange.min}
                         max={normalizedPciRange.max}
-                        step="0.1"
-                        value={clampedPciThreshold}
+                        step={1}
+                        unit="%"
                         disabled={!supportsSessionFilters}
-                        onChange={(e) =>
-                          setPciThreshold(parseFloat(e.target.value))
-                        }
-                        className={`w-full h-1.5 bg-slate-700 rounded-lg accent-blue-500 ${supportsSessionFilters ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
-                          }`}
                       />
-                      <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                        <span>{normalizedPciRange.min}%</span>
-                        <span>{normalizedPciRange.max}%</span>
-                      </div>
+                      <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                        {normalizedPciRange.min}% - {normalizedPciRange.max}%
+                      </span>
                     </div>
                     <p className="text-[10px] text-slate-500 mt-2 italic">
                       Hides PCIs that appear less than {clampedPciThreshold}% of

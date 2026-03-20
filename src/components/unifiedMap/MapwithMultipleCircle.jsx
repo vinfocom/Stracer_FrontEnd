@@ -10,6 +10,56 @@ import { getMetricValueFromLog, COLOR_SCHEMES } from "@/utils/metrics";
 import { normalizeProviderName, normalizeTechName, getLogColor, generateColorFromHash } from "@/utils/colorUtils";
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
+const CSHARP_API_BASE_URL = (import.meta.env.VITE_CSHARP_API_URL || "").replace(/\/+$/, "");
+
+const normalizeImagePath = (rawPath) => {
+  if (rawPath === null || rawPath === undefined) return null;
+  const normalized = String(rawPath).trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "n/a" || lower === "na") {
+    return null;
+  }
+  return normalized;
+};
+
+const resolveImageUrl = (rawPath) => {
+  const normalized = normalizeImagePath(rawPath);
+  if (!normalized) return null;
+
+  if (
+    normalized.startsWith("data:") ||
+    normalized.startsWith("blob:") ||
+    /^(https?:)?\/\//i.test(normalized)
+  ) {
+    return normalized;
+  }
+
+  let path = normalized.replace(/\\/g, "/");
+  const lowerPath = path.toLowerCase();
+
+  const knownRoots = ["uploadedexcels/", "uploaded_images/", "wwwroot/"];
+  const matchedRoot = knownRoots.find((root) => lowerPath.includes(root));
+  if (matchedRoot) {
+    const rootIndex = lowerPath.indexOf(matchedRoot);
+    path = path.slice(rootIndex);
+  }
+
+  if (/^[a-zA-Z]:\//.test(path)) {
+    return null;
+  }
+
+  if (path.toLowerCase().startsWith("wwwroot/")) {
+    path = path.slice("wwwroot".length);
+  }
+
+  if (!path.startsWith("/")) {
+    path = `/${path}`;
+  }
+
+  path = path.replace(/\/{2,}/g, "/");
+  return CSHARP_API_BASE_URL ? `${CSHARP_API_BASE_URL}${path}` : path;
+};
 
 // ============== Spatial Hash Grid ==============
 class SpatialHashGrid {
@@ -541,12 +591,13 @@ const MapWithMultipleCircles = ({
   thresholds = {},
   neighborData = [],
   showNeighbors = false,
-  neighborSquareSize = 10,
+  neighborSquareSize = 5,
   neighborMinSquareSize = 3,
   neighborOpacity = 0.7,
   disableDeckInteractions = false,
   onNeighborClick,
   onFilteredNeighborsChange,
+  onGridCellsStatsChange,
   debugMode = false,
   legendFilter = null,
 }) => {
@@ -559,13 +610,14 @@ const MapWithMultipleCircles = ({
   } = useColorForLog();
 
   const [map, setMap] = useState(null);
-  const [mapZoom, setMapZoom] = useState(defaultZoom);
   const [hoveredCell, setHoveredCell] = useState(null);
   const [polygonData, setPolygonData] = useState([]);
   const [polygonsFetched, setPolygonsFetched] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [selectedNeighbor, setSelectedNeighbor] = useState(null);
   const [selectedLog, setSelectedLog] = useState(null);
+  const [selectedImageLog, setSelectedImageLog] = useState(null);
+  const [selectedImageLoadFailed, setSelectedImageLoadFailed] = useState(false);
   
   const onFilteredLocationsChangeRef = useRef(onFilteredLocationsChange);
   const onFilteredNeighborsChangeRef = useRef(onFilteredNeighborsChange);
@@ -915,6 +967,19 @@ const MapWithMultipleCircles = ({
     );
   }, [enableGrid, gridSizeMeters, activePolygonData, locationsToRender, selectedMetric, gridAggregationMethod, resolveColor]);
 
+  useEffect(() => {
+    if (typeof onGridCellsStatsChange !== "function") return;
+    if (!enableGrid) {
+      onGridCellsStatsChange({ total: 0, populated: 0 });
+      return;
+    }
+    const populated = gridCells.reduce(
+      (acc, cell) => acc + (cell.count > 0 ? 1 : 0),
+      0,
+    );
+    onGridCellsStatsChange({ total: gridCells.length, populated });
+  }, [enableGrid, gridCells, onGridCellsStatsChange]);
+
   const getPrimaryColor = useCallback((loc) => {
     if (colorBy && colorBy !== 'metric') {
         const key = colorBy.toLowerCase();
@@ -984,56 +1049,58 @@ const MapWithMultipleCircles = ({
     setMap(null);
   }, []);
 
-  useEffect(() => {
-    if (!map || typeof map.getZoom !== "function" || typeof map.addListener !== "function") return;
-
-    const updateZoom = () => {
-      const nextZoom = Number(map.getZoom());
-      if (!Number.isFinite(nextZoom)) return;
-      setMapZoom((prev) => (prev === nextZoom ? prev : nextZoom));
-    };
-
-    updateZoom();
-    const zoomListener = map.addListener("zoom_changed", updateZoom);
-    const idleListener = map.addListener("idle", updateZoom);
-
-    return () => {
-      if (window.google?.maps?.event?.removeListener) {
-        window.google.maps.event.removeListener(zoomListener);
-        window.google.maps.event.removeListener(idleListener);
-      }
-    };
-  }, [map]);
-
-  const dynamicNeighborSquareSize = useMemo(() => {
-    const zoom = Number(mapZoom);
+  const resolvedNeighborSquareSize = useMemo(() => {
     const base = Number(neighborSquareSize);
     const minSize = Number(neighborMinSquareSize);
-    const safeBase = Number.isFinite(base) && base > 0 ? base : 20;
+    const safeBase = Number.isFinite(base) && base > 0 ? base : 8;
     const safeMin = Number.isFinite(minSize) && minSize > 0 ? minSize : 3;
-    if (!Number.isFinite(zoom)) return safeBase;
-
-    // Stronger zoom scaling so neighbour size visibly changes with zoom.
-    const scaled = safeBase * Math.pow(2, 14 - zoom);
-    return Math.max(safeMin, Math.min(150, scaled));
-  }, [mapZoom, neighborSquareSize, neighborMinSquareSize]);
+    return Math.max(safeMin, Math.min(80, safeBase));
+  }, [neighborSquareSize, neighborMinSquareSize]);
 
   const handlePrimaryClick = useCallback((index, loc) => {
     setSelectedLog(loc);
     setSelectedNeighbor(null);
+    setSelectedImageLog(null);
+    setSelectedImageLoadFailed(false);
     onMarkerClickRef.current?.(index, loc);
   }, []); 
 
   const handleNeighborClick = useCallback((neighbor) => {
     setSelectedNeighbor(neighbor);
     setSelectedLog(null);
+    setSelectedImageLog(null);
+    setSelectedImageLoadFailed(false);
     onNeighborClickRef.current?.(neighbor);
+  }, []);
+
+  const showPoints = showPointsProp && !enableGrid && !areaEnabled;
+  const showImageIcons = showPointsProp;
+
+  const imageLogs = useMemo(() => {
+    if (!showImageIcons || !locationsToRender?.length) return [];
+
+    return locationsToRender
+      .filter((log) => normalizeImagePath(log?.image_path))
+      .map((log) => {
+        const rawImagePath = normalizeImagePath(log.image_path);
+        return {
+          ...log,
+          rawImagePath,
+          imageUrl: resolveImageUrl(rawImagePath),
+        };
+      });
+  }, [locationsToRender, showImageIcons]);
+
+  const handleImageLogClick = useCallback((log) => {
+    setSelectedImageLog(log);
+    setSelectedImageLoadFailed(false);
+    setSelectedLog(null);
+    setSelectedNeighbor(null);
   }, []);
 
   if (loadError) return <div className="flex items-center justify-center w-full h-full text-red-500">Failed to load Google Maps</div>;
   if (!isLoaded) return null;
 
-  const showPoints = showPointsProp && !enableGrid && !areaEnabled;
   const isLoadingPolygons = enablePolygonFilter && projectId &&
     (hasExternalPolygonControl ? externalPolygonsLoading : !polygonsFetched);
 
@@ -1081,6 +1148,7 @@ const MapWithMultipleCircles = ({
           <DeckGLOverlay
             map={map}
             locations={showPoints ? locationsToRender : []}
+            imageLogs={imageLogs}
             getColor={getPrimaryColor}
             radius={pointRadius}
             opacity={opacity}
@@ -1093,9 +1161,11 @@ const MapWithMultipleCircles = ({
             onHover={handleHover}
             neighbors={processedNeighbors}
             getNeighborColor={getNeighborColor}
-            neighborSquareSize={dynamicNeighborSquareSize}
+            neighborSquareSize={resolvedNeighborSquareSize}
             neighborOpacity={neighborOpacity}
             onNeighborClick={handleNeighborClick}
+            onImageLogClick={handleImageLogClick}
+            showImageLogs={showImageIcons}
             showNeighbors={showNeighbors}
             pickable={!disableDeckInteractions}
             autoHighlight={!disableDeckInteractions}
@@ -1104,6 +1174,75 @@ const MapWithMultipleCircles = ({
 
         {selectedNeighbor && <NeighborInfoWindow neighbor={selectedNeighbor} onClose={() => setSelectedNeighbor(null)} resolveColor={resolveColor} selectedMetric={selectedMetric} />}
         {selectedLog && <PrimaryLogInfoWindow log={selectedLog} onClose={() => setSelectedLog(null)} resolveColor={resolveColor} selectedMetric={selectedMetric} />}
+        {selectedImageLog && (
+          <InfoWindow
+            position={{ lat: selectedImageLog.lat, lng: selectedImageLog.lng }}
+            onCloseClick={() => {
+              setSelectedImageLog(null);
+              setSelectedImageLoadFailed(false);
+            }}
+            options={{ pixelOffset: new window.google.maps.Size(0, -18), maxWidth: 380 }}
+          >
+            <div className="p-2 min-w-[280px] font-sans text-gray-800">
+              <div className="flex items-center gap-2 pb-2 mb-2 border-b border-gray-200">
+                <span className="text-base leading-none">📷</span>
+                <span className="font-bold text-sm">Log Image</span>
+              </div>
+
+              {selectedImageLog.imageUrl && !selectedImageLoadFailed ? (
+                <img
+                  src={selectedImageLog.imageUrl}
+                  alt="Log capture"
+                  className="w-full max-h-64 object-contain rounded border border-gray-200 bg-gray-50"
+                  loading="lazy"
+                  onError={() => setSelectedImageLoadFailed(true)}
+                />
+              ) : (
+                <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  Unable to load image preview for this log.
+                </div>
+              )}
+
+              <div className="mt-2 space-y-1 text-xs">
+                {selectedImageLog.timestamp && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Timestamp</span>
+                    <span className="font-medium">{selectedImageLog.timestamp}</span>
+                  </div>
+                )}
+                {selectedImageLog.apps && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">App</span>
+                    <span className="font-medium">{selectedImageLog.apps}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Coordinates</span>
+                  <span className="font-mono">{selectedImageLog.lat?.toFixed?.(6)}, {selectedImageLog.lng?.toFixed?.(6)}</span>
+                </div>
+              </div>
+
+              {selectedImageLog.imageUrl && (
+                <div className="mt-3">
+                  <a
+                    href={selectedImageLog.imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700 underline"
+                  >
+                    Open image in new tab
+                  </a>
+                </div>
+              )}
+
+              {selectedImageLog.rawImagePath && !selectedImageLog.imageUrl && (
+                <div className="mt-2 text-[11px] text-gray-500 break-all">
+                  Path: {selectedImageLog.rawImagePath}
+                </div>
+              )}
+            </div>
+          </InfoWindow>
+        )}
 
         
 

@@ -21,7 +21,9 @@ import { Label } from '@/components/ui/label';
 
 const ManageUsersPage = () => {
     const { user } = useAuth();
-    const isSuperAdmin = user?.m_user_type_id === 3;
+    const userRoleId = Number(user?.m_user_type_id ?? 0);
+    const isSuperAdmin = userRoleId === 3;
+    const loggedInCompanyId = Number(user?.company_id ?? user?.CompanyId ?? user?.companyId ?? 0);
     const [searchParams] = useSearchParams();
     const companyIdQuery = searchParams.get('companyId');
     const [users, setUsers] = useState([]);
@@ -36,12 +38,19 @@ const ManageUsersPage = () => {
     const fetchUsers = useCallback(async () => {
         setLoading(true);
         try {
+            const superAdminCompanyId = companyIdQuery
+                ? Number(companyIdQuery)
+                : Number(filters.CompanyId?.trim() || 0);
+
+            const scopedCompanyId = isSuperAdmin
+                ? superAdminCompanyId
+                : loggedInCompanyId;
+
             const apiFilters = {
                 ...(filters.UserName?.trim() ? { UserName: filters.UserName.trim() } : {}),
                 ...(filters.MobileNo?.trim() ? { Mobile: filters.MobileNo.trim() } : {}),
                 ...(filters.EmailId?.trim() ? { Email: filters.EmailId.trim() } : {}),
-                ...(isSuperAdmin && filters.CompanyId?.trim() ? { company_id: Number(filters.CompanyId.trim()) } : {}),
-                ...(companyIdQuery ? { company_id: Number(companyIdQuery) } : {})
+                ...(Number.isFinite(scopedCompanyId) && scopedCompanyId > 0 ? { company_id: scopedCompanyId } : {})
             };
             const response = await adminApi.getUsers(apiFilters);
             if (response?.Status !== 1) {
@@ -79,7 +88,7 @@ const ManageUsersPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [filters, companyIdQuery]);
+    }, [filters, companyIdQuery, isSuperAdmin, loggedInCompanyId]);
 
     useEffect(() => {
         fetchUsers();

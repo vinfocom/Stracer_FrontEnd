@@ -71,6 +71,7 @@ export const OverviewTab = ({
   tptVolume,
   durationData,
   distance,
+  drawnShapeAnalytics = [],
 }) => {
   const [searchParams] = useSearchParams();
   const [providerVolume, setProviderVolume] = useState({});
@@ -399,6 +400,38 @@ export const OverviewTab = ({
     };
   }, [processedProviderVolume, sessionIds, isUnknownOrEmpty]);
 
+  const drawingSummary = useMemo(() => {
+    if (!Array.isArray(drawnShapeAnalytics) || drawnShapeAnalytics.length === 0) {
+      return null;
+    }
+
+    return drawnShapeAnalytics.reduce(
+      (acc, shape) => {
+        const areaSqKm = Number(shape?.areaInSqKm);
+        const logsCount = Number(shape?.count);
+        const gridCells = Number(shape?.grid?.cells);
+        const gridCellsWithLogs = Number(shape?.grid?.cellsWithLogs);
+
+        acc.shapes += 1;
+        acc.logs += Number.isFinite(logsCount) ? logsCount : 0;
+        acc.totalAreaSqKm += Number.isFinite(areaSqKm) ? areaSqKm : 0;
+        acc.totalGridCells += Number.isFinite(gridCells) ? gridCells : 0;
+        acc.gridCellsWithLogs += Number.isFinite(gridCellsWithLogs)
+          ? gridCellsWithLogs
+          : 0;
+
+        return acc;
+      },
+      {
+        shapes: 0,
+        logs: 0,
+        totalAreaSqKm: 0,
+        totalGridCells: 0,
+        gridCellsWithLogs: 0,
+      },
+    );
+  }, [drawnShapeAnalytics]);
+
   return (
     <div className="space-y-4">
       {error && (
@@ -460,6 +493,50 @@ export const OverviewTab = ({
             <MetricCard label="Maximum" value={stats.max} color="green" />
             <MetricCard label="Median" value={stats.median} color="purple" />
             <MetricCard label="Count" value={stats.count} color="yellow" raw />
+          </div>
+        </div>
+      )}
+
+      {drawingSummary && (
+        <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+          <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <Square className="h-4 w-4" />
+            Drawn Shape Grid Analytics
+          </h4>
+
+          <div
+            className={`grid ${expanded ? "grid-cols-5" : "grid-cols-2"} gap-3`}
+          >
+            <StatCard
+              icon={Layers}
+              label="Drawn Shapes"
+              value={drawingSummary.shapes}
+              color="purple"
+            />
+            <StatCard
+              icon={MapPin}
+              label="Logs Inside Shapes"
+              value={drawingSummary.logs}
+              color="green"
+            />
+            <StatCard
+              icon={Gauge}
+              label="Total Area (km²)"
+              value={drawingSummary.totalAreaSqKm.toFixed(4)}
+              color="blue"
+            />
+            <StatCard
+              icon={Activity}
+              label="Grid Cells Formed"
+              value={drawingSummary.totalGridCells}
+              color="orange"
+            />
+            <StatCard
+              icon={Wifi}
+              label="Grid Cells With Logs"
+              value={drawingSummary.gridCellsWithLogs}
+              color="cyan"
+            />
           </div>
         </div>
       )}

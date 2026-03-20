@@ -34,6 +34,9 @@ export const useProjectPolygons = (projectId, showPolygons, polygonSource) => {
       const parsed = items.flatMap((item) => {
         const wkt = item.Wkt || item.wkt;
         if (!wkt) return [];
+        const rawArea = item.Area ?? item.area;
+        const parsedArea = rawArea == null ? null : Number(rawArea);
+
         return parseWKTToPolygons(wkt).map((p, k) => ({
           id: item.Id || item.id,
           name: item.Name || item.name || `Polygon ${item.Id}`,
@@ -41,6 +44,7 @@ export const useProjectPolygons = (projectId, showPolygons, polygonSource) => {
           uid: `${polygonSource}-${item.Id}-${k}`,
           paths: p.paths,
           bbox: computeBbox(p.paths[0]),
+          area: Number.isFinite(parsedArea) ? parsedArea : null,
         }));
       });
 

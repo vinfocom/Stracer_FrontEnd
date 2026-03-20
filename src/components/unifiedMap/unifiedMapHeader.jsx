@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, Filter, ChartBar, ChevronDown, ChevronUp, Plus, UploadCloud } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { LogOut, Filter, ChartBar, Plus, Minus, UploadCloud, Settings as SettingsIcon, Droplets, CircleDot, Radio } from "lucide-react";
 import { useLocation, Link, useSearchParams } from "react-router-dom";
 import { mapViewApi, predictionApi } from "@/api/apiEndpoints";
 import { toast } from "react-toastify";
@@ -141,12 +142,15 @@ export default function UnifiedHeader({
   showAnalytics,
   projectId,
   sessionIds,
-  isOpacityCollapsed,
-  setIsOpacityCollapsed,
   opacity,
   project,
   setProject,
   setOpacity,
+  logRadius = 12,
+  setLogRadius,
+  neighborLogsAvailable = false,
+  neighborSquareSize = 8,
+  setNeighborSquareSize,
   onUIChange,
   ui,
   
@@ -172,6 +176,7 @@ export default function UnifiedHeader({
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [activeQuickControl, setActiveQuickControl] = useState(null);
 
   // Prediction Prompt State
   const [showPredictionPrompt, setShowPredictionPrompt] = useState(false);
@@ -316,6 +321,63 @@ export default function UnifiedHeader({
   }, [effectiveProjectId]);
 
   const isMapPage = location.pathname.includes("unified-map");
+  const currentOpacityPercent = Math.round((opacity ?? 0.8) * 100);
+  const currentLogRadius = Number.isFinite(Number(logRadius))
+    ? Number(logRadius)
+    : 12;
+  const currentNeighborSquareSize = Number.isFinite(Number(neighborSquareSize))
+    ? Number(neighborSquareSize)
+    : 8;
+
+  const adjustOpacity = (deltaPercent) => {
+    const nextPercent = Math.max(
+      0,
+      Math.min(100, currentOpacityPercent + deltaPercent),
+    );
+    setOpacity(nextPercent / 100);
+  };
+
+  const updateOpacityFromInput = (rawValue) => {
+    const nextPercent = Number(rawValue);
+    if (!Number.isFinite(nextPercent)) return;
+    setOpacity(Math.max(0, Math.min(100, nextPercent)) / 100);
+  };
+
+  const adjustLogRadius = (delta) => {
+    if (!setLogRadius) return;
+    const nextRadius = Math.max(4, Math.min(40, currentLogRadius + delta));
+    setLogRadius(nextRadius);
+  };
+
+  const updateLogRadiusFromInput = (rawValue) => {
+    if (!setLogRadius) return;
+    const nextRadius = Number(rawValue);
+    if (!Number.isFinite(nextRadius)) return;
+    setLogRadius(Math.max(4, Math.min(40, Math.round(nextRadius))));
+  };
+
+  const adjustNeighborSquareSize = (delta) => {
+    if (!setNeighborSquareSize) return;
+    const nextSize = Math.max(3, Math.min(80, currentNeighborSquareSize + delta));
+    setNeighborSquareSize(nextSize);
+  };
+
+  const updateNeighborSquareSizeFromInput = (rawValue) => {
+    if (!setNeighborSquareSize) return;
+    const nextSize = Number(rawValue);
+    if (!Number.isFinite(nextSize)) return;
+    setNeighborSquareSize(Math.max(3, Math.min(80, Math.round(nextSize))));
+  };
+
+  const toggleQuickControl = (controlKey) => {
+    setActiveQuickControl((prev) => (prev === controlKey ? null : controlKey));
+  };
+
+  useEffect(() => {
+    if (!neighborLogsAvailable && activeQuickControl === "neighbors") {
+      setActiveQuickControl(null);
+    }
+  }, [neighborLogsAvailable, activeQuickControl]);
 
   return (
     <header className="h-14 bg-gray-800 text-white shadow-sm flex items-center justify-between px-6 flex-shrink-0 relative z-10">
@@ -351,45 +413,125 @@ export default function UnifiedHeader({
               {showAnalytics ? "Hide" : "Show"} Analytics
             </Button>
 
-            <div className="flex items-center gap-2 bg-gray-700/80 rounded-lg px-3 py-1.5 border border-gray-600">
-              <span className="text-xs text-gray-300 font-medium">Opacity</span>
-
-              {!isOpacityCollapsed ? (
-                <>
-                  <span className="text-xs font-bold text-blue-400 min-w-[40px] text-center">
-                    {Math.round((opacity ?? 0.8) * 100)}%
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={(opacity ?? 0.8) * 100}
-                    onChange={(e) => setOpacity(Number(e.target.value) / 100)}
-                    className="w-24 h-2 bg-gray-500 rounded-lg cursor-pointer accent-blue-500"
-                  />
-                  <button
-                    onClick={() => setIsOpacityCollapsed(true)}
-                    className="text-gray-400 hover:text-white transition-colors p-0.5 rounded hover:bg-gray-600"
-                    title="Collapse"
-                  >
-                    <ChevronUp className="h-4 w-4" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="text-xs text-blue-400 font-medium">
-                    {Math.round((opacity ?? 0.8) * 100)}%
-                  </span>
-                  <button
-                    onClick={() => setIsOpacityCollapsed(false)}
-                    className="text-gray-400 hover:text-white transition-colors p-0.5 rounded hover:bg-gray-600"
-                    title="Expand"
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </button>
-                </>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => toggleQuickControl("opacity")}
+                className={`${activeQuickControl === "opacity" ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-700 hover:bg-slate-600"} text-white border-slate-600`}
+                title="Opacity"
+              >
+                <Droplets className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => toggleQuickControl("radius")}
+                className={`${activeQuickControl === "radius" ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-700 hover:bg-slate-600"} text-white border-slate-600`}
+                title="Log Radius"
+              >
+                <CircleDot className="h-4 w-4" />
+              </Button>
+              {neighborLogsAvailable && (
+                <Button
+                  size="sm"
+                  onClick={() => toggleQuickControl("neighbors")}
+                  className={`${activeQuickControl === "neighbors" ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-700 hover:bg-slate-600"} text-white border-slate-600`}
+                  title="Neighbor Logs"
+                >
+                  <Radio className="h-4 w-4" />
+                </Button>
               )}
             </div>
+
+            {activeQuickControl === "opacity" && (
+              <div className="flex items-center gap-2 bg-gray-700/80 rounded-lg px-3 py-1.5 border border-gray-600">
+                <span className="text-xs text-gray-300 font-medium">Opacity</span>
+                <button
+                  type="button"
+                  onClick={() => adjustOpacity(-5)}
+                  className="h-6 w-6 rounded bg-slate-600 hover:bg-slate-500 flex items-center justify-center"
+                  title="Decrease opacity"
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={currentOpacityPercent}
+                  onChange={(e) => updateOpacityFromInput(e.target.value)}
+                  className="h-7 w-14 bg-slate-800 border-slate-600 text-white text-xs text-center px-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustOpacity(5)}
+                  className="h-6 w-6 rounded bg-slate-600 hover:bg-slate-500 flex items-center justify-center"
+                  title="Increase opacity"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+                <span className="text-xs text-blue-300 font-medium">%</span>
+              </div>
+            )}
+
+            {activeQuickControl === "radius" && (
+              <div className="flex items-center gap-2 bg-gray-700/80 rounded-lg px-3 py-1.5 border border-gray-600">
+                <span className="text-xs text-gray-300 font-medium">Log Radius</span>
+                <button
+                  type="button"
+                  onClick={() => adjustLogRadius(-1)}
+                  className="h-6 w-6 rounded bg-slate-600 hover:bg-slate-500 flex items-center justify-center"
+                  title="Decrease log radius"
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+                <Input
+                  type="number"
+                  min={4}
+                  max={40}
+                  value={currentLogRadius}
+                  onChange={(e) => updateLogRadiusFromInput(e.target.value)}
+                  className="h-7 w-14 bg-slate-800 border-slate-600 text-white text-xs text-center px-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustLogRadius(1)}
+                  className="h-6 w-6 rounded bg-slate-600 hover:bg-slate-500 flex items-center justify-center"
+                  title="Increase log radius"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {activeQuickControl === "neighbors" && neighborLogsAvailable && (
+              <div className="flex items-center gap-2 bg-gray-700/80 rounded-lg px-3 py-1.5 border border-gray-600">
+                <span className="text-xs text-gray-300 font-medium">Neighbor Size</span>
+                <button
+                  type="button"
+                  onClick={() => adjustNeighborSquareSize(-1)}
+                  className="h-6 w-6 rounded bg-slate-600 hover:bg-slate-500 flex items-center justify-center"
+                  title="Decrease neighbor square size"
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+                <Input
+                  type="number"
+                  min={3}
+                  max={80}
+                  value={currentNeighborSquareSize}
+                  onChange={(e) => updateNeighborSquareSizeFromInput(e.target.value)}
+                  className="h-7 w-14 bg-slate-800 border-slate-600 text-white text-xs text-center px-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustNeighborSquareSize(1)}
+                  className="h-6 w-6 rounded bg-slate-600 hover:bg-slate-500 flex items-center justify-center"
+                  title="Increase neighbor square size"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -408,8 +550,8 @@ export default function UnifiedHeader({
 
         <Dialog>
     <DialogTrigger asChild>
-      <Button  size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600">
-        Settings
+      <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600" title="Settings">
+        <SettingsIcon className="h-4 w-4" />
       </Button>
     </DialogTrigger>
     <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden p-0">

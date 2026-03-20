@@ -730,6 +730,9 @@ export default function UnifiedDetailLogs({
   subSessionSummary = null,
   subSessionLoading = false,
   subSessionRequestedIds = [],
+  selectedSubSessionTarget = null,
+  onSubSessionSelect,
+  drawnShapeAnalytics = [],
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -1174,7 +1177,8 @@ export default function UnifiedDetailLogs({
       >
         {(isLoading || isFilterLoading) && <LoadingSpinner />}
 
-        {activeTab === "overview" && filteredLocations.length > 0 && (
+        {activeTab === "overview" &&
+          (filteredLocations.length > 0 || drawnShapeAnalytics.length > 0) && (
           <OverviewTab
             totalLocations={totalLocations}
             filteredCount={filteredLocations.length}
@@ -1192,8 +1196,9 @@ export default function UnifiedDetailLogs({
             locations={filteredLocations}
             expanded={expanded}
             tptVolume={tptVolume}
+            drawnShapeAnalytics={drawnShapeAnalytics}
           />
-        )}
+          )}
 
         {activeTab === "signal" && (
            <SignalTab locations={filteredLocations} selectedMetric={selectedMetric} thresholds={thresholds} expanded={expanded} chartRefs={chartRefs} />
@@ -1217,6 +1222,8 @@ export default function UnifiedDetailLogs({
             subSessionSummary={subSessionSummary}
             requestedSessionIds={subSessionRequestedIds}
             loading={subSessionLoading}
+            selectedSubSessionTarget={selectedSubSessionTarget}
+            onSubSessionSelect={onSubSessionSelect}
           />
         )}
       </div>

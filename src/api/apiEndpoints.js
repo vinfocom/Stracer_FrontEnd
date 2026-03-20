@@ -659,11 +659,16 @@ export const mapViewApi = {
   savePolygonWithLogs: (payload) =>
     api.post("/api/MapView/SavePolygonWithLogs", payload),
 
-  getAvailablePolygons: (projectId) => {
-    const params =
-      projectId !== undefined && projectId !== null ? { projectId } : {};
+  getAvailablePolygons: (projectId, companyId) => {
+    const params = projectId ? { projectId } : {};
+
+    if (companyId) {
+      params.company_id = companyId;
+    }
+
     return api.get("/api/MapView/GetAvailablePolygons", { params });
   },
+
 
   getPolygonLogCount: (polygonId, from, to) =>
     api.get("/api/MapView/GetPolygonLogCount", {

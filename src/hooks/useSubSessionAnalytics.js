@@ -36,13 +36,43 @@ const normalizeLatLng = (latRaw, lngRaw, allowZero = false) => {
   return { lat, lng };
 };
 
+const normalizeStatusCounts = (statusCounts = {}) => {
+  const success = toFiniteNumber(statusCounts.success) ?? 0;
+  const failed = toFiniteNumber(statusCounts.failed) ?? 0;
+  const total = toFiniteNumber(statusCounts.total) ?? success + failed;
+
+  return { success, failed, total };
+};
+
+const normalizeComparisonEntry = (entry = {}) => ({
+  count: toFiniteNumber(entry.count) ?? 0,
+  total_duration: toFiniteNumber(entry.total_duration),
+  avg_duration: toFiniteNumber(entry.avg_duration),
+  avg_speed: toFiniteNumber(entry.avg_speed),
+  min_speed: toFiniteNumber(entry.min_speed),
+  max_speed: toFiniteNumber(entry.max_speed),
+  total_file_size: toFiniteNumber(entry.total_file_size),
+  avg_file_size: toFiniteNumber(entry.avg_file_size),
+});
+
+const normalizeComparison = (comparison = {}) => ({
+  success: normalizeComparisonEntry(comparison.success || {}),
+  failed: normalizeComparisonEntry(comparison.failed || {}),
+});
+
 const normalizeMetrics = (metrics = {}) => ({
   total_duration: toFiniteNumber(metrics.total_duration),
   avg_duration: toFiniteNumber(metrics.avg_duration),
   total_speed: toFiniteNumber(metrics.total_speed),
   avg_speed: toFiniteNumber(metrics.avg_speed),
+  min_speed: toFiniteNumber(metrics.min_speed),
+  max_speed: toFiniteNumber(metrics.max_speed),
   total_file_size: toFiniteNumber(metrics.total_file_size),
   avg_file_size: toFiniteNumber(metrics.avg_file_size),
+  status_counts: normalizeStatusCounts(metrics.status_counts || metrics.statusCounts || {}),
+  comparison: normalizeComparison(
+    metrics.comparison || metrics.status_comparison || metrics.statusComparison || {},
+  ),
 });
 
 const normalizeSubSessionItem = (item = {}) => {
@@ -57,7 +87,12 @@ const normalizeSubSessionItem = (item = {}) => {
     subSessionId,
     start,
     end,
+    resultStatus: String(
+      item.result_status ?? item.resultStatus ?? item.status ?? "FAILED",
+    ).toUpperCase(),
     rawCoordinates: coordinates,
+    markerId: null,
+    markerPosition: null,
   };
 };
 
@@ -66,7 +101,7 @@ const normalizeSessionItem = (item = {}, index = 0) => {
   const coordinates = item.coordinates || {};
   const sessionStart = normalizeLatLng(coordinates.start_lat, coordinates.start_lon);
   const sessionEnd = normalizeLatLng(coordinates.end_lat, coordinates.end_lon);
-  const subSessions = Array.isArray(item.sub_sessions)
+  const baseSubSessions = Array.isArray(item.sub_sessions)
     ? item.sub_sessions.map(normalizeSubSessionItem)
     : [];
 
@@ -74,13 +109,14 @@ const normalizeSessionItem = (item = {}, index = 0) => {
   const subSessionCount =
     toFiniteNumber(item.sub_session_count) ??
     toFiniteNumber(item.subSessionCount) ??
-    subSessions.length;
+    baseSubSessions.length;
 
   const markers = [];
+  const subSessions = [];
 
   let lastKnownPos = sessionStart;
 
-  subSessions.forEach((sub, subIndex) => {
+  baseSubSessions.forEach((sub, subIndex) => {
     let position = sub.start;
 
     if (!position && subIndex === 0) {
@@ -95,29 +131,46 @@ const normalizeSessionItem = (item = {}, index = 0) => {
       lastKnownPos = position;
     }
 
-    if (!position) return;
+    let markerId = null;
 
-    markers.push({
-      id: `sub-${sessionId}-${sub.subSessionId ?? subIndex}`,
-      markerType: "sub-session-start",
-      sessionId,
-      subSessionId: sub.subSessionId,
-      position: position,
-      start: position,
-      end: sub.end,
-      sessionStart,
-      sessionEnd,
-      subSessionCount,
-      metrics,
+    if (position) {
+      markerId = `sub-${sessionId}-${sub.subSessionId ?? subIndex}`;
+
+      markers.push({
+        id: markerId,
+        markerType: "sub-session-start",
+        sessionId,
+        subSessionId: sub.subSessionId,
+        resultStatus: sub.resultStatus,
+        position: position,
+        start: position,
+        end: sub.end,
+        sessionStart,
+        sessionEnd,
+        subSessionCount,
+        metrics,
+      });
+    }
+
+    subSessions.push({
+      ...sub,
+      markerId,
+      markerPosition: position,
     });
   });
 
+  let primaryMarkerId = null;
+  let primaryMarkerPosition = null;
+
   if (markers.length === 0 && sessionStart) {
+    primaryMarkerId = `session-${sessionId}`;
+    primaryMarkerPosition = sessionStart;
     markers.push({
-      id: `session-${sessionId}`,
+      id: primaryMarkerId,
       markerType: "session-start",
       sessionId,
       subSessionId: null,
+      resultStatus: "FAILED",
       position: sessionStart,
       start: sessionStart,
       end: sessionEnd,
@@ -126,6 +179,9 @@ const normalizeSessionItem = (item = {}, index = 0) => {
       subSessionCount,
       metrics,
     });
+  } else if (markers.length > 0) {
+    primaryMarkerId = markers[0].id;
+    primaryMarkerPosition = markers[0].position;
   }
 
   return {
@@ -137,6 +193,8 @@ const normalizeSessionItem = (item = {}, index = 0) => {
     metrics,
     rawCoordinates: coordinates,
     markers,
+    primaryMarkerId,
+    primaryMarkerPosition,
   };
 };
 
@@ -173,9 +231,12 @@ const normalizeResponse = (response) => {
     let avg_duration_sum = 0;
     let total_speed = 0;
     let avg_speed_sum = 0;
+    let min_speed = null;
+    let max_speed = null;
     let total_file_size = 0;
     let avg_file_size_sum = 0;
     let countWithData = 0;
+    const status_counts = { success: 0, failed: 0, total: 0 };
 
     data.forEach((item) => {
       const m = item.metrics || {};
@@ -184,18 +245,41 @@ const normalizeResponse = (response) => {
       if (m.avg_duration != null) { avg_duration_sum += Number(m.avg_duration); hasData = true; }
       if (m.total_speed != null) { total_speed += Number(m.total_speed); hasData = true; }
       if (m.avg_speed != null) { avg_speed_sum += Number(m.avg_speed); hasData = true; }
+      if (m.min_speed != null) {
+        const value = Number(m.min_speed);
+        min_speed = min_speed == null ? value : Math.min(min_speed, value);
+        hasData = true;
+      }
+      if (m.max_speed != null) {
+        const value = Number(m.max_speed);
+        max_speed = max_speed == null ? value : Math.max(max_speed, value);
+        hasData = true;
+      }
       if (m.total_file_size != null) { total_file_size += Number(m.total_file_size); hasData = true; }
       if (m.avg_file_size != null) { avg_file_size_sum += Number(m.avg_file_size); hasData = true; }
+      if (m.status_counts) {
+        status_counts.success += Number(m.status_counts.success || 0);
+        status_counts.failed += Number(m.status_counts.failed || 0);
+      }
       if (hasData) countWithData++;
     });
+
+    status_counts.total = status_counts.success + status_counts.failed;
 
     rawSummary = {
       total_duration,
       avg_duration: countWithData > 0 ? avg_duration_sum / countWithData : 0,
       total_speed,
       avg_speed: countWithData > 0 ? avg_speed_sum / countWithData : 0,
+      min_speed,
+      max_speed,
       total_file_size,
       avg_file_size: countWithData > 0 ? avg_file_size_sum / countWithData : 0,
+      status_counts,
+      comparison: {
+        success: { count: status_counts.success },
+        failed: { count: status_counts.failed },
+      },
     };
   }
 

@@ -73,6 +73,7 @@ const DeckGLOverlay = ({
   map,
   showNumCells = false,
   locations = [],
+  imageLogs = [],
   getColor,
   radius = 8,
   opacity = 0.8,
@@ -83,9 +84,11 @@ const DeckGLOverlay = ({
   showPrimaryLogs = true,
   neighbors = [],
   getNeighborColor,
-  neighborSquareSize = 25,
+  neighborSquareSize = 5,
   neighborOpacity = 0.7,
   onNeighborClick,
+  onImageLogClick,
+  showImageLogs = true,
   showNeighbors = true,
   pickable = true,
   autoHighlight = true,
@@ -184,6 +187,10 @@ const DeckGLOverlay = ({
     if (info.object && onNeighborClick) onNeighborClick(info.object);
   }, [onNeighborClick]);
 
+  const handleImageLogClick = useCallback((info) => {
+    if (info.object && onImageLogClick) onImageLogClick(info.object);
+  }, [onImageLogClick]);
+
   // Pre-compute colors in memo to avoid repeat parsing
   // In src/components/maps/DeckGLOverlay.jsx
 
@@ -215,6 +222,24 @@ const DeckGLOverlay = ({
       computedColor: getNeighborColor ? parseColorToRGB(getNeighborColor(n)) : [139, 92, 246, 180],
     }));
   }, [neighbors, showNeighbors, neighborSquareSize, getNeighborColor]);
+
+  const imageLogData = useMemo(() => {
+    if (!showImageLogs || !imageLogs?.length) return [];
+
+    return imageLogs
+      .map((log, idx) => {
+        const lat = Number(log?.lat ?? log?.latitude ?? log?.Lat);
+        const lng = Number(log?.lng ?? log?.longitude ?? log?.lon ?? log?.Lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+        return {
+          ...log,
+          index: idx,
+          position: [lng, lat],
+        };
+      })
+      .filter(Boolean);
+  }, [imageLogs, showImageLogs]);
 
   useEffect(() => {
     if (!overlayRef.current || !isValidMapInstance(map)) return;
@@ -249,6 +274,7 @@ const DeckGLOverlay = ({
         getPosition: d => d.position,
         getFillColor: d => d.computedColor, 
         getRadius: d => d.index === selectedIndex ? radius * 1.5 : radius,
+        radiusUnits: 'pixels',
         radiusMinPixels,
         radiusMaxPixels,
         opacity,
@@ -278,12 +304,32 @@ const DeckGLOverlay = ({
       }
     }
 
+    if (showImageLogs && imageLogData.length > 0) {
+      layers.push(new TextLayer({
+        id: 'image-log-icons-layer',
+        data: imageLogData,
+        getPosition: d => d.position,
+        getText: () => '📷',
+        getSize: 16,
+        sizeUnits: 'pixels',
+        getColor: [255, 255, 255, 255],
+        getTextAnchor: 'middle',
+        getAlignmentBaseline: 'center',
+        background: true,
+        getBackgroundColor: [17, 24, 39, 230],
+        backgroundPadding: [6, 4],
+        pickable,
+        autoHighlight,
+        onClick: handleImageLogClick,
+      }));
+    }
+
     try {
       overlayRef.current.setProps({ layers });
     } catch (e) {
       // Overlay can detach during map teardown; skip this update.
     }
-  }, [map, primaryData, neighborData, showPrimaryLogs, showNeighbors, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor, isValidMapInstance]);
+  }, [map, primaryData, neighborData, imageLogData, showPrimaryLogs, showNeighbors, showImageLogs, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor, handleImageLogClick, isValidMapInstance]);
 
   useEffect(() => {
     return () => {

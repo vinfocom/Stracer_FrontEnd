@@ -26,6 +26,14 @@ const isRequestCancelled = (error) => {
   return false;
 };
 
+function indout(value) {
+
+const rlt = value.split("(")[0].trim();
+
+return rlt;
+    
+ }
+
 const isPointInPolygon = (point, polygon) => {
   const path = polygon?.paths?.[0];
   if (!path?.length) return false;
@@ -43,6 +51,8 @@ const isPointInPolygon = (point, polygon) => {
   }
   return inside;
 };
+
+
 
 const parseLogEntry = (log, sessionId) => {
   if (!log || typeof log !== 'object') return null;
@@ -120,7 +130,7 @@ const parseLogEntry = (log, sessionId) => {
     num_cells: parseInt(log.num_cells) || null,
     speed: parseNum(log.Speed),
     battery: parseInt(log.battery) || null,
-    indoor_outdoor: log.indoor_outdoor || null,
+    indoor_outdoor: indout(log.indoor_outdoor) || null,
     apps: log.apps || '',
     image_path: log.image_path || '',
   };
