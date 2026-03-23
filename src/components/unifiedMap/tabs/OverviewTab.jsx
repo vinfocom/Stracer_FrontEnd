@@ -11,6 +11,7 @@ import {
   Upload,
   Timer,
   Gauge,
+  Square,
 } from "lucide-react";
 import { StatCard } from "../common/StatCard";
 import { PCI_COLOR_PALETTE } from "@/components/map/layers/MultiColorCirclesLayer";
@@ -72,6 +73,7 @@ export const OverviewTab = ({
   durationData,
   distance,
   drawnShapeAnalytics = [],
+  sessionIds: sessionIdsProp = [],
 }) => {
   const [searchParams] = useSearchParams();
   const [providerVolume, setProviderVolume] = useState({});
@@ -80,13 +82,23 @@ export const OverviewTab = ({
 
   const sessionParam = searchParams.get("session");
 
-  const sessionIds = useMemo(() => {
+  const sessionIdsFromQuery = useMemo(() => {
     if (!sessionParam) return [];
     return sessionParam
       .split(",")
       .map((id) => id.trim())
       .filter((id) => id);
   }, [sessionParam]);
+
+  const sessionIds = useMemo(() => {
+    if (Array.isArray(sessionIdsProp) && sessionIdsProp.length > 0) {
+      return sessionIdsProp
+        .map((id) => String(id ?? "").trim())
+        .filter((id) => id);
+    }
+
+    return sessionIdsFromQuery;
+  }, [sessionIdsProp, sessionIdsFromQuery]);
 
   const isUnknownOrEmpty = useCallback((value) => {
     if (!value) return true;

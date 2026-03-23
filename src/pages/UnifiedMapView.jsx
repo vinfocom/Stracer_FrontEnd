@@ -2722,6 +2722,7 @@ const UnifiedMapView = () => {
       {showAnalytics && (
         <UnifiedDetailLogs
           locations={finalDisplayLocations}
+          allFilteredLocations={filteredLocations}
           onHighlightLogs={setHighlightedLogs}
           totalLocations={locations?.length || 0}
           filteredCount={finalDisplayLocations?.length || 0}

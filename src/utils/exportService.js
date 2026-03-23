@@ -39,17 +39,23 @@ const EXCEL_STYLES = {
   },
 };
 
-const CHART_CAPTURES = [
-  { key: "distribution", name: "signal-distribution" },
-  { key: "tech", name: "technology-breakdown" },
-  { key: "band", name: "band-distribution" },
-  { key: "operator", name: "operator-comparison" },
-  { key: "pciColorLegend", name: "pci-color-legend" },
-  { key: "providerPerf", name: "provider-performance" },
-  { key: "speed", name: "speed-analysis" },
-  { key: "throughputTimeline", name: "throughput-timeline" },
-  { key: "jitterLatency", name: "jitter-latency" },
-];
+const CHART_CAPTURE_NAMES = {
+  distribution: "signal-distribution",
+  tech: "technology-breakdown",
+  comparison: "signal-operator-comparison",
+  radar: "signal-radar",
+  band: "band-distribution",
+  operator: "network-operator-comparison",
+  pciColorLegend: "pci-color-legend",
+  providerPerf: "provider-performance",
+  speed: "speed-analysis",
+  throughputTimeline: "throughput-timeline",
+  jitterLatency: "jitter-latency",
+  mosChart: "app-signal-quality",
+  throughputChart: "app-throughput-comparison",
+  signalChart: "app-signal-chart",
+  qoeChart: "app-network-performance",
+};
 
 // ============ Helper Functions ============
 const getTimestamp = () => 
@@ -58,6 +64,26 @@ const getTimestamp = () =>
 const formatNumber = (value, decimals = 2) => {
   if (value == null || isNaN(value)) return "N/A";
   return Number(value).toFixed(decimals);
+};
+
+const sanitizeFilePart = (value) =>
+  String(value || "chart")
+    .trim()
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+
+const buildChartCapturesFromRefs = (chartRefs = {}) => {
+  const keySet = new Set([
+    ...Object.keys(CHART_CAPTURE_NAMES),
+    ...Object.keys(chartRefs || {}),
+  ]);
+
+  return Array.from(keySet).map((key) => ({
+    key,
+    name: CHART_CAPTURE_NAMES[key] || `chart-${sanitizeFilePart(key)}`,
+  }));
 };
 
 const calculateStats = (arr) => {
@@ -152,6 +178,7 @@ const createSummarySheet = (workbook, params) => {
     ioSummary,
     polygonStats,
     siteData,
+    n78NeighborData,
   } = params;
 
   const worksheet = workbook.addWorksheet("Summary", {
@@ -239,6 +266,12 @@ const createSummarySheet = (workbook, params) => {
     ]);
   }
 
+  if (n78NeighborData?.length > 0) {
+    addSection("📶 NEIGHBOR LOG SUMMARY", [
+      ["Neighbor Samples:", n78NeighborData.length],
+    ]);
+  }
+
   autoFitColumns(worksheet, 15, 60);
 };
 
@@ -311,6 +344,63 @@ const createLocationSheet = (workbook, locations) => {
 
   // Freeze header row
   worksheet.views = [{ state: "frozen", ySplit: 1 }];
+};
+
+const createNeighborLogsSheet = (workbook, n78NeighborData = []) => {
+  if (!Array.isArray(n78NeighborData) || n78NeighborData.length === 0) return;
+
+  const worksheet = workbook.addWorksheet("Neighbor Logs", {
+    properties: { tabColor: { argb: "FF8B5CF6" } },
+  });
+
+  const columns = [
+    { header: "Sample #", key: "sampleNo", width: 10 },
+    { header: "Session ID", key: "sessionId", width: 14 },
+    { header: "Timestamp", key: "timestamp", width: 20 },
+    { header: "Latitude", key: "lat", width: 12 },
+    { header: "Longitude", key: "lng", width: 12 },
+    { header: "Provider", key: "provider", width: 16 },
+    { header: "Network Type", key: "networkType", width: 14 },
+    { header: "Primary Band", key: "primaryBand", width: 12 },
+    { header: "Neighbor Band", key: "neighborBand", width: 12 },
+    { header: "Primary PCI", key: "primaryPci", width: 10 },
+    { header: "Neighbor PCI", key: "neighborPci", width: 10 },
+    { header: "Primary RSRP (dBm)", key: "primaryRsrp", width: 16 },
+    { header: "Neighbor RSRP (dBm)", key: "neighborRsrp", width: 17 },
+    { header: "Primary RSRQ (dB)", key: "primaryRsrq", width: 15 },
+    { header: "Neighbor RSRQ (dB)", key: "neighborRsrq", width: 16 },
+    { header: "Primary SINR (dB)", key: "primarySinr", width: 15 },
+    { header: "Neighbor SINR (dB)", key: "neighborSinr", width: 16 },
+  ];
+
+  worksheet.columns = columns;
+  applyHeaderStyle(worksheet.getRow(1));
+
+  n78NeighborData.forEach((item, index) => {
+    const row = worksheet.addRow({
+      sampleNo: index + 1,
+      sessionId: item.sessionId ?? item.session_id ?? "N/A",
+      timestamp: item.timestamp || "N/A",
+      lat: formatNumber(item.lat ?? item.latitude, 6),
+      lng: formatNumber(item.lng ?? item.lon ?? item.longitude, 6),
+      provider: item.provider || "N/A",
+      networkType: item.networkType || item.network || "N/A",
+      primaryBand: item.primaryBand || item.band || "N/A",
+      neighborBand: item.neighbourBand || item.neighborBand || "N/A",
+      primaryPci: item.primaryPci ?? item.primary_pci ?? "N/A",
+      neighborPci: item.neighbourPci ?? item.neighborPci ?? item.neighbour_pci ?? item.neighbor_pci ?? "N/A",
+      primaryRsrp: formatNumber(item.primaryRsrp ?? item.primary_rsrp ?? item.rsrp),
+      neighborRsrp: formatNumber(item.neighbourRsrp ?? item.neighborRsrp ?? item.neighbour_rsrp ?? item.neighbor_rsrp),
+      primaryRsrq: formatNumber(item.primaryRsrq ?? item.primary_rsrq ?? item.rsrq),
+      neighborRsrq: formatNumber(item.neighbourRsrq ?? item.neighborRsrq ?? item.neighbour_rsrq ?? item.neighbor_rsrq),
+      primarySinr: formatNumber(item.primarySinr ?? item.primary_sinr ?? item.sinr),
+      neighborSinr: formatNumber(item.neighbourSinr ?? item.neighborSinr ?? item.neighbour_sinr ?? item.neighbor_sinr),
+    });
+    applyDataRowStyle(row, index % 2 === 1);
+  });
+
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  autoFitColumns(worksheet);
 };
 
 const createApplicationSheet = (workbook, appSummary) => {
@@ -582,6 +672,7 @@ const createExcelWorkbook = async (params) => {
   // Create all sheets
   createSummarySheet(workbook, params);
   createLocationSheet(workbook, params.locations);
+  createNeighborLogsSheet(workbook, params.n78NeighborData);
   createApplicationSheet(workbook, params.appSummary);
   createDurationSheet(workbook, params.duration);
   createProviderStatsSheet(workbook, params.locations);
@@ -597,8 +688,9 @@ const captureAllCharts = async (zip, chartRefs, timestamp) => {
   if (!chartRefs) return;
 
   const chartFolder = zip.folder("charts");
+  const chartCaptures = buildChartCapturesFromRefs(chartRefs);
 
-  const capturePromises = CHART_CAPTURES.map(async ({ key, name }) => {
+  const capturePromises = chartCaptures.map(async ({ key, name }) => {
     const ref = chartRefs[key];
     if (!ref?.current) return;
 
@@ -664,6 +756,7 @@ const generateReadme = ({
 1. EXCEL FILE (analytics-data-${timestamp}.xlsx)
    ├─ Summary: Overview and key statistics
    ├─ Location Data: Complete dataset with GPS coordinates
+   ├─ Neighbor Logs: Filtered neighbor/anchor dataset (if available)
    ├─ Application Performance: App-wise metrics and QoE
    ├─ Session Duration: Timing information
    ├─ Provider Statistics: Performance by network provider
@@ -680,7 +773,10 @@ const generateReadme = ({
    ├─ provider-performance-${timestamp}.png
    ├─ speed-analysis-${timestamp}.png
    ├─ throughput-timeline-${timestamp}.png
-   └─ jitter-latency-${timestamp}.png
+   ├─ jitter-latency-${timestamp}.png
+   ├─ app-signal-quality-${timestamp}.png
+   ├─ app-throughput-comparison-${timestamp}.png
+   └─ app-network-performance-${timestamp}.png
 
 ═══════════════════════════════════════════════════════════════
 
@@ -730,6 +826,7 @@ export const exportAnalytics = async ({
   filteredCount = 0,
   polygonStats,
   siteData,
+  n78NeighborData = [],
 }) => {
   const toastId = "export";
   
@@ -754,6 +851,7 @@ export const exportAnalytics = async ({
       filteredCount,
       polygonStats,
       siteData,
+      n78NeighborData,
     });
 
     // Write workbook to buffer

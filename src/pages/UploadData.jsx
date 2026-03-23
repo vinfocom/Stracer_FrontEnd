@@ -35,6 +35,45 @@ const POLYGON_TYPES = [
   "text/csv",
 ];
 
+const toSafeArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.Data)) return value.Data;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.data?.Data)) return value.data.Data;
+  return [];
+};
+
+const normalizeSessionId = (value) => String(value ?? "").trim();
+
+const normalizeSessionIds = (value) => {
+  const source = Array.isArray(value) ? value : [];
+  return source
+    .map(normalizeSessionId)
+    .filter(Boolean)
+    .filter((id, index, arr) => arr.indexOf(id) === index);
+};
+
+const formatSessionCell = (sessionValue) => {
+  if (Array.isArray(sessionValue)) {
+    const values = sessionValue.map(normalizeSessionId).filter(Boolean);
+    return values.length ? values.join(", ") : "N/A";
+  }
+  const value = normalizeSessionId(sessionValue);
+  return value || "N/A";
+};
+
+const normalizeHistoryItems = (items) =>
+  toSafeArray(items).map((item = {}) => ({
+    ...item,
+    id: item.id ?? item.upload_id ?? `${item.file_name ?? "file"}-${item.uploaded_on ?? "time"}`,
+    session_id: item.session_id ?? item.session_ids ?? null,
+    file_name: item.file_name ?? item.fileName ?? "N/A",
+    uploaded_by: item.uploaded_by ?? item.uploadedBy ?? "Unknown",
+    status: item.status ?? "N/A",
+    remarks: item.remarks ?? "",
+    uploaded_on: item.uploaded_on ?? item.uploadedOn ?? null,
+  }));
+
 const UploadDataPage = () => {
   const [sessionFiles, setSessionFiles] = useState([]);
   const [predictionFiles, setPredictionFiles] = useState([]);
@@ -55,7 +94,7 @@ const UploadDataPage = () => {
 
   // ------------------ FILE UPLOAD LOGIC ------------------
   const handleUpload = async () => {
-    const files = activeTab === "session" ? sessionFiles : predictionFiles;
+    const files = toSafeArray(activeTab === "session" ? sessionFiles : predictionFiles);
     if (!files.length) {
       toast.warn("Please select a main data file.");
       return;
@@ -78,7 +117,7 @@ const UploadDataPage = () => {
     formData.append("UploadFileType", activeTab === "session" ? "1" : "2");
     formData.append("remarks", remarks);
     formData.append("ProjectName", projectName);
-    formData.append("SessionIds", selectedSessions.join(","));
+    formData.append("SessionIds", normalizeSessionIds(selectedSessions).join(","));
 
     const result = await uploadFile(formData);
     if (result.success) {
@@ -111,17 +150,17 @@ const UploadDataPage = () => {
   };
 
   const onDropSession = useCallback((files) => {
-    const valid = files.filter((f) => validateFile(f, FILE_TYPES));
+    const valid = toSafeArray(files).filter((f) => validateFile(f, FILE_TYPES));
     if (valid.length) setSessionFiles(valid);
   }, []);
 
   const onDropPrediction = useCallback((files) => {
-    const valid = files.filter((f) => validateFile(f, FILE_TYPES));
+    const valid = toSafeArray(files).filter((f) => validateFile(f, FILE_TYPES));
     if (valid.length) setPredictionFiles(valid);
   }, []);
 
   const onDropPolygon = useCallback((files) => {
-    const valid = files.filter((f) => validateFile(f, POLYGON_TYPES));
+    const valid = toSafeArray(files).filter((f) => validateFile(f, POLYGON_TYPES));
     if (valid.length) setPolygonFile(valid[0]);
   }, []);
 
@@ -154,7 +193,7 @@ const UploadDataPage = () => {
     setHistoryLoading(true);
     try {
       const response = await excelApi.getUploadedFiles(activeTab === "session" ? 1 : 2);
-      setUploadedFiles(response.Data || []);
+      setUploadedFiles(normalizeHistoryItems(response?.Data ?? response));
     } catch {
       setUploadedFiles([]);
       toast.error("Failed to fetch uploaded files.");
@@ -185,13 +224,15 @@ const UploadDataPage = () => {
       end.setHours(23, 59, 59, 999);
       try {
         const response = await excelApi.getSessions(start, end);
-        // yaha bhi console hai
-        const fetched = response.Data || [];
+        const fetched = toSafeArray(response?.Data ?? response);
        
         setSessionsInRange(
           fetched.map((s) => ({
-            value: s.id,
-            label: s.label || `Session ${s.id}`,
+            value: normalizeSessionId(s?.id ?? s?.session_id ?? s?.value),
+            label:
+              s?.label ||
+              s?.name ||
+              `Session ${normalizeSessionId(s?.id ?? s?.session_id ?? s?.value)}`,
           }))
         );
        
@@ -206,38 +247,52 @@ const UploadDataPage = () => {
     // Simple multi-select dropdown component
 const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions }) => {
   const toggle = (id) => {
-    setSelectedSessions((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    );
+    const normalizedId = normalizeSessionId(id);
+    if (!normalizedId) return;
+
+    setSelectedSessions((prev) => {
+      const safePrev = normalizeSessionIds(prev);
+      return safePrev.includes(normalizedId)
+        ? safePrev.filter((s) => s !== normalizedId)
+        : [...safePrev, normalizedId];
+    });
   };
 
-  if (!sessions.length) {
+  const safeSessions = toSafeArray(sessions);
+  const safeSelected = normalizeSessionIds(selectedSessions);
+
+  if (!safeSessions.length) {
     return <p className="text-gray-200 mt-2">No sessions loaded yet.</p>;
   }
 
   return (
     <div className="max-h-60 overflow-y-auto bg-gray-700 rounded p-3 space-y-1">
-      {sessions.map((s) => (
+      {safeSessions.map((s, index) => {
+        const value = normalizeSessionId(s?.value);
+        if (!value) return null;
+        return (
         <label
-          key={s.value}
+          key={`${value}-${index}`}
           className="flex items-center space-x-2 cursor-pointer hover:bg-gray-600 rounded px-2 py-1"
         >
           <input
             type="checkbox"
-            checked={selectedSessions.includes(s.value)}
-            onChange={() => toggle(s.value)}
+            checked={safeSelected.includes(value)}
+            onChange={() => toggle(value)}
           />
-          <span className="text-white text-sm">{s.label}</span>
+          <span className="text-white text-sm">{s?.label || `Session ${value}`}</span>
         </label>
-      ))}
+      );
+      })}
     </div>
   );
 };
   // ------------------ UI HELPERS ------------------
-  const renderFileList = (files, type) =>
-    files.length ? (
+  const renderFileList = (files, type) => {
+    const safeFiles = toSafeArray(files);
+    return safeFiles.length ? (
       <div className="mt-4 space-y-2">
-        {files.map((file, i) => (
+        {safeFiles.map((file, i) => (
           <div key={i} className="flex items-center justify-between bg-gray-500 rounded px-3 py-2">
             <div className="flex items-center gap-2">
               <File className="h-5 w-5 text-white" />
@@ -257,6 +312,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
         ))}
       </div>
     ) : null;
+  };
 
   const renderFileInput = (getRootProps, getInputProps, isActive, files, type, label) => (
     <div
@@ -423,18 +479,18 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
               <TableBody>
                 {historyLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center">
+                    <TableCell colSpan={6} className="text-center">
                       <Spinner />
                     </TableCell>
                   </TableRow>
                 ) : uploadedFiles.length > 0 ? (
-                  uploadedFiles.map((file) => (
-                    <TableRow key={file.id}>
+                  uploadedFiles.map((file, index) => (
+                    <TableRow key={`${file.id}-${index}`}>
                       <TableCell>{file.file_name}</TableCell>
                       <TableCell>{file.uploaded_by}</TableCell>
-                      <TableCell>{file.session_id ? `${file.session_id}` : "N/A"}</TableCell>
+                      <TableCell>{formatSessionCell(file.session_id)}</TableCell>
                       <TableCell>
-                        {new Date(file.uploaded_on).toLocaleString()}
+                        {file.uploaded_on ? new Date(file.uploaded_on).toLocaleString() : "N/A"}
                       </TableCell>
                       <TableCell
                         className={
@@ -452,7 +508,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
+                    <TableCell colSpan={6} className="text-center h-24">
                       No history found.
                     </TableCell>
                   </TableRow>

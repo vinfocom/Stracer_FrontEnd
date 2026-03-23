@@ -257,13 +257,13 @@ const ExportDropdown = ({
         ];
         const n78Data = n78NeighborData.map((n, idx) => ({
           index: idx + 1,
-          neighbor_rsrp: n.neighborRsrp ?? "",
-          neighbor_rsrq: n.neighborRsrq ?? "",
-          primary_rsrp: n.rsrp ?? "",
-          primary_rsrq: n.rsrq ?? "",
-          sinr: n.sinr ?? "",
+          neighbor_rsrp: n.neighbourRsrp ?? n.neighborRsrp ?? "",
+          neighbor_rsrq: n.neighbourRsrq ?? n.neighborRsrq ?? "",
+          primary_rsrp: n.primaryRsrp ?? n.rsrp ?? "",
+          primary_rsrq: n.primaryRsrq ?? n.rsrq ?? "",
+          sinr: n.primarySinr ?? n.sinr ?? "",
           provider: n.provider || "",
-          primary_band: n.primaryBand || "",
+          primary_band: n.primaryBand || n.band || "",
           network_type: n.network || n.networkType || "",
           latitude: n.lat?.toFixed(6) || "",
           longitude: n.lng?.toFixed(6) || "",
@@ -379,10 +379,50 @@ const ExportDropdown = ({
         }
       }
 
+      // Fallback: if chart refs are not mounted, try visible chart blocks in current tab.
+      if (exportedCount === 0 && contentRef?.current) {
+        const candidates = contentRef.current.querySelectorAll(".recharts-responsive-container");
+        const seen = new Set();
+        let fallbackIndex = 1;
+
+        for (const node of candidates) {
+          const target =
+            node.closest(".bg-slate-900") ||
+            node.closest(".bg-slate-800") ||
+            node.parentElement;
+
+          if (!target || seen.has(target)) continue;
+          seen.add(target);
+
+          const success = await captureElementAsImage(
+            target,
+            `chart_${activeTab}_${fallbackIndex}_${timestamp}.png`
+          );
+          if (success) {
+            exportedCount++;
+            fallbackIndex++;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      }
+
       if (exportedCount > 0) {
         toast.success(`${exportedCount} charts exported!`);
       } else {
-        toast.warning("No charts available to export");
+        // Last fallback so user still gets output instead of hard failure.
+        if (contentRef?.current) {
+          const success = await captureElementAsImage(
+            contentRef.current,
+            `analytics_${activeTab}_${timestamp}.png`
+          );
+          if (success) {
+            toast.success("Current tab image exported.");
+          } else {
+            toast.warning("No valid chart is available to export on this tab.");
+          }
+        } else {
+          toast.warning("No valid chart is available to export on this tab.");
+        }
       }
     } catch (error) {
       toast.error("Failed to export charts");
@@ -493,83 +533,42 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
     }
   };
 
-  const handleFullExport = () => {
-    setIsOpen(false);
-    exportAnalytics({
-      locations,
-      stats,
-      duration,
-      appSummary,
-      ioSummary,
-      projectId,
-      sessionIds,
-      chartRefs,
-      selectedMetric,
-      totalLocations,
-      filteredCount,
-      polygonStats,
-      siteData,
-      appliedFilters: dataFilters,
-      n78NeighborData,
-      n78NeighborStats,
-    });
-  };
+  const handleFullExport = async () => {
+    if (isExporting) return;
 
-  const exportOptions = [
-    {
-      id: "csv",
-      label: "Export All as CSV",
-      icon: FileSpreadsheet,
-      description: "Download all data tables",
-      action: exportAllDataCSV,
-      color: "text-green-400",
-    },
-    {
-      id: "json",
-      label: "Export as JSON",
-      icon: FileJson,
-      description: "Full data export",
-      action: exportAllDataJSON,
-      color: "text-yellow-400",
-    },
-    {
-      id: "image",
-      label: "Capture Current View",
-      icon: Image,
-      description: "Screenshot current tab",
-      action: exportCurrentViewAsImage,
-      color: "text-blue-400",
-    },
-    {
-      id: "charts",
-      label: "Export All Charts",
-      icon: BarChart3,
-      description: "Download chart images",
-      action: exportAllChartsAsImages,
-      color: "text-purple-400",
-    },
-    {
-      id: "report",
-      label: "Summary Report",
-      icon: FileText,
-      description: "Text summary report",
-      action: exportSummaryReport,
-      color: "text-cyan-400",
-    },
-    {
-      id: "full",
-      label: "Full Analytics Export",
-      icon: Download,
-      description: "Complete export package",
-      action: handleFullExport,
-      color: "text-orange-400",
-    },
-  ];
+    setIsOpen(false);
+    setIsExporting(true);
+    setExportType("full");
+
+    try {
+      await exportAnalytics({
+        locations,
+        stats,
+        duration,
+        appSummary,
+        ioSummary,
+        projectId,
+        sessionIds,
+        chartRefs,
+        selectedMetric,
+        totalLocations,
+        filteredCount,
+        polygonStats,
+        siteData,
+        appliedFilters: dataFilters,
+        n78NeighborData,
+        n78NeighborStats,
+      });
+    } finally {
+      setIsExporting(false);
+      setExportType(null);
+    }
+  };
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleFullExport}
         disabled={!locations?.length || isExporting}
         className={`
           flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-sm
@@ -589,62 +588,9 @@ Technologies: ${dataFilters.technologies?.join(", ") || "None"}
           <>
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Export</span>
-            <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} />
           </>
         )}
       </button>
-
-      {isOpen && !isExporting && (
-        <div className="absolute right-0 mt-2 w-64 bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-2 border-b border-slate-700 bg-slate-900/50">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Export Options
-            </span>
-          </div>
-          
-          <div className="py-1">
-            {exportOptions.map((option) => {
-              const Icon = option.icon;
-              const isActive = exportType === option.id;
-              
-              return (
-                <button
-                  key={option.id}
-                  onClick={option.action}
-                  disabled={isExporting}
-                  className={`
-                    w-full px-3 py-2.5 flex items-start gap-3 
-                    hover:bg-slate-700/50 transition-colors text-left
-                    ${isActive ? "bg-slate-700/50" : ""}
-                  `}
-                >
-                  <div className={`p-1.5 rounded-md bg-slate-900/50 ${option.color}`}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white flex items-center gap-2">
-                      {option.label}
-                      {isActive && <Check className="h-3 w-3 text-green-400" />}
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      {option.description}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-
-          </div>
-
-          <div className="p-2 border-t border-slate-700 bg-slate-900/50">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>{locations?.length?.toLocaleString() || 0} locations</span>
-              <span>{technologyTransitions?.length || 0} handovers</span>
-              <span>{n78NeighborData?.length || 0} N78</span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -695,6 +641,7 @@ const getSignalQuality = (value) => {
 
 export default function UnifiedDetailLogs({
   locations = [],
+  allFilteredLocations = [],
   distance,
   totalLocations = 0,
   filteredCount = 0,
@@ -818,6 +765,7 @@ export default function UnifiedDetailLogs({
   const chartRefs = {
     distribution: useRef(null),
     tech: useRef(null),
+    comparison: useRef(null),
     radar: useRef(null),
     band: useRef(null),
     operator: useRef(null),
@@ -831,6 +779,13 @@ export default function UnifiedDetailLogs({
     signalChart: useRef(null),
     qoeChart: useRef(null),
   };
+
+  const exportLocations = useMemo(() => {
+    if (Array.isArray(allFilteredLocations) && allFilteredLocations.length > 0) {
+      return allFilteredLocations;
+    }
+    return filteredLocations;
+  }, [allFilteredLocations, filteredLocations]);
 
   const hasActiveFilters = useMemo(() => {
     return (
@@ -1102,7 +1057,7 @@ export default function UnifiedDetailLogs({
           </button>
 
           <ExportDropdown
-            locations={filteredLocations}
+            locations={exportLocations}
             stats={stats}
             duration={duration}
             appSummary={appSummary}
@@ -1112,7 +1067,7 @@ export default function UnifiedDetailLogs({
             chartRefs={chartRefs}
             selectedMetric={selectedMetric}
             totalLocations={totalLocations}
-            filteredCount={filteredLocations.length}
+            filteredCount={exportLocations.length}
             polygonStats={polygonStats}
             siteData={siteData}
             dataFilters={dataFilters}
@@ -1197,6 +1152,7 @@ export default function UnifiedDetailLogs({
             expanded={expanded}
             tptVolume={tptVolume}
             drawnShapeAnalytics={drawnShapeAnalytics}
+            sessionIds={sessionIds}
           />
           )}
 
