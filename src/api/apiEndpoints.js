@@ -1099,6 +1099,9 @@ export const companyApi = {
 
   deleteCompany: (id) => api.delete("/api/company/deleteCompany", { params: { id } }),
 
+  updateCompanyStatus: (companyId, status) =>
+    api.put("/api/company/updateCompanyStatus", { status }, { params: { companyId } }),
+
   revokeLicense: (id) => api.post(`/api/company/revokeLicense`, null, { params: { licenseId: id } }),
 
   updateIssuedLicense: (licenseId, data) =>

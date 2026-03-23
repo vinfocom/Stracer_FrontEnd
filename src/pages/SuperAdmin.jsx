@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";  
 import { useNavigate } from "react-router-dom";
-import { Alert,AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { MoreHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -29,21 +28,35 @@ const SuperAdminCompanies = () => {
   const handleOpenDialog = (company) => {
     navigate("/company-form", { state: { company } });
   };
-  
-  const handleInactiveUser = async (id) =>{
+
+  const normalizeCompanyStatus = (status) => Number(status) === 1 ? 1 : 0;
+
+  const handleCompanyStatusUpdate = async (companyId, targetStatus) => {
     try{
-      const res = await companyApi.revokeLicense(id);
+      const res = await companyApi.updateCompanyStatus(companyId, targetStatus);
       if(res?.Status === 1 ){
-        toast.success("status updated Successfully")
+        toast.success("Status updated successfully");
         fetchCompanies();
       }
     } catch(err){
-      console.error("Error deleting company:", err);
-      toast.error("Failed to delete company. Please try again.");
+      console.error("Error updating company status:", err);
+      toast.error("Failed to update company status. Please try again.");
     }
-  }
+  };
 
-  const handleDeleteUser = async (id) => {
+  const handleInactiveCompany = async (company) => {
+    const currentStatus = normalizeCompanyStatus(company?.status);
+    if (currentStatus === 0) {
+      toast.info("Company is already inactive.");
+      return;
+    }
+    const confirmed = window.confirm("Are you sure you want to set this company as inactive?");
+    if (!confirmed) return;
+
+    await handleCompanyStatusUpdate(company.id, 0);
+  };
+
+  const handleDeleteCompany = async (id) => {
     if (!window.confirm('Are you sure you want to delete this company? This action cannot be undone.')) {
       return;
     }
@@ -69,11 +82,14 @@ const SuperAdminCompanies = () => {
     { 
       header: "Status", 
       accessor: "status",
-      render: (row) => (
-        <Badge variant={row.status === 1 ? "success" : "destructive"}>
-          {row.status === 1 ? "Active" : "Inactive"}
+      render: (row) => {
+        const status = normalizeCompanyStatus(row.status);
+        return (
+        <Badge variant={status === 1 ? "success" : "destructive"}>
+          {status === 1 ? "Active" : "Inactive"}
         </Badge>
-      )
+      );
+      }
     },
     { 
       header: "Licenses", 
@@ -111,14 +127,14 @@ const SuperAdminCompanies = () => {
                             Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                            onClick={() => handleInactiveUser(user.id)}
+                            onClick={() => handleInactiveCompany(user)}
                             className="text-red-600 hover:bg-red-50 cursor-pointer"
                         >
                             Inactive
                         </DropdownMenuItem>
                     
                     <DropdownMenuItem
-                            onClick={() => handleDeleteUser(user.id)}
+                            onClick={() => handleDeleteCompany(user.id)}
                             className="text-red-600 hover:bg-red-50 cursor-pointer"
                         >
                             Delete
