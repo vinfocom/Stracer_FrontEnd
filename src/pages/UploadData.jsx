@@ -15,7 +15,7 @@ import Spinner from "../components/common/Spinner";
 import { excelApi } from "../api/apiEndpoints";
 import { useFileUpload } from "../hooks/useFileUpload";
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 100MB
 
 const FILE_TYPES = [
   "text/csv",
@@ -61,6 +61,9 @@ const formatSessionCell = (sessionValue) => {
   const value = normalizeSessionId(sessionValue);
   return value || "N/A";
 };
+
+const normalizeStatus = (status) => String(status ?? "").trim().toLowerCase();
+const isProcessingStatus = (status) => normalizeStatus(status) === "processing";
 
 const normalizeHistoryItems = (items) =>
   toSafeArray(items).map((item = {}) => ({
@@ -124,6 +127,12 @@ const UploadDataPage = () => {
       toast.success("File uploaded successfully!");
       resetForm();
       fetchUploadedFiles();
+      return;
+    }
+
+    if (result?.isLikelyProcessing) {
+      toast.info("Upload request ended before final response. History will auto-refresh while processing continues.");
+      fetchUploadedFiles({ showLoader: false, showError: false });
     }
   };
 
@@ -189,22 +198,35 @@ const UploadDataPage = () => {
   };
 
   // ------------------ UPLOAD HISTORY FETCH ------------------
-  const fetchUploadedFiles = useCallback(async () => {
-    setHistoryLoading(true);
+  const fetchUploadedFiles = useCallback(async ({ showLoader = true, showError = true } = {}) => {
+    if (showLoader) setHistoryLoading(true);
     try {
       const response = await excelApi.getUploadedFiles(activeTab === "session" ? 1 : 2);
       setUploadedFiles(normalizeHistoryItems(response?.Data ?? response));
     } catch {
       setUploadedFiles([]);
-      toast.error("Failed to fetch uploaded files.");
+      if (showError) {
+        toast.error("Failed to fetch uploaded files.");
+      }
     } finally {
-      setHistoryLoading(false);
+      if (showLoader) setHistoryLoading(false);
     }
   }, [activeTab]);
 
   useEffect(() => {
-    fetchUploadedFiles();
+    fetchUploadedFiles({ showLoader: true, showError: true });
   }, [fetchUploadedFiles, activeTab]);
+
+  useEffect(() => {
+    const hasProcessing = uploadedFiles.some((file) => isProcessingStatus(file?.status));
+    if (!hasProcessing) return;
+
+    const intervalId = setInterval(() => {
+      fetchUploadedFiles({ showLoader: false, showError: false });
+    }, 8000);
+
+    return () => clearInterval(intervalId);
+  }, [uploadedFiles, fetchUploadedFiles]);
 
   // ------------------ FETCH SESSIONS BUTTON ------------------
   const handleFetchSessions = async () => {
@@ -347,7 +369,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
               isDragActiveSession,
               sessionFiles,
               "session",
-              "Session Data File (.csv or .zip)"
+              "Session Data File (.csv or .zip, max 500 MB)"
             )}
             <Textarea
               placeholder=" Remarks (Required)"
@@ -364,7 +386,7 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
               isDragActivePrediction,
               predictionFiles,
               "prediction",
-              "Prediction Data File (.csv or .zip)"
+              "Prediction Data File (.csv or .zip, max 200 MB)"
             )}
 
             <label className="font-semibold">Inbound Polygon File (Required)</label>
@@ -484,28 +506,30 @@ const SessionMultiDropdown = ({ sessions, selectedSessions, setSelectedSessions 
                     </TableCell>
                   </TableRow>
                 ) : uploadedFiles.length > 0 ? (
-                  uploadedFiles.map((file, index) => (
-                    <TableRow key={`${file.id}-${index}`}>
-                      <TableCell>{file.file_name}</TableCell>
-                      <TableCell>{file.uploaded_by}</TableCell>
-                      <TableCell>{formatSessionCell(file.session_id)}</TableCell>
-                      <TableCell>
-                        {file.uploaded_on ? new Date(file.uploaded_on).toLocaleString() : "N/A"}
-                      </TableCell>
-                      <TableCell
-                        className={
-                          file.status === "Success"
-                            ? "text-green-200"
-                            : file.status === "Processing"
-                              ? "text-yellow-200"
-                              : "text-red-200"
-                        }
-                      >
-                        {file.status}
-                      </TableCell>
-                      <TableCell>{file.remarks}</TableCell>
-                    </TableRow>
-                  ))
+                  uploadedFiles.map((file, index) => {
+                    const status = normalizeStatus(file.status);
+                    const statusClass =
+                      status === "success"
+                        ? "text-green-200"
+                        : status === "processing"
+                          ? "text-yellow-200"
+                          : "text-red-200";
+
+                    return (
+                      <TableRow key={`${file.id}-${index}`}>
+                        <TableCell>{file.file_name}</TableCell>
+                        <TableCell>{file.uploaded_by}</TableCell>
+                        <TableCell>{formatSessionCell(file.session_id)}</TableCell>
+                        <TableCell>
+                          {file.uploaded_on ? new Date(file.uploaded_on).toLocaleString() : "N/A"}
+                        </TableCell>
+                        <TableCell className={statusClass}>
+                          {file.status}
+                        </TableCell>
+                        <TableCell>{file.remarks}</TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center h-24">
