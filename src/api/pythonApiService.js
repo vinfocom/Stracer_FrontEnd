@@ -1,7 +1,59 @@
 // src/api/pythonApiService.js
 import axios from 'axios';
 
-const PYTHON_BASE_URL = import.meta.env.VITE_PYTHON_API_URL;
+const resolvePythonBaseUrl = () => {
+  const configuredBaseUrl = String(import.meta.env.VITE_PYTHON_API_URL || '').trim();
+
+  if (!configuredBaseUrl) {
+    return '/py';
+  }
+
+  if (typeof window !== 'undefined') {
+    const isHttpsPage = window.location.protocol === 'https:';
+    const isInsecureApi = configuredBaseUrl.startsWith('http://');
+
+    if (isHttpsPage && isInsecureApi) {
+      console.warn(
+        '[pythonApiService] HTTPS page detected with HTTP Python API URL. Falling back to /py proxy to avoid mixed-content blocking.'
+      );
+      return '/py';
+    }
+  }
+
+  return configuredBaseUrl;
+};
+
+const PYTHON_BASE_URL = resolvePythonBaseUrl();
+
+const AXIOS_CONFIG_KEYS = new Set([
+  'headers',
+  'timeout',
+  'signal',
+  'cancelToken',
+  'responseType',
+  'withCredentials',
+  'onUploadProgress',
+  'onDownloadProgress',
+  'auth',
+  'validateStatus',
+  'maxBodyLength',
+  'maxContentLength',
+  'adapter',
+  'transformRequest',
+  'transformResponse',
+  'paramsSerializer',
+  'baseURL',
+]);
+
+const isPlainObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const looksLikeAxiosConfig = (value) => {
+  if (!isPlainObject(value)) return false;
+  const keys = Object.keys(value);
+  if (!keys.length) return false;
+  return keys.some((key) => AXIOS_CONFIG_KEYS.has(key));
+};
 
 /**
  * Create axios instance for Python backend
@@ -81,6 +133,7 @@ const pythonApiService = async (endpoint, options = {}) => {
       ...(params && { params }),
       ...(headers && { headers }),
       ...(timeout && { timeout }),
+      ...rest,
     };
     
     const response = await pythonAxios(config);
@@ -100,12 +153,20 @@ const pythonApiService = async (endpoint, options = {}) => {
  * Exported Python API methods
  */
 export const pythonApi = {
-  get: (endpoint, params = {}, options = {}) =>
-    pythonApiService(endpoint, { 
-      method: 'GET', 
-      params,
-      ...options 
-    }),
+  get: (endpoint, paramsOrOptions = {}, options = {}) => {
+    if (looksLikeAxiosConfig(paramsOrOptions) && Object.keys(options).length === 0) {
+      return pythonApiService(endpoint, {
+        method: 'GET',
+        ...paramsOrOptions,
+      });
+    }
+
+    return pythonApiService(endpoint, {
+      method: 'GET',
+      params: paramsOrOptions,
+      ...options,
+    });
+  },
   
   post: (endpoint, body, options = {}) =>
     pythonApiService(endpoint, { 
