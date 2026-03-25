@@ -44,6 +44,7 @@ import { ChartContainer } from "../../common/ChartContainer";
 import { EmptyState } from "../../common/EmptyState";
 import { PCI_COLOR_PALETTE } from "@/components/map/layers/MultiColorCirclesLayer";
 import { CHART_CONFIG } from "@/utils/constants";
+import { normalizeBandName } from "@/utils/colorUtils";
 
 // Provider color mapping
 const PROVIDER_COLORS = {
@@ -509,7 +510,7 @@ export const PciColorLegend = React.forwardRef(({ locations }, ref) => {
 
       const provider = loc.provider || "Unknown";
       const technology = loc.technology || "Unknown";
-      const band = loc.band || "Unknown";
+      const band = normalizeBandName(loc.band || loc.primaryBand);
 
       acc[pci].providers[provider] = (acc[pci].providers[provider] || 0) + 1;
       acc[pci].technologies[technology] = (acc[pci].technologies[technology] || 0) + 1;
@@ -599,7 +600,7 @@ export const PciColorLegend = React.forwardRef(({ locations }, ref) => {
       const provider = loc.provider || "Unknown";
       const pci = loc.pci != null ? String(loc.pci) : "Unknown";
       const technology = loc.technology || "Unknown";
-      const band = loc.band || "Unknown";
+      const band = normalizeBandName(loc.band || loc.primaryBand);
 
       if (!providerStats[provider]) {
         providerStats[provider] = {
@@ -791,7 +792,7 @@ export const PciColorLegend = React.forwardRef(({ locations }, ref) => {
       
       const provider = loc.provider || "Unknown";
       const tech = loc.technology || "Unknown";
-      const band = loc.band || "Unknown";
+      const band = normalizeBandName(loc.band || loc.primaryBand);
       
       cellStats[key].providers[provider] = (cellStats[key].providers[provider] || 0) + 1;
       cellStats[key].technologies[tech] = (cellStats[key].technologies[tech] || 0) + 1;
@@ -973,7 +974,7 @@ const PCIColorMapView = ({ pciColorMap, selectedPci, onSelectPci, sortConfig, on
                       {item.dominantTechnology}
                     </span>
                     <span className="text-[11px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400">
-                      B{item.dominantBand}
+                      {item.dominantBand}
                     </span>
                   </div>
                 </div>

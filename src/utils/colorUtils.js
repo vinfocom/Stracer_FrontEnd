@@ -191,14 +191,40 @@ export const normalizeTechName = (tech, band = null) => {
 };
 
 export const normalizeBandName = (band) => {
-  if (band === null || band === undefined || band === "" || band === "Unknown") return "Unknown";
+  if (band === null || band === undefined) return "Unknown";
 
-  const bandStr = String(band);
-  if (bandStr.charAt(0) === "B" || bandStr.charAt(0) === "n") {
-    return bandStr;
-  } else {
-    return "B" + bandStr;
+  const raw = String(band).trim();
+  if (!raw) return "Unknown";
+
+  const upperRaw = raw.toUpperCase();
+  if (
+    upperRaw === "UNKNOWN" ||
+    upperRaw === "N/A" ||
+    upperRaw === "NA" ||
+    upperRaw === "NULL" ||
+    upperRaw === "UNDEFINED"
+  ) {
+    return "Unknown";
   }
+
+  const nrMatch = raw.match(/^N\s*[-_\s]*([+-]?\d+)$/i);
+  if (nrMatch) {
+    const val = Math.abs(parseInt(nrMatch[1], 10));
+    return Number.isFinite(val) && val > 0 ? `n${val}` : "Unknown";
+  }
+
+  const lteMatch = raw.match(/^(?:B|BAND)\s*[-_\s]*([+-]?\d+)$/i);
+  if (lteMatch) {
+    const val = Math.abs(parseInt(lteMatch[1], 10));
+    return Number.isFinite(val) && val > 0 ? `B${val}` : "Unknown";
+  }
+
+  const numeric = parseInt(raw, 10);
+  if (Number.isFinite(numeric) && numeric !== 0) {
+    return `B${Math.abs(numeric)}`;
+  }
+
+  return raw;
 };
 
 export const COLOR_SCHEMES = {
