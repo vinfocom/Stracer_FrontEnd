@@ -13,9 +13,3 @@
   to = "http://65.2.162.237/:splat"
   status = 200
   force = true
-
-[[redirects]]
-  from = "/py/*"
-  to = "http://13.203.111.42/:splat"
-  status = 200
-  force = true

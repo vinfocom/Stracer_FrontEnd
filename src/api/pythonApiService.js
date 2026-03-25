@@ -1,29 +1,7 @@
 // src/api/pythonApiService.js
 import axios from 'axios';
 
-const resolvePythonBaseUrl = () => {
-  const configuredBaseUrl = String(import.meta.env.VITE_PYTHON_API_URL || '').trim();
-
-  if (!configuredBaseUrl) {
-    return '/py';
-  }
-
-  if (typeof window !== 'undefined') {
-    const isHttpsPage = window.location.protocol === 'https:';
-    const isInsecureApi = configuredBaseUrl.startsWith('http://');
-
-    if (isHttpsPage && isInsecureApi) {
-      console.warn(
-        '[pythonApiService] HTTPS page detected with HTTP Python API URL. Falling back to /py proxy to avoid mixed-content blocking.'
-      );
-      return '/py';
-    }
-  }
-
-  return configuredBaseUrl;
-};
-
-const PYTHON_BASE_URL = resolvePythonBaseUrl();
+const PYTHON_BASE_URL = String(import.meta.env.VITE_PYTHON_API_URL || '').trim();
 
 const AXIOS_CONFIG_KEYS = new Set([
   'headers',
