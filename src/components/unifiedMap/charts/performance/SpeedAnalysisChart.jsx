@@ -30,7 +30,8 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations, onBarClick }, r
       )
       .map((loc, idx) => ({
         index: idx + 1,
-        speed: parseFloat(loc.speed) * 3.6, // Convert m/s to km/h
+        // Speed from API/DB is already in km/h. Keep raw value to avoid inflation.
+        speed: parseFloat(loc.speed),
         timestamp: loc.timestamp,
         provider: loc.provider || "Unknown",
         band: loc.band || "Unknown",
@@ -58,7 +59,7 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations, onBarClick }, r
         const { min, max } = data;
         const filteredLogs = locations.filter(loc => {
            if (loc.speed == null || isNaN(loc.speed)) return false;
-           const speedKmh = parseFloat(loc.speed) * 3.6;
+           const speedKmh = parseFloat(loc.speed);
            return speedKmh >= min && speedKmh < max;
         });
         onBarClick(filteredLogs); // Pass filtered logs to parent
@@ -81,10 +82,10 @@ export const SpeedAnalysisChart = React.forwardRef(({ locations, onBarClick }, r
     if (!data.length) return [];
 
     const buckets = [
-      { range: "0-5", min: 0, max: 20, count: 0, color: "#ef4444", label: "Static/walking" },
-      { range: "5-20", min: 20, max: 40, count: 0, color: "#f59e0b", label: "Cycling" },
-      { range: "20-40", min: 40, max: 60, count: 0, color: "#eab308", label: "Moderate" },
-      { range: "40-80", min: 60, max: 80, count: 0, color: "#22c55e", label: "Fast" },
+      { range: "0-20", min: 0, max: 20, count: 0, color: "#ef4444", label: "Static/walking" },
+      { range: "20-40", min: 20, max: 40, count: 0, color: "#f59e0b", label: "Cycling/city" },
+      { range: "40-60", min: 40, max: 60, count: 0, color: "#eab308", label: "Moderate" },
+      { range: "60-80", min: 60, max: 80, count: 0, color: "#22c55e", label: "Fast" },
       { range: "80-100", min: 80, max: 100, count: 0, color: "#3b82f6", label: "Very Fast" },
       { range: "100+", min: 100, max: Infinity, count: 0, color: "#8b5cf6", label: "Highway" },
     ];
