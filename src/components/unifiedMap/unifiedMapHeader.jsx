@@ -2,7 +2,20 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LogOut, Filter, ChartBar, Plus, Minus, UploadCloud, Settings as SettingsIcon, Droplets, CircleDot, Radio } from "lucide-react";
+import {
+  LogOut,
+  Filter,
+  ChartBar,
+  Plus,
+  Minus,
+  UploadCloud,
+  Settings as SettingsIcon,
+  Droplets,
+  CircleDot,
+  Radio,
+  Globe,
+  ChevronDown,
+} from "lucide-react";
 import { useLocation, Link, useSearchParams } from "react-router-dom";
 import { mapViewApi, predictionApi } from "@/api/apiEndpoints";
 import { toast } from "react-toastify";
@@ -11,6 +24,12 @@ import Spinner from "@/components/common/Spinner";
 import ProjectsDropdown from "../project/ProjectsDropdown";
 import DrawingControlsPanel from "../map/layout/DrawingControlsPanel";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import SettingsPage from "@/pages/Setting";
 
 const REQUIRED_SITE_COLUMNS = [
@@ -139,6 +158,7 @@ export default function UnifiedHeader({
   isControlsOpen,
   isLeftOpen,
   onLeftToggle,
+  onOpenOperatorComparison,
   showAnalytics,
   projectId,
   sessionIds,
@@ -353,7 +373,7 @@ export default function UnifiedHeader({
     if (!setLogRadius) return;
     const nextRadius = Number(rawValue);
     if (!Number.isFinite(nextRadius)) return;
-    setLogRadius(Math.max(4, Math.min(40, Math.round(nextRadius))));
+    setLogRadius(Math.max(2, Math.min(40, Math.round(nextRadius))));
   };
 
   const adjustNeighborSquareSize = (delta) => {
@@ -378,6 +398,11 @@ export default function UnifiedHeader({
       setActiveQuickControl(null);
     }
   }, [neighborLogsAvailable, activeQuickControl]);
+
+  const openInNewTab = (path) => {
+    if (typeof window === "undefined") return;
+    window.open(path, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <header className="h-14 bg-gray-800 text-white shadow-sm flex items-center justify-between px-6 flex-shrink-0 relative z-10">
@@ -413,6 +438,8 @@ export default function UnifiedHeader({
               {showAnalytics ? "Hide" : "Show"} Analytics
             </Button>
 
+            
+
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -435,7 +462,7 @@ export default function UnifiedHeader({
                   size="sm"
                   onClick={() => toggleQuickControl("neighbors")}
                   className={`${activeQuickControl === "neighbors" ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-700 hover:bg-slate-600"} text-white border-slate-600`}
-                  title="Neighbor Logs"
+                  title="Secondary Logs"
                 >
                   <Radio className="h-4 w-4" />
                 </Button>
@@ -541,12 +568,30 @@ export default function UnifiedHeader({
       </div>
 
       <div className="flex items-center space-x-4">
-        <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600">
-          <Link to="/dashboard">Dashboard</Link>
-        </Button>
-        <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600">
-          <Link to="/mapview">Map View</Link>
-        </Button>
+        <Button
+              onClick={() => onOpenOperatorComparison?.()}
+              size="sm"
+              className="flex gap-1 items-center bg-indigo-600 hover:bg-indigo-500 text-white"
+              title="Open Operator Comparison"
+            >
+              BenchMark
+            </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600 flex items-center gap-1">
+              Views
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="bg-white border border-gray-200 shadow-lg">
+            <DropdownMenuItem onClick={() => openInNewTab("/dashboard")} className="cursor-pointer">
+              Dashboard
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openInNewTab("/mapview")} className="cursor-pointer">
+              Map View
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Dialog>
     <DialogTrigger asChild>

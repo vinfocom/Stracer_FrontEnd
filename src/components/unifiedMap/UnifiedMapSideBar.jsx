@@ -610,8 +610,8 @@ const UnifiedMapSidebar = ({
                     onChange={setAreaEnabled}
                   />
                   <ToggleRow
-                    label="Neighbor Logs"
-                    description="Show neighboring signal markers on map"
+                    label="Secondary Logs"
+                    description="Show secondary signal markers on map"
                     checked={Boolean(showSessionNeighbors)}
                     onChange={setShowSessionNeighbors}
                     useSwitch={true}
@@ -1059,7 +1059,7 @@ const UnifiedMapSidebar = ({
                     className="bg-slate-800 border-slate-600 text-white h-8 text-sm"
                   />
                   <p className="text-[10px] text-slate-500 italic">
-                    Showing logs with neighbors within{" "}
+                    Showing logs with anchor within{" "}
                     {-Math.abs(dominanceThreshold)} to{" "}
                     {Math.abs(dominanceThreshold)} dB. Colors reflect the count
                     of overlapping signals.

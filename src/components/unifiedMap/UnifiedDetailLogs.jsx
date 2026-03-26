@@ -34,6 +34,7 @@ import { Rnd } from "react-rnd";
 
 import { OverviewTab } from "./tabs/OverviewTab";
 import { SignalTab } from "./tabs/SignalTab";
+import { OperatorComparisonTab } from "./tabs/OperatorComparisonTab";
 import { HandoverAnalysisTab } from "./tabs/HandoverAnalysisTab";
 import { NetworkTab } from "./tabs/NetworkTab";
 import { PerformanceTab } from "./tabs/PerformanceTab";
@@ -680,10 +681,12 @@ export default function UnifiedDetailLogs({
   selectedSubSessionTarget = null,
   onSubSessionSelect,
   drawnShapeAnalytics = [],
+  activeTabExternal = null,
+  onActiveTabExternalChange,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(activeTabExternal || "overview");
   const [filteredLocations, setFilteredLocations] = useState(locations);
   const [isFilterLoading, setIsFilterLoading] = useState(false);
   const [durationData, setDurationData] = useState(durationTime);
@@ -810,10 +813,20 @@ export default function UnifiedDetailLogs({
   }, [techHandOver, showN78Neighbors, n78NeighborData, showSubSession]);
 
   useEffect(() => {
-    if (!availableTabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab(availableTabs[0]?.id || "overview");
+    if (!activeTabExternal) return;
+    setActiveTab((prev) => (prev === activeTabExternal ? prev : activeTabExternal));
+  }, [activeTabExternal]);
+
+  useEffect(() => {
+    if (activeTab === "operatorComparison") {
+      return;
     }
-  }, [availableTabs, activeTab]);
+    if (!availableTabs.some((tab) => tab.id === activeTab)) {
+      const fallbackTab = availableTabs[0]?.id || "overview";
+      setActiveTab(fallbackTab);
+      onActiveTabExternalChange?.(fallbackTab);
+    }
+  }, [availableTabs, activeTab, onActiveTabExternalChange]);
 
   useEffect(() => {
     setIsFilterLoading(true);
@@ -1110,12 +1123,15 @@ export default function UnifiedDetailLogs({
         </div>
       </div>
 
-      <div className="flex gap-2 p-3 bg-slate-900 border-b border-slate-700 overflow-x-auto scrollbar-hide shrink-0" onMouseDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
+      <div className="flex gap-2 p-3 bg-slate-900 border-b border-slate-700 overflow-x-auto  shrink-0" onMouseDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
         {availableTabs.map((tab) => (
           <TabButton
             key={tab.id}
             active={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              setActiveTab(tab.id);
+              onActiveTabExternalChange?.(tab.id);
+            }}
             className={tab.id === "n78" ? "bg-purple-900/30 border-purple-700/50" : ""}
           >
             {tab.id === "n78" && <Radio className="h-3 w-3 mr-1" />}
@@ -1126,7 +1142,7 @@ export default function UnifiedDetailLogs({
 
       <div
         ref={contentRef}
-        className="flex-1 min-h-0 overflow-y-auto scrollbar-hide p-4 space-y-4 cursor-default"
+        className="flex-1 min-h-0 overflow-y-auto  p-4 space-y-4 cursor-default"
         onMouseDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
       >
@@ -1158,6 +1174,14 @@ export default function UnifiedDetailLogs({
 
         {activeTab === "signal" && (
            <SignalTab locations={filteredLocations} selectedMetric={selectedMetric} thresholds={thresholds} expanded={expanded} chartRefs={chartRefs} />
+        )}
+
+        {activeTab === "operatorComparison" && (
+          <OperatorComparisonTab
+            locations={filteredLocations}
+            chartRefs={chartRefs}
+            expanded={expanded}
+          />
         )}
 
         {activeTab === "network" && <NetworkTab locations={filteredLocations} expanded={expanded} chartRefs={chartRefs} />}

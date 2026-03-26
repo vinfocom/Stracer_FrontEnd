@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { Globe, Settings, BarChart3, TrendingUp, Hash } from "lucide-react";
 import {
   BarChart,
@@ -29,6 +29,110 @@ const safeNumber = (value) => {
   const num = parseFloat(value);
   if (isNaN(num) || !isFinite(num)) return null;
   return num;
+};
+
+const safeStringValue = (value) => {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  if (
+    lower === "unknown" ||
+    lower === "null" ||
+    lower === "undefined" ||
+    lower === "na" ||
+    lower === "n/a" ||
+    normalized === "-1"
+  ) {
+    return null;
+  }
+  return normalized;
+};
+
+const extractNodeId = (loc) =>
+  safeStringValue(
+    loc.nodeb_id ??
+      loc.nodebId ??
+      loc.nodeb ??
+      loc.NodeB ??
+      loc.NodeBId ??
+      loc.NodeB_ID ??
+      loc.eNodeB ??
+      loc.enodeb ??
+      loc.enodeb_id ??
+      loc.gNodeB ??
+      loc.gnodeb ??
+      loc.gnodeb_id
+  );
+
+const extractPci = (loc) => {
+  const pciValue = safeStringValue(
+    loc.pci ??
+      loc.PCI ??
+      loc.physical_cell_id ??
+      loc.physicalCellId ??
+      loc.pci_or_psi ??
+      loc.primaryPci ??
+      loc.neighbourPci ??
+      loc.neighbour_pci
+  );
+  if (!pciValue) return null;
+
+  const numericPci = Number(pciValue);
+  if (Number.isFinite(numericPci)) {
+    if (numericPci < 0 || numericPci > 503) return null;
+    return String(Math.floor(numericPci));
+  }
+  return pciValue;
+};
+
+const buildCountStats = (count) => ({
+  avg: count,
+  median: count,
+  mode: count,
+  min: count,
+  max: count,
+  count,
+});
+
+const incrementFrequency = (target, key) => {
+  if (!key) return;
+  target[key] = (target[key] || 0) + 1;
+};
+
+const getMostFrequentValue = (frequencyMap = {}) => {
+  const entries = Object.entries(frequencyMap);
+  if (!entries.length) return { value: "N/A", count: 0 };
+
+  return entries
+    .sort((a, b) => {
+      if (b[1] === a[1]) return String(a[0]).localeCompare(String(b[0]));
+      return b[1] - a[1];
+    })
+    .map(([value, count]) => ({ value, count }))[0];
+};
+
+const resolveOperatorName = (loc) => {
+  const rawProvider = String(loc.provider || loc.operator || "").trim();
+  if (!rawProvider) return "Unknown";
+
+  const provider = normalizeProviderName(rawProvider) || rawProvider;
+  if (!provider || provider === "Unknown") return "Unknown";
+
+  const rawTech = loc.technology || loc.network || loc.networkType || loc.tech || "";
+  const normalizedTech = normalizeTechName(rawTech);
+
+  const providerToken = rawProvider.toUpperCase();
+  const providerTaggedTech = providerToken.includes("5G")
+    ? "5G"
+    : providerToken.includes("4G") || providerToken.includes("LTE")
+      ? "4G"
+      : null;
+
+  const techSuffix =
+    providerTaggedTech || (normalizedTech !== "Unknown" ? normalizedTech : null);
+
+  return techSuffix ? `${provider} ${techSuffix}` : provider;
 };
 
 const calculateMode = (values) => {
@@ -98,6 +202,7 @@ const AVAILABLE_METRICS = {
     label: "RSRP",
     unit: "dBm",
     color: "#3B82F6",
+    reversed: true,
     higherBetter: true,
   },
   rsrq: {
@@ -105,6 +210,7 @@ const AVAILABLE_METRICS = {
     label: "RSRQ",
     unit: "dB",
     color: "#8B5CF6",
+    reversed: true,
     higherBetter: true,
   },
   sinr: {
@@ -148,6 +254,22 @@ const AVAILABLE_METRICS = {
     unit: "ms",
     color: "#EC4899",
     higherBetter: false,
+  },
+  node: {
+    key: "node",
+    label: "Node ID",
+    unit: "Count",
+    color: "#14B8A6",
+    higherBetter: true,
+    aggregation: "count",
+  },
+  pci: {
+    key: "pci",
+    label: "PCI ID",
+    unit: "Count",
+    color: "#6366F1",
+    higherBetter: true,
+    aggregation: "count",
   },
 };
 
@@ -193,6 +315,22 @@ const normalizeBandForChart = (band) => {
   return normalizeBandName(rawBand);
 };
 
+const isCountOnlyMetric = (metricKey) =>
+  AVAILABLE_METRICS[metricKey]?.aggregation === "count";
+
+const getMetricValue = (operator, metricKey, statMode) => {
+  const stats = operator?.[metricKey];
+  if (!stats) return null;
+  if (isCountOnlyMetric(metricKey)) return stats.count;
+  return stats[statMode];
+};
+
+const formatMetricValue = (value, metricKey) => {
+  if (typeof value !== "number") return "N/A";
+  if (isCountOnlyMetric(metricKey)) return String(Math.round(value));
+  return value.toFixed(1);
+};
+
 export const OperatorComparisonChart = React.forwardRef(
   (
     {
@@ -201,6 +339,11 @@ export const OperatorComparisonChart = React.forwardRef(
       showRadar = true,
       showTable = true,
       defaultStatMode = "avg",
+      separateMetricCharts = false,
+      showAllMetrics = false,
+      individualStatMode = false,
+      wrapMetricCharts = false,
+      highContrastText = false,
     },
     ref
   ) => {
@@ -208,6 +351,29 @@ export const OperatorComparisonChart = React.forwardRef(
     const [showSettings, setShowSettings] = useState(false);
     const [viewMode, setViewMode] = useState("bar");
     const [statMode, setStatMode] = useState(defaultStatMode);
+    const [metricStatModes, setMetricStatModes] = useState(() =>
+      Object.keys(AVAILABLE_METRICS).reduce((acc, metricKey) => {
+        if (!isCountOnlyMetric(metricKey)) acc[metricKey] = defaultStatMode;
+        return acc;
+      }, {}),
+    );
+
+    useEffect(() => {
+      if (!showAllMetrics) return;
+      setSelectedMetrics(Object.keys(AVAILABLE_METRICS));
+      setShowSettings(false);
+    }, [showAllMetrics]);
+
+    const resolveStatMode = useCallback(
+      (metricKey) => {
+        if (isCountOnlyMetric(metricKey)) return "count";
+        if (individualStatMode) {
+          return metricStatModes[metricKey] || defaultStatMode;
+        }
+        return statMode;
+      },
+      [defaultStatMode, individualStatMode, metricStatModes, statMode],
+    );
 
     const viewModes = useMemo(() => {
       const modes = ["bar"];
@@ -216,14 +382,22 @@ export const OperatorComparisonChart = React.forwardRef(
       return modes;
     }, [showRadar, showTable]);
 
+    const axisTickColor = highContrastText ? "#FFFFFF" : "#9CA3AF";
+    const primaryTextClass = highContrastText ? "text-white" : "text-slate-300";
+    const secondaryTextClass = highContrastText
+      ? "text-white/80"
+      : "text-slate-400";
+    const tertiaryTextClass = highContrastText ? "text-white/70" : "text-slate-500";
+    const mutedButtonTextClass = highContrastText ? "text-white" : "text-slate-300";
+    const tableHeaderTextClass = highContrastText ? "text-white" : "text-slate-400";
+
     const operatorData = useMemo(() => {
       if (!locations?.length) return [];
 
       const operatorStats = {};
 
       locations.forEach((loc) => {
-        const rawProvider = loc.provider || loc.operator || "";
-        const provider = normalizeProviderName(rawProvider);
+        const provider = resolveOperatorName(loc);
 
         if (provider === "Unknown") return;
 
@@ -242,6 +416,10 @@ export const OperatorComparisonChart = React.forwardRef(
             jitter: [],
             technologies: {},
             bands: {},
+            nodeIds: new Set(),
+            pcis: new Set(),
+            nodeFrequency: {},
+            pciFrequency: {},
           };
         }
 
@@ -279,28 +457,55 @@ export const OperatorComparisonChart = React.forwardRef(
           operatorStats[provider].bands[normalizedBand] =
             (operatorStats[provider].bands[normalizedBand] || 0) + 1;
         }
+
+        const nodeId = extractNodeId(loc);
+        if (nodeId) {
+          operatorStats[provider].nodeIds.add(nodeId);
+          incrementFrequency(operatorStats[provider].nodeFrequency, nodeId);
+        }
+
+        const pci = extractPci(loc);
+        if (pci) {
+          operatorStats[provider].pcis.add(pci);
+          incrementFrequency(operatorStats[provider].pciFrequency, pci);
+        }
       });
 
       return Object.values(operatorStats)
         .filter((op) => op.samples > 0)
-        .map((op) => ({
-          name: op.name,
-          color: op.color,
-          samples: op.samples,
-          rsrp: calculateStats(op.rsrp),
-          rsrq: calculateStats(op.rsrq),
-          sinr: calculateStats(op.sinr),
-          mos: calculateStats(op.mos),
-          dl_tpt: calculateStats(op.dl_tpt),
-          ul_tpt: calculateStats(op.ul_tpt),
-          latency: calculateStats(op.latency),
-          jitter: calculateStats(op.jitter),
-          dominantTech:
-            Object.entries(op.technologies).sort((a, b) => b[1] - a[1])[0]?.[0] ||
-            "N/A",
-          dominantBand:
-            Object.entries(op.bands).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A",
-        }))
+        .map((op) => {
+          const dominantNode = getMostFrequentValue(op.nodeFrequency);
+          const dominantPci = getMostFrequentValue(op.pciFrequency);
+
+          return {
+            name: op.name,
+            color: op.color,
+            samples: op.samples,
+            rsrp: calculateStats(op.rsrp),
+            rsrq: calculateStats(op.rsrq),
+            sinr: calculateStats(op.sinr),
+            mos: calculateStats(op.mos),
+            dl_tpt: calculateStats(op.dl_tpt),
+            ul_tpt: calculateStats(op.ul_tpt),
+            latency: calculateStats(op.latency),
+            jitter: calculateStats(op.jitter),
+            node: {
+              ...buildCountStats(dominantNode.count),
+              topValue: dominantNode.value,
+              uniqueCount: op.nodeIds.size,
+            },
+            pci: {
+              ...buildCountStats(dominantPci.count),
+              topValue: dominantPci.value,
+              uniqueCount: op.pcis.size,
+            },
+            dominantTech:
+              Object.entries(op.technologies).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+              "N/A",
+            dominantBand:
+              Object.entries(op.bands).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A",
+          };
+        })
         .sort((a, b) => b.samples - a.samples);
     }, [locations]);
 
@@ -308,11 +513,11 @@ export const OperatorComparisonChart = React.forwardRef(
       return operatorData.map((op) => {
         const data = { name: op.name, samples: op.samples };
         selectedMetrics.forEach((metricKey) => {
-          data[metricKey] = op[metricKey]?.[statMode];
+          data[metricKey] = getMetricValue(op, metricKey, resolveStatMode(metricKey));
         });
         return data;
       });
-    }, [operatorData, selectedMetrics, statMode]);
+    }, [operatorData, selectedMetrics, resolveStatMode]);
 
     const radarChartData = useMemo(() => {
       if (!operatorData.length) return [];
@@ -340,16 +545,17 @@ export const OperatorComparisonChart = React.forwardRef(
         const dataPoint = { metric: config.label };
 
         operatorData.forEach((op) => {
-          const rawValue = op[metricKey]?.[statMode];
+          const rawValue = getMetricValue(op, metricKey, resolveStatMode(metricKey));
           dataPoint[op.name] = normalizers[metricKey]?.(rawValue) || 0;
           dataPoint[`${op.name}_raw`] = rawValue;
         });
 
         return dataPoint;
       });
-    }, [operatorData, selectedMetrics, statMode]);
+    }, [operatorData, selectedMetrics, resolveStatMode]);
 
     const toggleMetric = useCallback((metricKey) => {
+      if (showAllMetrics) return;
       setSelectedMetrics((prev) => {
         if (prev.includes(metricKey)) {
           if (prev.length === 1) return prev;
@@ -357,10 +563,11 @@ export const OperatorComparisonChart = React.forwardRef(
         }
         return [...prev, metricKey];
       });
-    }, []);
+    }, [showAllMetrics]);
 
-    const getOtherStats = (stats) => {
-      const others = Object.keys(STAT_MODES).filter((key) => key !== statMode);
+    const getOtherStats = (stats, metricKey, currentMode) => {
+      if (isCountOnlyMetric(metricKey)) return [];
+      const others = Object.keys(STAT_MODES).filter((key) => key !== currentMode);
       return others
         .map((key) => ({
           key,
@@ -370,33 +577,9 @@ export const OperatorComparisonChart = React.forwardRef(
         .filter((s) => s.value !== null && s.value !== undefined);
     };
 
-    const MetricLegend = () => (
-      <div className="flex flex-wrap gap-2 mb-3">
-        {selectedMetrics.map((metricKey) => {
-          const config = AVAILABLE_METRICS[metricKey];
-          return (
-            <div
-              key={metricKey}
-              className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 border border-slate-700"
-            >
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: config.color }}
-              />
-              <span className="text-xs text-white font-medium">
-                {config.label}
-              </span>
-              <span className="text-[10px] text-white/70">
-                {STAT_MODES[statMode].shortLabel}
-                {config.unit ? ` • ${config.unit}` : ""}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
+    
 
-    const CustomBarTooltip = ({ active, payload, label }) => {
+    const CustomBarTooltip = ({ active, payload, label, forcedMetricKey, forcedStatMode }) => {
       if (!active || !payload?.length) return null;
 
       const operator = operatorData.find((op) => op.name === label);
@@ -406,7 +589,7 @@ export const OperatorComparisonChart = React.forwardRef(
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl min-w-[220px]">
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
             <span className="font-semibold text-white">{label}</span>
-            <span className="text-[10px] text-slate-400 ml-auto">
+            <span className={`text-[10px] ml-auto ${secondaryTextClass}`}>
               {operator.samples} samples
             </span>
           </div>
@@ -427,11 +610,15 @@ export const OperatorComparisonChart = React.forwardRef(
 
           <div className="space-y-2">
             {payload.map((entry, idx) => {
-              const config = AVAILABLE_METRICS[entry.dataKey];
+              const metricKey = forcedMetricKey || entry.dataKey;
+              const config = AVAILABLE_METRICS[metricKey];
               if (!config) return null;
 
-              const stats = operator[entry.dataKey];
-              const otherStats = getOtherStats(stats);
+              const currentMode =
+                forcedStatMode || resolveStatMode(metricKey);
+              const stats = operator[metricKey];
+              const otherStats = getOtherStats(stats, metricKey, currentMode);
+              const value = getMetricValue(operator, metricKey, currentMode);
 
               return (
                 <div key={idx} className="text-xs">
@@ -444,26 +631,30 @@ export const OperatorComparisonChart = React.forwardRef(
                       <span className="text-white">{config.label}</span>
                     </div>
                     <span className="text-white font-semibold">
-                      {typeof entry.value === "number"
-                        ? entry.value.toFixed(1)
-                        : "N/A"}{" "}
+                      {formatMetricValue(value, metricKey)}{" "}
                       {config.unit}
                     </span>
                   </div>
 
                   {otherStats.length > 0 && (
-                    <div className="flex justify-between text-[9px] text-slate-500 mt-0.5">
+                    <div className={`flex justify-between text-[9px] mt-0.5 ${tertiaryTextClass}`}>
                       {otherStats.map((s) => (
                         <span key={s.key}>
                           {s.label}:{" "}
-                          {typeof s.value === "number" ? s.value.toFixed(1) : "-"}
+                          {formatMetricValue(s.value, metricKey)}
                         </span>
                       ))}
                       <span>
                         Range:{" "}
-                        {typeof stats?.min === "number" ? stats.min.toFixed(1) : "-"} -{" "}
-                        {typeof stats?.max === "number" ? stats.max.toFixed(1) : "-"}
+                        {formatMetricValue(stats?.min, metricKey)} -{" "}
+                        {formatMetricValue(stats?.max, metricKey)}
                       </span>
+                    </div>
+                  )}
+
+                  {isCountOnlyMetric(metricKey) && (
+                    <div className="text-[15px] text-cyan-300 mt-0.5">
+                      Most Occurring: {stats?.topValue || "N/A"}
                     </div>
                   )}
                 </div>
@@ -471,7 +662,7 @@ export const OperatorComparisonChart = React.forwardRef(
             })}
           </div>
 
-          <div className="mt-2 pt-2 border-t border-slate-700 text-[10px] text-slate-400">
+          <div className={`mt-2 pt-2 border-t border-slate-700 text-[12px] ${secondaryTextClass}`}>
             <div>Tech: {operator.dominantTech}</div>
             <div>Band: {operator.dominantBand}</div>
           </div>
@@ -513,7 +704,7 @@ export const OperatorComparisonChart = React.forwardRef(
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: op.color }}
                   />
-                  <span className="text-slate-300">{op.name}</span>
+                  <span className={primaryTextClass}>{op.name}</span>
                 </div>
                 <span className="text-white font-semibold">
                   {typeof data[`${op.name}_raw`] === "number"
@@ -522,6 +713,104 @@ export const OperatorComparisonChart = React.forwardRef(
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      );
+    };
+
+    const renderSingleMetricBarChart = (metricKey) => {
+      const config = AVAILABLE_METRICS[metricKey];
+      if (!config) return null;
+      const currentMode = resolveStatMode(metricKey);
+      const chartData = operatorData.map((op) => ({
+        name: op.name,
+        value: getMetricValue(op, metricKey, currentMode),
+      }));
+
+      return (
+        <div
+          key={metricKey}
+          className={`rounded-lg border border-slate-700 bg-slate-900/40 overflow-hidden ${
+            wrapMetricCharts
+              ? "basis-full xl:basis-[calc(50%-0.5rem)] 2xl:basis-[calc(33.333%-0.75rem)] min-w-0"
+              : ""
+          }`}
+        >
+          <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className={`text-xs font-medium ${primaryTextClass}`}>
+              {config.label} ({isCountOnlyMetric(metricKey) ? "Count" : STAT_MODES[currentMode]?.label}
+              {config.unit ? ` • ${config.unit}` : ""})
+              </div>
+              {!isCountOnlyMetric(metricKey) && individualStatMode && (
+                <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                  {Object.entries(STAT_MODES).map(([modeKey, mode]) => (
+                    <button
+                      key={`${metricKey}-${modeKey}`}
+                      onClick={() =>
+                        setMetricStatModes((prev) => ({
+                          ...prev,
+                          [metricKey]: modeKey,
+                        }))
+                      }
+                      className={`px-2 py-1 text-[10px] font-medium transition-colors ${
+                        currentMode === modeKey
+                          ? "text-white"
+                          : `bg-slate-800 ${mutedButtonTextClass} hover:bg-slate-700`
+                      }`}
+                      style={{
+                        backgroundColor: currentMode === modeKey ? mode.color : undefined,
+                      }}
+                    >
+                      {mode.shortLabel}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {isCountOnlyMetric(metricKey) && (
+              <div className={`text-[10px] mt-1 ${secondaryTextClass}`}>
+                Shows count of most occurring {metricKey === "pci" ? "PCI ID" : "Node ID"} per operator.
+              </div>
+            )}
+          </div>
+          <div className="p-2">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart
+                data={chartData}
+                margin={{ top: 10, right: 20, left: 10, bottom: 40 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: axisTickColor, fontSize: 11 }}
+                  
+                  textAnchor="end"
+                  height={60}
+                  style={{
+                    padding:2 ,
+                  }}
+                />
+                <YAxis
+                  tick={{ fill: axisTickColor, fontSize: 11 }}
+                  reversed={Boolean(config.reversed)}
+                />
+                <Tooltip
+                  content={
+                    <CustomBarTooltip
+                      forcedMetricKey={metricKey}
+                      forcedStatMode={currentMode}
+                    />
+                  }
+                />
+                <Bar
+                  dataKey="value"
+                  name={config.label}
+                  radius={[4, 4, 0, 0]}
+                  fill={config.color}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       );
@@ -543,29 +832,31 @@ export const OperatorComparisonChart = React.forwardRef(
         subtitle={`${operatorData.length} operators | ${locations?.length || 0} samples`}
         headerExtra={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-lg overflow-hidden border border-slate-600">
-              {Object.entries(STAT_MODES).map(([key, mode]) => {
-                const Icon = mode.icon;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setStatMode(key)}
-                    title={mode.description}
-                    className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium transition-colors ${
-                      statMode === key
-                        ? "text-white"
-                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                    }`}
-                    style={{
-                      backgroundColor: statMode === key ? mode.color : undefined,
-                    }}
-                  >
-                    <Icon className="h-3 w-3" />
-                    {mode.label}
-                  </button>
-                );
-              })}
-            </div>
+            {!individualStatMode && (
+              <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                {Object.entries(STAT_MODES).map(([key, mode]) => {
+                  const Icon = mode.icon;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setStatMode(key)}
+                      title={mode.description}
+                      className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium transition-colors ${
+                        statMode === key
+                          ? "text-white"
+                          : `bg-slate-800 ${mutedButtonTextClass} hover:bg-slate-700`
+                      }`}
+                      style={{
+                        backgroundColor: statMode === key ? mode.color : undefined,
+                      }}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex rounded-lg overflow-hidden border border-slate-600">
               {viewModes.map((mode) => (
@@ -583,61 +874,63 @@ export const OperatorComparisonChart = React.forwardRef(
               ))}
             </div>
 
-            <div className="relative">
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  showSettings
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                }`}
-              >
-                <Settings className="h-3 w-3" />
-                Metrics
-                <span className="bg-slate-600 px-1 rounded text-[9px]">
-                  {selectedMetrics.length}
-                </span>
-              </button>
+            {!showAllMetrics && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                    showSettings
+                      ? "bg-blue-600 text-white"
+                      : `bg-slate-700 ${mutedButtonTextClass} hover:bg-slate-600`
+                  }`}
+                >
+                  <Settings className="h-3 w-3" />
+                  Metrics
+                  <span className="bg-slate-600 px-1 rounded text-[9px]">
+                    {selectedMetrics.length}
+                  </span>
+                </button>
 
-              {showSettings && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowSettings(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-2 min-w-[180px]">
-                    <div className="text-[10px] text-white mb-2 font-medium">
-                      Select Metrics
+                {showSettings && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowSettings(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-2 min-w-[180px]">
+                      <div className="text-[10px] text-white mb-2 font-medium">
+                        Select Metrics
+                      </div>
+                      <div className="space-y-1">
+                        {Object.entries(AVAILABLE_METRICS).map(([key, config]) => (
+                          <label
+                            key={key}
+                            className="flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedMetrics.includes(key)}
+                              onChange={() => toggleMetric(key)}
+                              className="w-3 h-3 rounded"
+                            />
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: config.color }}
+                            />
+                            <span className={`text-xs ${primaryTextClass}`}>
+                              {config.label}
+                            </span>
+                            <span className={`text-[9px] ml-auto ${tertiaryTextClass}`}>
+                              {config.unit}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      {Object.entries(AVAILABLE_METRICS).map(([key, config]) => (
-                        <label
-                          key={key}
-                          className="flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-slate-700"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedMetrics.includes(key)}
-                            onChange={() => toggleMetric(key)}
-                            className="w-3 h-3 rounded"
-                          />
-                          <div
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: config.color }}
-                          />
-                          <span className="text-xs text-slate-300">
-                            {config.label}
-                          </span>
-                          <span className="text-[9px] text-slate-500 ml-auto">
-                            {config.unit}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         }
         expandable
@@ -655,42 +948,50 @@ export const OperatorComparisonChart = React.forwardRef(
               const Icon = STAT_MODES[statMode].icon;
               return <Icon className="w-3 h-3" />;
             })()}
-            {STAT_MODES[statMode].label}
+            {individualStatMode ? "Per-metric mode" : STAT_MODES[statMode].label}
           </span>
         </div>
 
-        {(viewMode === "bar" || viewMode === "table") && <MetricLegend />}
+        
 
         {viewMode === "bar" && (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={barChartData}
-              margin={{ top: 10, right: 20, left: 10, bottom: 40 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis
-                dataKey="name"
-                tick={{ fill: "#9CA3AF", fontSize: 11 }}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} />
-              <Tooltip content={<CustomBarTooltip />} />
-              {selectedMetrics.map((metricKey) => {
-                const config = AVAILABLE_METRICS[metricKey];
-                return (
-                  <Bar
-                    key={metricKey}
-                    dataKey={metricKey}
-                    name={config.label}
-                    radius={[4, 4, 0, 0]}
-                    fill={config.color}
-                  />
-                );
-              })}
-            </BarChart>
-          </ResponsiveContainer>
+          separateMetricCharts ? (
+            <div className={wrapMetricCharts ? "flex flex-wrap items-start gap-4" : "space-y-4"}>
+              {selectedMetrics.map((metricKey) =>
+                renderSingleMetricBarChart(metricKey),
+              )}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart
+                data={barChartData}
+                margin={{ top: 10, right: 20, left: 10, bottom: 40 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: axisTickColor, fontSize: 11 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis tick={{ fill: axisTickColor, fontSize: 11 }} />
+                <Tooltip content={<CustomBarTooltip />} />
+                {selectedMetrics.map((metricKey) => {
+                  const config = AVAILABLE_METRICS[metricKey];
+                  return (
+                    <Bar
+                      key={metricKey}
+                      dataKey={metricKey}
+                      name={config.label}
+                      radius={[4, 4, 0, 0]}
+                      fill={config.color}
+                    />
+                  );
+                })}
+              </BarChart>
+            </ResponsiveContainer>
+          )
         )}
 
        
@@ -700,10 +1001,10 @@ export const OperatorComparisonChart = React.forwardRef(
             <table className="w-full text-xs">
               <thead className="bg-slate-800">
                 <tr>
-                  <th className="text-left p-2 text-slate-400 font-medium sticky left-0 bg-slate-800">
+                  <th className={`text-left p-2 font-medium sticky left-0 bg-slate-800 ${tableHeaderTextClass}`}>
                     Operator
                   </th>
-                  <th className="text-center p-2 text-slate-400 font-medium">
+                  <th className={`text-center p-2 font-medium ${tableHeaderTextClass}`}>
                     Samples
                   </th>
                   {selectedMetrics.map((metricKey) => {
@@ -716,16 +1017,18 @@ export const OperatorComparisonChart = React.forwardRef(
                       >
                         <div>{config.label}</div>
                         <div className="text-[9px] text-white/70 mt-0.5">
-                          {STAT_MODES[statMode].label}
+                          {isCountOnlyMetric(metricKey)
+                            ? "Count"
+                            : STAT_MODES[resolveStatMode(metricKey)]?.label || "Mean"}
                           {config.unit ? ` (${config.unit})` : ""}
                         </div>
                       </th>
                     );
                   })}
-                  <th className="text-center p-2 text-slate-400 font-medium">
+                  <th className={`text-center p-2 font-medium ${tableHeaderTextClass}`}>
                     Tech
                   </th>
-                  <th className="text-center p-2 text-slate-400 font-medium">
+                  <th className={`text-center p-2 font-medium ${tableHeaderTextClass}`}>
                     Band
                   </th>
                 </tr>
@@ -749,15 +1052,16 @@ export const OperatorComparisonChart = React.forwardRef(
                       </div>
                     </td>
 
-                    <td className="p-2 text-center text-slate-300">{op.samples}</td>
+                    <td className={`p-2 text-center ${primaryTextClass}`}>{op.samples}</td>
 
                     {selectedMetrics.map((metricKey) => {
                       const config = AVAILABLE_METRICS[metricKey];
                       const stats = op[metricKey];
-                      const value = stats?.[statMode];
+                      const metricMode = resolveStatMode(metricKey);
+                      const value = getMetricValue(op, metricKey, metricMode);
 
                       const allValues = operatorData
-                        .map((o) => o[metricKey]?.[statMode])
+                        .map((o) => getMetricValue(o, metricKey, metricMode))
                         .filter((v) => v !== null && v !== undefined);
 
                       const isBest =
@@ -768,17 +1072,19 @@ export const OperatorComparisonChart = React.forwardRef(
                           ? value === Math.max(...allValues)
                           : value === Math.min(...allValues));
 
-                      const otherStats = getOtherStats(stats);
+                      const otherStats = getOtherStats(stats, metricKey, metricMode);
 
                       return (
                         <td
                           key={metricKey}
                           className={`p-2 text-center ${
-                            isBest ? "text-green-400" : "text-slate-300"
+                            isBest ? "text-green-400" : primaryTextClass
                           }`}
                         >
                           <div className="font-medium">
-                            {typeof value === "number" ? value.toFixed(1) : "-"}
+                            {typeof value === "number"
+                              ? formatMetricValue(value, metricKey)
+                              : "-"}
                             {isBest && (
                               <span className="ml-1 text-yellow-400 text-[10px]">
                                 ★
@@ -786,25 +1092,30 @@ export const OperatorComparisonChart = React.forwardRef(
                             )}
                           </div>
                           {otherStats.length > 0 && (
-                            <div className="text-[9px] text-slate-500 space-x-1">
+                            <div className={`text-[9px] space-x-1 ${tertiaryTextClass}`}>
                               {otherStats.map((s) => (
                                 <span key={s.key}>
                                   {s.label}:{" "}
                                   {typeof s.value === "number"
-                                    ? s.value.toFixed(1)
+                                    ? formatMetricValue(s.value, metricKey)
                                     : "-"}
                                 </span>
                               ))}
+                            </div>
+                          )}
+                          {isCountOnlyMetric(metricKey) && (
+                            <div className="text-[9px] text-cyan-300">
+                              Most: {stats?.topValue || "N/A"}
                             </div>
                           )}
                         </td>
                       );
                     })}
 
-                    <td className="p-2 text-center text-purple-400">
+                    <td className={`p-2 text-center ${highContrastText ? "text-white" : "text-purple-400"}`}>
                       {op.dominantTech}
                     </td>
-                    <td className="p-2 text-center text-blue-400">
+                    <td className={`p-2 text-center ${highContrastText ? "text-white" : "text-blue-400"}`}>
                       {op.dominantBand}
                     </td>
                   </tr>
@@ -814,28 +1125,30 @@ export const OperatorComparisonChart = React.forwardRef(
           </div>
         )}
 
-        <div className="mt-3 pt-2 border-t border-slate-700/50">
-          <div className="flex flex-wrap gap-3 text-[9px] text-slate-500">
-            {Object.entries(STAT_MODES).map(([key, mode]) => {
-              const Icon = mode.icon;
-              return (
-                <div key={key} className="flex items-center gap-1">
-                  <Icon
-                    className="w-3 h-3"
-                    style={{ color: statMode === key ? mode.color : undefined }}
-                  />
-                  <span
-                    className={statMode === key ? "font-medium" : ""}
-                    style={{ color: statMode === key ? mode.color : undefined }}
-                  >
-                    {mode.label}:
-                  </span>
-                  <span>{mode.description}</span>
-                </div>
-              );
-            })}
+        {!individualStatMode && (
+          <div className="mt-3 pt-2 border-t border-slate-700/50">
+            <div className={`flex flex-wrap gap-3 text-[9px] ${tertiaryTextClass}`}>
+              {Object.entries(STAT_MODES).map(([key, mode]) => {
+                const Icon = mode.icon;
+                return (
+                  <div key={key} className="flex items-center gap-1">
+                    <Icon
+                      className="w-3 h-3"
+                      style={{ color: statMode === key ? mode.color : undefined }}
+                    />
+                    <span
+                      className={statMode === key ? "font-medium" : ""}
+                      style={{ color: statMode === key ? mode.color : undefined }}
+                    >
+                      {mode.label}:
+                    </span>
+                    <span>{mode.description}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </ChartContainer>
     );
   }

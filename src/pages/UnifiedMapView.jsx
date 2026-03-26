@@ -816,6 +816,7 @@ const UnifiedMapView = () => {
 
   const [isSideOpen, setIsSideOpen] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [analyticsActiveTab, setAnalyticsActiveTab] = useState("overview");
   const [selectedMetric, setSelectedMetricState] = useState("rsrp");
   const setSelectedMetric = useCallback((nextMetric) => {
     setSelectedMetricState((prevMetric) => {
@@ -917,6 +918,11 @@ const UnifiedMapView = () => {
   const [dominanceData, setDominanceData] = useState([]);
   const [manualSiteData, setManualSiteData] = useState([]);
   const [manualSiteLoading, setManualSiteLoading] = useState(false);
+
+  const openOperatorComparison = useCallback(() => {
+    setShowAnalytics(true);
+    setAnalyticsActiveTab("operatorComparison");
+  }, []);
 
   useEffect(() => {
     if (!enableSiteToggle) {
@@ -1620,21 +1626,7 @@ const UnifiedMapView = () => {
     filteringPolygonChecker,
   ]);
 
-  useEffect(() => {
-    console.log("[DEBUG] UnifiedMapView locations check:", {
-      onlyInsidePolygons,
-      hasFilteringPolygons,
-      sampleLocationsLength: sampleLocations?.length || 0,
-      locationsLength: locations?.length || 0,
-      sessionIds,
-      sessionIdsCount: sessionIds?.length || 0,
-      isSampleMode,
-      shouldFetchSamples,
-      querySessionParam,
-      fallbackSessionParam,
-    });
-  }, [onlyInsidePolygons, hasFilteringPolygons, sampleLocations, locations, sessionIds, isSampleMode, shouldFetchSamples, querySessionParam, fallbackSessionParam]);
-
+ 
   const isLoading =
     (shouldFetchSamples && sampleLoading) ||
     predictionLoading ||
@@ -1922,13 +1914,7 @@ const UnifiedMapView = () => {
     filteringPolygonChecker,
   ]);
 
-  useEffect(() => {
-    console.log("[DEBUG] UnifiedMapView finalDisplayLocations check:", {
-      drawnPointsLength: drawnPoints?.length,
-      filteredLocationsLength: filteredLocations?.length || 0,
-      finalDisplayLocationsLength: finalDisplayLocations?.length || 0,
-    });
-  }, [drawnPoints, filteredLocations, finalDisplayLocations]);
+  
 
   useEffect(() => {
     debugMapFlow("data-counts", {
@@ -2702,6 +2688,7 @@ const UnifiedMapView = () => {
         onSettingsSaved={refetchColors}
         onToggleControls={() => setIsSideOpen(!isSideOpen)}
         onLeftToggle={() => setShowAnalytics(!showAnalytics)}
+        onOpenOperatorComparison={openOperatorComparison}
         isControlsOpen={isSideOpen}
         showAnalytics={showAnalytics}
         projectId={projectId}
@@ -2772,6 +2759,8 @@ const UnifiedMapView = () => {
           selectedSubSessionTarget={selectedSubSessionTarget}
           onSubSessionSelect={handleSubSessionSelect}
           drawnShapeAnalytics={drawnShapeAnalytics}
+          activeTabExternal={analyticsActiveTab}
+          onActiveTabExternalChange={setAnalyticsActiveTab}
         />
       )}
 
