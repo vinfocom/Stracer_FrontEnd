@@ -329,6 +329,15 @@ const getProviderColor = (provider) => {
   return getLogColor("provider", normalized, "#6B7280");
 };
 
+const TECHNOLOGY_SORT_ORDER = {
+  "5G": 1,
+  "4G": 2,
+  "3G": 3,
+  "2G": 4,
+};
+
+const getTechnologyRank = (tech) => TECHNOLOGY_SORT_ORDER[tech] || 99;
+
 const normalizeBandForChart = (band) => {
   const rawBand = String(band ?? "").trim();
   if (!rawBand || rawBand === "-1" || rawBand.toLowerCase() === "unknown") {
@@ -425,10 +434,9 @@ export const OperatorComparisonChart = React.forwardRef(
       });
 
       const ordered = [...techSet];
-      const priority = { "5G": 1, "4G": 2, "3G": 3, "2G": 4 };
       ordered.sort((a, b) => {
-        const pa = priority[a] || 99;
-        const pb = priority[b] || 99;
+        const pa = getTechnologyRank(a);
+        const pb = getTechnologyRank(b);
         if (pa !== pb) return pa - pb;
         return a.localeCompare(b);
       });
@@ -585,15 +593,38 @@ export const OperatorComparisonChart = React.forwardRef(
         .sort((a, b) => b.samples - a.samples);
     }, [technologyFilteredLocations]);
 
+    const chartOrderedOperators = useMemo(() => {
+      const resolveOperatorTech = (op) => {
+        const normalizedDominant = normalizeTechName(op?.dominantTech || "");
+        if (normalizedDominant && normalizedDominant !== "Unknown") {
+          return normalizedDominant;
+        }
+        const fromName = normalizeTechName(op?.name || "");
+        return fromName && fromName !== "Unknown" ? fromName : "Unknown";
+      };
+
+      return [...operatorData].sort((a, b) => {
+        const techRankDiff =
+          getTechnologyRank(resolveOperatorTech(a)) -
+          getTechnologyRank(resolveOperatorTech(b));
+        if (techRankDiff !== 0) return techRankDiff;
+
+        const nameDiff = String(a.name).localeCompare(String(b.name));
+        if (nameDiff !== 0) return nameDiff;
+
+        return b.samples - a.samples;
+      });
+    }, [operatorData]);
+
     const barChartData = useMemo(() => {
-      return operatorData.map((op) => {
+      return chartOrderedOperators.map((op) => {
         const data = { name: op.name, samples: op.samples };
         selectedMetrics.forEach((metricKey) => {
           data[metricKey] = getMetricValue(op, metricKey, resolveStatMode(metricKey));
         });
         return data;
       });
-    }, [operatorData, selectedMetrics, resolveStatMode]);
+    }, [chartOrderedOperators, selectedMetrics, resolveStatMode]);
 
     const cdfChartsByTechnology = useMemo(() => {
       if (!technologyFilteredLocations?.length) return [];
@@ -623,10 +654,11 @@ export const OperatorComparisonChart = React.forwardRef(
         techBuckets[technology][operator].push(rsrp);
       });
 
-      const techOrder = { "5G": 1, "4G": 2, "3G": 3, "2G": 4 };
       return Object.entries(techBuckets)
         .map(([technology, providers]) => {
-          const { rows, series, min, max } = buildCdfRows(providers, 80);
+          const { rows, series, min, max } = buildCdfRows(providers, 80, {
+            direction: "asc",
+          });
           return {
             technology,
             rows,
@@ -644,8 +676,8 @@ export const OperatorComparisonChart = React.forwardRef(
         })
         .filter((tech) => tech.rows.length > 0 && tech.series.length > 0)
         .sort((a, b) => {
-          const orderA = techOrder[a.technology] || 99;
-          const orderB = techOrder[b.technology] || 99;
+          const orderA = getTechnologyRank(a.technology);
+          const orderB = getTechnologyRank(b.technology);
           if (orderA !== orderB) return orderA - orderB;
           return a.technology.localeCompare(b.technology);
         });
@@ -785,9 +817,14 @@ export const OperatorComparisonChart = React.forwardRef(
                   )}
 
                   {isCountOnlyMetric(metricKey) && (
-                    <div className="text-[15px] text-cyan-300 mt-0.5">
-                      Most Occurring: {stats?.topValue || "N/A"}
-                    </div>
+                    <>
+                      <div className="text-[12px] text-cyan-300 mt-0.5">
+                        Most Occurring: {stats?.topValue || "N/A"}
+                      </div>
+                      <div className="text-[10px] text-cyan-200 mt-0.5">
+                        Unique Count: {stats?.uniqueCount ?? 0}
+                      </div>
+                    </>
                   )}
                 </div>
               );
@@ -854,7 +891,7 @@ export const OperatorComparisonChart = React.forwardRef(
       const config = AVAILABLE_METRICS[metricKey];
       if (!config) return null;
       const currentMode = resolveStatMode(metricKey);
-      const chartData = operatorData.map((op) => ({
+      const chartData = chartOrderedOperators.map((op) => ({
         name: op.name,
         value: getMetricValue(op, metricKey, currentMode),
       }));
@@ -908,7 +945,7 @@ export const OperatorComparisonChart = React.forwardRef(
                   : metricKey === "cell"
                     ? "Cell ID / CI"
                     : "Node ID"}{" "}
-                per operator.
+                per operator and unique count.
               </div>
             )}
           </div>
@@ -1258,9 +1295,14 @@ export const OperatorComparisonChart = React.forwardRef(
                             </div>
                           )}
                           {isCountOnlyMetric(metricKey) && (
-                            <div className="text-[9px] text-cyan-300">
-                              Most: {stats?.topValue || "N/A"}
-                            </div>
+                            <>
+                              <div className="text-[13px] text-cyan-300">
+                                Most: {stats?.topValue || "N/A"}
+                              </div>
+                              <div className="text-[13px] text-cyan-200">
+                                Unique: {stats?.uniqueCount ?? 0}
+                              </div>
+                            </>
                           )}
                         </td>
                       );

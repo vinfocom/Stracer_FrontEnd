@@ -84,11 +84,18 @@ export const filterValidData = (data, field) => {
   });
 };
 
-export const buildCdfRows = (providerValuesMap, bucketCount = 80) => {
+export const buildCdfRows = (
+  providerValuesMap,
+  bucketCount = 80,
+  options = {},
+) => {
+  const direction = options?.direction === "desc" ? "desc" : "asc";
   const providerEntries = Object.entries(providerValuesMap || {})
     .map(([operator, values]) => ({
       operator,
-      values: Array.isArray(values) ? [...values].sort((a, b) => a - b) : [],
+      values: Array.isArray(values)
+        ? [...values].sort((a, b) => (direction === "desc" ? b - a : a - b))
+        : [],
     }))
     .filter((entry) => entry.values.length > 0);
 
@@ -107,7 +114,7 @@ export const buildCdfRows = (providerValuesMap, bucketCount = 80) => {
     const buckets = Math.max(20, Math.min(bucketCount, allValues.length));
     const step = (max - min) / (buckets - 1);
     for (let i = 0; i < buckets; i++) {
-      xValues.push(min + step * i);
+      xValues.push(direction === "desc" ? max - step * i : min + step * i);
     }
   }
 
@@ -120,7 +127,11 @@ export const buildCdfRows = (providerValuesMap, bucketCount = 80) => {
     const row = { rsrp: parseFloat(x.toFixed(2)) };
     providerEntries.forEach((entry) => {
       let idx = pointers[entry.operator];
-      while (idx < entry.values.length && entry.values[idx] <= x) idx++;
+      if (direction === "desc") {
+        while (idx < entry.values.length && entry.values[idx] >= x) idx++;
+      } else {
+        while (idx < entry.values.length && entry.values[idx] <= x) idx++;
+      }
       pointers[entry.operator] = idx;
       row[entry.operator] = parseFloat(
         ((idx / entry.values.length) * 100).toFixed(2),
