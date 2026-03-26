@@ -3,6 +3,8 @@ import { Globe, Settings, BarChart3, TrendingUp, Hash } from "lucide-react";
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -17,6 +19,7 @@ import {
 } from "recharts";
 import { ChartContainer } from "../../common/ChartContainer";
 import { EmptyState } from "../../common/EmptyState";
+import { buildCdfRows } from "@/utils/analyticsHelpers";
 import {
   normalizeProviderName,
   normalizeTechName,
@@ -85,6 +88,17 @@ const extractPci = (loc) => {
   }
   return pciValue;
 };
+
+const extractCellId = (loc) =>
+  safeStringValue(
+    loc.cell_id ??
+      loc.cellId ??
+      loc.cellid ??
+      loc.ci ??
+      loc.CI ??
+      loc.CellId ??
+      loc.cell
+  );
 
 const buildCountStats = (count) => ({
   avg: count,
@@ -271,6 +285,14 @@ const AVAILABLE_METRICS = {
     higherBetter: true,
     aggregation: "count",
   },
+  cell: {
+    key: "cell",
+    label: "Cell ID / CI",
+    unit: "Count",
+    color: "#A855F7",
+    higherBetter: true,
+    aggregation: "count",
+  },
 };
 
 const STAT_MODES = {
@@ -351,6 +373,7 @@ export const OperatorComparisonChart = React.forwardRef(
     const [showSettings, setShowSettings] = useState(false);
     const [viewMode, setViewMode] = useState("bar");
     const [statMode, setStatMode] = useState(defaultStatMode);
+    const [selectedTechnology, setSelectedTechnology] = useState("All");
     const [metricStatModes, setMetricStatModes] = useState(() =>
       Object.keys(AVAILABLE_METRICS).reduce((acc, metricKey) => {
         if (!isCountOnlyMetric(metricKey)) acc[metricKey] = defaultStatMode;
@@ -391,12 +414,51 @@ export const OperatorComparisonChart = React.forwardRef(
     const mutedButtonTextClass = highContrastText ? "text-white" : "text-slate-300";
     const tableHeaderTextClass = highContrastText ? "text-white" : "text-slate-400";
 
+    const availableTechnologies = useMemo(() => {
+      const techSet = new Set();
+      (locations || []).forEach((loc) => {
+        const tech = normalizeTechName(
+          loc.technology || loc.network || loc.networkType || loc.tech || "",
+          loc.band ?? loc.Band
+        );
+        if (tech && tech !== "Unknown") techSet.add(tech);
+      });
+
+      const ordered = [...techSet];
+      const priority = { "5G": 1, "4G": 2, "3G": 3, "2G": 4 };
+      ordered.sort((a, b) => {
+        const pa = priority[a] || 99;
+        const pb = priority[b] || 99;
+        if (pa !== pb) return pa - pb;
+        return a.localeCompare(b);
+      });
+      return ordered;
+    }, [locations]);
+
+    useEffect(() => {
+      if (selectedTechnology === "All") return;
+      if (!availableTechnologies.includes(selectedTechnology)) {
+        setSelectedTechnology("All");
+      }
+    }, [availableTechnologies, selectedTechnology]);
+
+    const technologyFilteredLocations = useMemo(() => {
+      if (selectedTechnology === "All") return locations || [];
+      return (locations || []).filter((loc) => {
+        const tech = normalizeTechName(
+          loc.technology || loc.network || loc.networkType || loc.tech || "",
+          loc.band ?? loc.Band
+        );
+        return tech === selectedTechnology;
+      });
+    }, [locations, selectedTechnology]);
+
     const operatorData = useMemo(() => {
-      if (!locations?.length) return [];
+      if (!technologyFilteredLocations?.length) return [];
 
       const operatorStats = {};
 
-      locations.forEach((loc) => {
+      technologyFilteredLocations.forEach((loc) => {
         const provider = resolveOperatorName(loc);
 
         if (provider === "Unknown") return;
@@ -418,8 +480,10 @@ export const OperatorComparisonChart = React.forwardRef(
             bands: {},
             nodeIds: new Set(),
             pcis: new Set(),
+            cellIds: new Set(),
             nodeFrequency: {},
             pciFrequency: {},
+            cellFrequency: {},
           };
         }
 
@@ -469,6 +533,12 @@ export const OperatorComparisonChart = React.forwardRef(
           operatorStats[provider].pcis.add(pci);
           incrementFrequency(operatorStats[provider].pciFrequency, pci);
         }
+
+        const cellId = extractCellId(loc);
+        if (cellId) {
+          operatorStats[provider].cellIds.add(cellId);
+          incrementFrequency(operatorStats[provider].cellFrequency, cellId);
+        }
       });
 
       return Object.values(operatorStats)
@@ -476,6 +546,7 @@ export const OperatorComparisonChart = React.forwardRef(
         .map((op) => {
           const dominantNode = getMostFrequentValue(op.nodeFrequency);
           const dominantPci = getMostFrequentValue(op.pciFrequency);
+          const dominantCell = getMostFrequentValue(op.cellFrequency);
 
           return {
             name: op.name,
@@ -499,6 +570,11 @@ export const OperatorComparisonChart = React.forwardRef(
               topValue: dominantPci.value,
               uniqueCount: op.pcis.size,
             },
+            cell: {
+              ...buildCountStats(dominantCell.count),
+              topValue: dominantCell.value,
+              uniqueCount: op.cellIds.size,
+            },
             dominantTech:
               Object.entries(op.technologies).sort((a, b) => b[1] - a[1])[0]?.[0] ||
               "N/A",
@@ -507,7 +583,7 @@ export const OperatorComparisonChart = React.forwardRef(
           };
         })
         .sort((a, b) => b.samples - a.samples);
-    }, [locations]);
+    }, [technologyFilteredLocations]);
 
     const barChartData = useMemo(() => {
       return operatorData.map((op) => {
@@ -518,6 +594,62 @@ export const OperatorComparisonChart = React.forwardRef(
         return data;
       });
     }, [operatorData, selectedMetrics, resolveStatMode]);
+
+    const cdfChartsByTechnology = useMemo(() => {
+      if (!technologyFilteredLocations?.length) return [];
+
+      const techBuckets = {};
+      technologyFilteredLocations.forEach((loc) => {
+        const rsrp = safeNumber(loc.rsrp);
+        if (rsrp === null) return;
+
+        const technology = normalizeTechName(
+          loc.technology || loc.network || loc.networkType || loc.tech || "",
+          loc.band ?? loc.Band
+        );
+        if (!technology || technology === "Unknown") return;
+
+        const operator =
+          normalizeProviderName(loc.provider || loc.operator || loc.m_alpha_long || "") ||
+          "Unknown";
+        if (operator === "Unknown") return;
+
+        if (!techBuckets[technology]) {
+          techBuckets[technology] = {};
+        }
+        if (!techBuckets[technology][operator]) {
+          techBuckets[technology][operator] = [];
+        }
+        techBuckets[technology][operator].push(rsrp);
+      });
+
+      const techOrder = { "5G": 1, "4G": 2, "3G": 3, "2G": 4 };
+      return Object.entries(techBuckets)
+        .map(([technology, providers]) => {
+          const { rows, series, min, max } = buildCdfRows(providers, 80);
+          return {
+            technology,
+            rows,
+            series: series.map((item) => ({
+              ...item,
+              color: getProviderColor(item.operator),
+            })),
+            min,
+            max,
+            totalSamples: Object.values(providers).reduce(
+              (sum, values) => sum + values.length,
+              0
+            ),
+          };
+        })
+        .filter((tech) => tech.rows.length > 0 && tech.series.length > 0)
+        .sort((a, b) => {
+          const orderA = techOrder[a.technology] || 99;
+          const orderB = techOrder[b.technology] || 99;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.technology.localeCompare(b.technology);
+        });
+    }, [technologyFilteredLocations]);
 
     const radarChartData = useMemo(() => {
       if (!operatorData.length) return [];
@@ -770,7 +902,13 @@ export const OperatorComparisonChart = React.forwardRef(
             </div>
             {isCountOnlyMetric(metricKey) && (
               <div className={`text-[10px] mt-1 ${secondaryTextClass}`}>
-                Shows count of most occurring {metricKey === "pci" ? "PCI ID" : "Node ID"} per operator.
+                Shows count of most occurring{" "}
+                {metricKey === "pci"
+                  ? "PCI ID"
+                  : metricKey === "cell"
+                    ? "Cell ID / CI"
+                    : "Node ID"}{" "}
+                per operator.
               </div>
             )}
           </div>
@@ -829,7 +967,7 @@ export const OperatorComparisonChart = React.forwardRef(
         ref={ref}
         title="Operator Comparison"
         icon={Globe}
-        subtitle={`${operatorData.length} operators | ${locations?.length || 0} samples`}
+        subtitle={`${operatorData.length} operators | ${technologyFilteredLocations?.length || 0} samples`}
         headerExtra={
           <div className="flex items-center gap-2">
             {!individualStatMode && (
@@ -872,6 +1010,22 @@ export const OperatorComparisonChart = React.forwardRef(
                   {mode}
                 </button>
               ))}
+            </div>
+
+            <div className="flex items-center gap-1 px-2 py-1 rounded border border-slate-600 bg-slate-800">
+              <span className={`text-[10px] ${secondaryTextClass}`}>Tech</span>
+              <select
+                value={selectedTechnology}
+                onChange={(e) => setSelectedTechnology(e.target.value)}
+                className="bg-slate-700 text-white text-[10px] rounded px-1.5 py-0.5 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="All">All</option>
+                {availableTechnologies.map((tech) => (
+                  <option key={tech} value={tech}>
+                    {tech}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {!showAllMetrics && (
@@ -1122,6 +1276,107 @@ export const OperatorComparisonChart = React.forwardRef(
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {cdfChartsByTechnology.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-slate-700/50 space-y-3">
+            <div className={`text-xs font-semibold ${primaryTextClass}`}>
+              RSRP CDF By Technology
+            </div>
+            <div
+              className={
+                wrapMetricCharts
+                  ? "flex flex-wrap items-start gap-4"
+                  : "space-y-4"
+              }
+            >
+              {cdfChartsByTechnology.map((techChart) => (
+                <div
+                  key={`cdf-${techChart.technology}`}
+                  className={`rounded-lg border border-slate-700 bg-slate-900/40 p-3 ${
+                    wrapMetricCharts
+                      ? "basis-full xl:basis-[calc(50%-0.5rem)] 2xl:basis-[calc(33.333%-0.75rem)] min-w-0"
+                      : ""
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div className={`text-xs font-medium ${primaryTextClass}`}>
+                      {techChart.technology} RSRP CDF
+                    </div>
+                    <div className={`text-[10px] ${secondaryTextClass}`}>
+                      {techChart.series.length} operators • {techChart.totalSamples} samples
+                    </div>
+                  </div>
+
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart
+                      data={techChart.rows}
+                      margin={{ top: 10, right: 20, left: 10, bottom: 30 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis
+                        type="number"
+                        dataKey="rsrp"
+                        domain={[techChart.min, techChart.max]}
+                        
+                        tick={{ fill: axisTickColor, fontSize: 11 }}
+                        label={{
+                          value: "RSRP (dBm)",
+                          position: "insideBottom",
+                          offset: -5,
+                          fill: axisTickColor,
+                          fontSize: 10,
+                        }}
+                      />
+                      <YAxis
+                        type="number"
+                        domain={[0, 100]}
+                        tick={{ fill: axisTickColor, fontSize: 11 }}
+                        label={{
+                          value: "CDF (%)",
+                          angle: -90,
+                          position: "insideLeft",
+                          fill: axisTickColor,
+                          fontSize: 10,
+                        }}
+                      />
+                      <Tooltip
+                        formatter={(value, name) => [
+                          `${Number(value).toFixed(1)}%`,
+                          String(name),
+                        ]}
+                        labelFormatter={(label) => `RSRP: ${Number(label).toFixed(1)} dBm`}
+                        contentStyle={{
+                          backgroundColor: "#0F172A",
+                          border: "1px solid #334155",
+                          borderRadius: "8px",
+                          color: "#FFFFFF",
+                        }}
+                      />
+                      <Legend
+                        wrapperStyle={{
+                          color: "#FFFFFF",
+                          fontSize: 11,
+                        }}
+                      />
+                      {techChart.series.map((seriesItem) => (
+                        <Line
+                          key={`${techChart.technology}-${seriesItem.operator}`}
+                          type="monotone"
+                          dataKey={seriesItem.operator}
+                          name={seriesItem.operator}
+                          stroke={seriesItem.color}
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

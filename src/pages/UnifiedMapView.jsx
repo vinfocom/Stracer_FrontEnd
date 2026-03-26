@@ -201,6 +201,49 @@ const debounce = (fn, wait) => {
   };
 };
 
+const toFiniteNumber = (value) => {
+  if (value == null || value === "") return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getIndoorOutdoorBucket = (value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("indoor")) return "indoor";
+  if (normalized.includes("outdoor")) return "outdoor";
+  return null;
+};
+
+const buildIndoorOutdoorFromLogs = (logs = []) => {
+  const indoor = [];
+  const outdoor = [];
+
+  (logs || []).forEach((loc) => {
+    const bucket = getIndoorOutdoorBucket(loc?.indoor_outdoor);
+    if (!bucket) return;
+
+    const entry = {
+      Operator: loc?.provider || loc?.m_alpha_long || "Unknown",
+      Technology: loc?.technology || loc?.network || loc?.networkType || "Unknown",
+      KPIs: {
+        avg_rsrp: toFiniteNumber(loc?.rsrp),
+        avg_rsrq: toFiniteNumber(loc?.rsrq),
+        avg_sinr: toFiniteNumber(loc?.sinr),
+        avg_mos: toFiniteNumber(loc?.mos),
+        avg_dl_tpt: toFiniteNumber(loc?.dl_tpt ?? loc?.dl_thpt ?? loc?.dl_rpt),
+        avg_ul_tpt: toFiniteNumber(loc?.ul_tpt ?? loc?.ul_thpt ?? loc?.ul_rpt),
+      },
+      AppUsage: [],
+    };
+
+    if (bucket === "indoor") indoor.push(entry);
+    if (bucket === "outdoor") outdoor.push(entry);
+  });
+
+  return { indoor, outdoor };
+};
+
 const areCentersEqual = (a, b, tolerance = 1e-7) => {
   if (!a || !b) return false;
   return (
@@ -912,7 +955,6 @@ const UnifiedMapView = () => {
   const [indoor, setIndoor] = useState([]);
   const [outdoor, setOutdoor] = useState([]);
   const [distance, setDistance] = useState(null);
-  const [logArea, setLogArea] = useState(null);
   const [pciDistData, setPciDistData] = useState(null);
   const [pciThreshold, setPciThreshold] = useState(0);
   const [dominanceData, setDominanceData] = useState([]);
@@ -1147,21 +1189,6 @@ const UnifiedMapView = () => {
     return [];
   }, [querySessionParam, fallbackSessionParam, inferredSessionIdsFromPassedLogs]);
   const sessionKey = useMemo(() => sessionIds.join(","), [sessionIds]);
-  const isDebugMapFlow = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    const q = (searchParams.get("debugMap") || "").toLowerCase();
-    const local = (
-      window.localStorage.getItem("debug.unifiedMap") || ""
-    ).toLowerCase();
-    return q === "1" || q === "true" || local === "1" || local === "true";
-  }, [searchParams]);
-  const debugMapFlow = useCallback(
-    (event, payload = {}) => {
-      if (!isDebugMapFlow) return;
-      console.log(`[UnifiedMapDebug] ${event}`, payload);
-    },
-    [isDebugMapFlow],
-  );
 
   const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
   const {
@@ -1279,6 +1306,11 @@ const UnifiedMapView = () => {
     ? passedNeighbors
     : fetchedNeighbors;
 
+  const ioFallbackFromLogs = useMemo(
+    () => buildIndoorOutdoorFromLogs(sampleLocations || EMPTY_LIST),
+    [sampleLocations],
+  );
+
   const {
     sessions: subSessionData,
     summary: subSessionSummary,
@@ -1287,31 +1319,6 @@ const UnifiedMapView = () => {
     loading: subSessionLoading,
     refetch: refetchSubSessionAnalytics,
   } = useSubSessionAnalytics(sessionIds, showSubSession);
-
-  useEffect(() => {
-    debugMapFlow("fetch-gates", {
-      isSampleMode,
-      enableDataToggle,
-      dataToggle,
-      hasPassedLocations,
-      hasPassedNeighbors,
-      shouldFetchSamples,
-      shouldFetchNeighbors,
-      sessionCount: sessionIds.length,
-      sessionKey,
-    });
-  }, [
-    debugMapFlow,
-    isSampleMode,
-    enableDataToggle,
-    dataToggle,
-    hasPassedLocations,
-    hasPassedNeighbors,
-    shouldFetchSamples,
-    shouldFetchNeighbors,
-    sessionIds,
-    sessionKey,
-  ]);
 
   useEffect(() => {
     if (!isSampleMode || sessionIds.length > 0) return;
@@ -1412,32 +1419,75 @@ const UnifiedMapView = () => {
   }, [sessionIds]);
 
   useEffect(() => {
-    if (!sessionIds?.length) return;
+    if (!sessionIds?.length) {
+      setIndoor([]);
+      setOutdoor([]);
+      return;
+    }
     let active = true;
     const fetchIO = async () => {
       try {
+        const sessionCsv = sessionIds.join(",");
         const res = await mapViewApi.getIOAnalysis({
-          sessionIds: sessionIds.join(","),
+          sessionIds: sessionCsv,
+          session_ids: sessionCsv,
+          session_Ids: sessionCsv,
+          sessionId: sessionCsv,
         });
+
+        const payload =
+          res?.Data && typeof res.Data === "object"
+            ? res.Data
+            : res?.data && typeof res.data === "object"
+              ? res.data
+              : res;
+
+        const indoorRows = Array.isArray(payload?.Indoor)
+          ? payload.Indoor
+          : Array.isArray(payload?.indoor)
+            ? payload.indoor
+            : [];
+        const outdoorRows = Array.isArray(payload?.Outdoor)
+          ? payload.Outdoor
+          : Array.isArray(payload?.outdoor)
+            ? payload.outdoor
+            : [];
+
         if (active) {
-          setIndoor(res?.Indoor);
-          setOutdoor(res?.Outdoor);
+          setIndoor(indoorRows);
+          setOutdoor(outdoorRows);
         }
-      } catch (error) { }
+      } catch (error) {
+        if (active) {
+          setIndoor([]);
+          setOutdoor([]);
+        }
+      }
     };
     fetchIO();
     return () => { active = false; };
   }, [sessionIds]);
 
   useEffect(() => {
+    const hasIoApiData = (indoor?.length || 0) > 0 || (outdoor?.length || 0) > 0;
+    if (hasIoApiData) return;
+
+    if (
+      (ioFallbackFromLogs.indoor?.length || 0) > 0 ||
+      (ioFallbackFromLogs.outdoor?.length || 0) > 0
+    ) {
+      setIndoor(ioFallbackFromLogs.indoor);
+      setOutdoor(ioFallbackFromLogs.outdoor);
+    }
+  }, [indoor, outdoor, ioFallbackFromLogs]);
+
+  useEffect(() => {
     if (!isSampleMode) {
-      debugMapFlow("pci-fetch-skip", { reason: "not-sample-mode" });
       setPciDistData(null);
       return;
     }
 
     if (!sessionKey) {
-      debugMapFlow("pci-fetch-skip", { reason: "empty-session-key" });
       setPciDistData(null);
       return;
     }
@@ -1448,31 +1498,18 @@ const UnifiedMapView = () => {
 
     const fetchDist = async () => {
       try {
-        debugMapFlow("pci-fetch-start", {
-          requestId,
-          sessionIds: currentSessionIds,
-        });
         const data = await mapViewApi.getPciDistribution(currentSessionIds);
         if (!active || requestId !== pciDistributionRequestRef.current) return;
 
         if (data?.success) {
           // Store only the primary_yes data as requested
           setPciDistData(data.primary_yes || null);
-          debugMapFlow("pci-fetch-success", {
-            requestId,
-            pciCount: Object.keys(data?.primary_yes || {}).length,
-          });
         } else {
           setPciDistData(null);
-          debugMapFlow("pci-fetch-empty", { requestId, data });
         }
       } catch (error) {
         if (!active || requestId !== pciDistributionRequestRef.current) return;
         setPciDistData(null);
-        debugMapFlow("pci-fetch-error", {
-          requestId,
-          message: error?.message || String(error),
-        });
         console.error("Failed to fetch PCI distribution", error);
       }
     };
@@ -1481,7 +1518,7 @@ const UnifiedMapView = () => {
     return () => {
       active = false;
     };
-  }, [sessionKey, isSampleMode, debugMapFlow]);
+  }, [sessionKey, isSampleMode]);
 
   const shouldFetchDominanceDetails =
     isSampleMode &&
@@ -1490,13 +1527,11 @@ const UnifiedMapView = () => {
 
   const refetchDominanceDetails = useCallback(async () => {
     if (!isSampleMode) {
-      debugMapFlow("dominance-fetch-skip", { reason: "not-sample-mode" });
       setDominanceData([]);
       return;
     }
 
     if (!sessionKey) {
-      debugMapFlow("dominance-fetch-skip", { reason: "empty-session-key" });
       setDominanceData([]);
       return;
     }
@@ -1505,11 +1540,6 @@ const UnifiedMapView = () => {
     const requestId = ++dominanceRequestRef.current;
 
     try {
-      debugMapFlow("dominance-fetch-start", {
-        requestId,
-        sessionIds: currentSessionIds,
-      });
-
       const res = await mapViewApi.getDominanceDetails(currentSessionIds);
       if (requestId !== dominanceRequestRef.current) return;
 
@@ -1527,34 +1557,18 @@ const UnifiedMapView = () => {
 
       if (isSuccess && Array.isArray(payload) && payload.length > 0) {
         setDominanceData(payload);
-        debugMapFlow("dominance-fetch-success", {
-          requestId,
-          count: payload.length,
-        });
       } else {
         setDominanceData([]);
-        debugMapFlow("dominance-fetch-empty", { requestId, res });
       }
     } catch (err) {
       if (requestId !== dominanceRequestRef.current) return;
       setDominanceData([]);
-      debugMapFlow("dominance-fetch-error", {
-        requestId,
-        message: err?.message || String(err),
-      });
       console.error("Failed to fetch dominance details", err);
     }
-  }, [sessionKey, isSampleMode, debugMapFlow]);
+  }, [sessionKey, isSampleMode]);
 
   useEffect(() => {
     if (!shouldFetchDominanceDetails) {
-      if (!isSampleMode) {
-        debugMapFlow("dominance-fetch-skip", { reason: "not-sample-mode" });
-      } else if (!sessionKey) {
-        debugMapFlow("dominance-fetch-skip", { reason: "empty-session-key" });
-      } else {
-        debugMapFlow("dominance-fetch-skip", { reason: "filter-not-enabled" });
-      }
       setDominanceData([]);
       return;
     }
@@ -1565,7 +1579,6 @@ const UnifiedMapView = () => {
     refetchDominanceDetails,
     isSampleMode,
     sessionKey,
-    debugMapFlow,
   ]);
 
   // ... (Rest of Derived State & Computations logic is same) ...
@@ -1915,25 +1928,6 @@ const UnifiedMapView = () => {
   ]);
 
   
-
-  useEffect(() => {
-    debugMapFlow("data-counts", {
-      fetchedSamples: fetchedSamples?.length || 0,
-      sampleLocations: sampleLocations?.length || 0,
-      predictionLocations: predictionLocations?.length || 0,
-      locations: locations?.length || 0,
-      filteredLocations: filteredLocations?.length || 0,
-      finalDisplayLocations: finalDisplayLocations?.length || 0,
-    });
-  }, [
-    debugMapFlow,
-    fetchedSamples,
-    sampleLocations,
-    predictionLocations,
-    locations,
-    filteredLocations,
-    finalDisplayLocations,
-  ]);
 
   const {
     technologyTransitions,
@@ -2738,7 +2732,7 @@ const UnifiedMapView = () => {
           appSummary={appSummary}
           InpSummary={inpSummary}
           tptVolume={tptVolume}
-          logArea={logArea}
+          logArea={inpSummary}
           indoor={indoor}
           outdoor={outdoor}
           technologyTransitions={technologyTransitions}
@@ -2972,7 +2966,7 @@ const UnifiedMapView = () => {
               onNeighborClick={(neighbor) => { }}
               onFilteredNeighborsChange={setMapVisibleNeighbors}
               onGridCellsStatsChange={setGridCellStats}
-              debugNeighbors={true}
+              debugNeighbors={false}
               legendFilter={legendFilter}
             >
               <DrawingToolsLayer
