@@ -3293,7 +3293,7 @@ const UnifiedMapView = () => {
                   getMetricColor={getMetricColorForLog}
                   onSiteSelect={setSelectedSites}
                   options={{
-                    scale: 0.2,
+                    scale: 0.6,
                     zIndex: 1000,
                     opacity: opacity,
                   }}

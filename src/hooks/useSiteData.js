@@ -93,20 +93,48 @@ export const useSiteData = ({
       const rawData = response?.data?.Data || response?.data?.data || response?.Data || response?.data || [];
       
       const normalizedData = Array.isArray(rawData) 
-        ? rawData.map((item, index) => ({
-          ...item,
-           site: item.site || item.site_id || `site_${index}`,
+        ? rawData.map((item, index) => {
+          const earfcnValue = item.earfcn_or_narfcn ?? item.earfcn ?? item.Earfcn;
+          const earfcnNum = Number(earfcnValue);
+          const inferredTechnology =
+            Number.isFinite(earfcnNum) ? (earfcnNum >= 100000 ? "5G" : "4G") : "Unknown";
+
+          return {
+            ...item,
+            site:
+              item.site_key_inferred ||
+              item.siteKeyInferred ||
+              item.site ||
+              item.site_id ||
+              item.siteId ||
+              item.nodeb_id ||
+              item.nodebId ||
+              item.cell_id_representative ||
+              item.cellIdRepresentative ||
+              `site_${index}`,
             lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
             lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
-            azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth || 0),
+            azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth_deg_5_soft || item.azimuth || 0),
             beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
             range: parseFloat(item.range || item.radius || 220),
             operator: item.network || item.Network || item.cluster || "Unknown",
-            band: item.band ||  "Unknown",
-            technology: item.Technology || item.tech || "Unknown",
-            pci: item.pci ?? item.PCI ?? item.pci_or_psi ?? item.cell_id, // ✅ FIX: Explicitly extract PCI
-            id: item.cell_id || item.site || index
-          })).filter(item => item.lat !== 0 && !isNaN(item.lat))
+            band: item.band || item.frequency_band || item.frequency || "Unknown",
+            technology: item.Technology || item.tech || item.technology || inferredTechnology,
+            pci:
+              item.pci ??
+              item.PCI ??
+              item.pci_or_psi ??
+              item.cell_id ??
+              item.cell_id_representative,
+            id:
+              item.id ||
+              item.cell_id ||
+              item.cell_id_representative ||
+              item.site ||
+              item.site_key_inferred ||
+              index,
+          };
+        }).filter(item => item.lat !== 0 && !isNaN(item.lat))
         : [];
 
       let finalData = normalizedData;

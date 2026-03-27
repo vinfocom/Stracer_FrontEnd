@@ -31,12 +31,28 @@ function computeOffset(center, distanceMeters, headingDegrees) {
 }
 
 function getSiteId(site) {
-  return String(site?.site || site?.site_id || site?.siteId || site?.id || "").trim();
+  return String(
+    site?.site_key_inferred ||
+      site?.siteKeyInferred ||
+      site?.site ||
+      site?.site_id ||
+      site?.siteId ||
+      site?.nodeb_id ||
+      site?.nodebId ||
+      site?.id ||
+      "",
+  ).trim();
 }
 
 function getSiteName(site) {
   return String(
-    site?.site_name || site?.siteName || site?.site || site?.site_id || "Unknown",
+    site?.site_name ||
+      site?.siteName ||
+      site?.site_key_inferred ||
+      site?.siteKeyInferred ||
+      site?.site ||
+      site?.site_id ||
+      "Unknown",
   ).trim();
 }
 
@@ -115,6 +131,10 @@ function extractNodebId(source) {
     "site",
     "site_id",
     "siteId",
+    "site_key_inferred",
+    "siteKeyInferred",
+    "cell_id_representative",
+    "cellIdRepresentative",
   ]);
 }
 
@@ -132,6 +152,16 @@ function extractPciValue(source) {
   ]);
 }
 
+function inferTechnologyFromCarrier(technologyValue, earfcnValue) {
+  const techRaw = String(technologyValue ?? "").trim();
+  if (techRaw) return techRaw;
+  const earfcnNum = Number(earfcnValue);
+  if (Number.isFinite(earfcnNum)) {
+    return earfcnNum >= 100000 ? "5G" : "4G";
+  }
+  return "Unknown";
+}
+
 function normalizeSiteRows(rows = []) {
   if (!Array.isArray(rows)) return [];
 
@@ -139,31 +169,57 @@ function normalizeSiteRows(rows = []) {
     .map((item, index) => ({
       ...item,
       site:
+        item.site_key_inferred ||
+        item.siteKeyInferred ||
         item.site ||
         item.site_id ||
         item.siteId ||
         item.site_name ||
         item.siteName ||
+        item.nodeb_id ||
+        item.nodebId ||
+        item.cell_id_representative ||
+        item.cellIdRepresentative ||
         `site_${index}`,
       lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
       lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
-      azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth || 0),
+      azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth_deg_5_soft || item.azimuth || 0),
       beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
       range: parseFloat(item.range || item.radius || 220),
       operator: item.network || item.Network || item.operator || item.cluster || "Unknown",
-      band: item.band || item.frequency_band || "Unknown",
-      technology: item.Technology || item.tech || item.technology || "Unknown",
-      pci: item.pci ?? item.PCI ?? item.pci_or_psi ?? item.cell_id,
+      band: item.band || item.frequency_band || item.frequency || "Unknown",
+      technology: inferTechnologyFromCarrier(
+        item.Technology || item.tech || item.technology,
+        item.earfcn_or_narfcn ?? item.earfcn,
+      ),
+      pci: item.pci ?? item.PCI ?? item.pci_or_psi ?? item.cell_id ?? item.cell_id_representative,
+      earfcnOrNarfcn: item.earfcn_or_narfcn ?? item.earfcnOrNarfcn ?? item.earfcn ?? null,
+      siteKeyInferred: item.site_key_inferred ?? item.siteKeyInferred ?? null,
+      cellIdRepresentative: item.cell_id_representative ?? item.cellIdRepresentative ?? null,
+      samples: Number.isFinite(Number(item.samples)) ? Number(item.samples) : null,
+      azimuthReliability: Number.isFinite(Number(item.azimuth_reliability))
+        ? Number(item.azimuth_reliability)
+        : null,
+      medianSampleDistanceM: Number.isFinite(Number(item.median_sample_distance_m))
+        ? Number(item.median_sample_distance_m)
+        : null,
       nodebId:
         extractNodebId(item) ??
-        normalizeMatchValue(item.site ?? item.site_id ?? item.siteId ?? item.site_name),
+        normalizeMatchValue(
+          item.site_key_inferred ??
+            item.site ??
+            item.site_id ??
+            item.siteId ??
+            item.site_name ??
+            item.cell_id_representative,
+        ),
     }))
     .filter((item) => item.lat !== 0 && Number.isFinite(item.lat) && Number.isFinite(item.lng));
 }
 
 function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
   const sectors = [];
-  const parsedSectorCount = Number(site.sector_count);
+  const parsedSectorCount = Number(site.sector_count ?? site.sectorCount);
   const hasSingleSectorHint =
     site.sector !== undefined &&
     site.sector !== null &&
@@ -184,9 +240,34 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
 
   const network = site.operator || site.network || site.cluster || "Unknown";
   const band = site.band || site.frequency_band || site.frequency || "Unknown";
-  const tech = site.tech || site.Technology || site.technology || "Unknown";
-  const pci = site.pci ?? site.PCI ?? site.physical_cell_id ?? site.cell_id;
+  const earfcnOrNarfcn = site.earfcn_or_narfcn ?? site.earfcnOrNarfcn ?? site.earfcn ?? null;
+  const tech = inferTechnologyFromCarrier(
+    site.tech || site.Technology || site.technology,
+    earfcnOrNarfcn,
+  );
+  const pci =
+    site.pci ??
+    site.PCI ??
+    site.pci_or_psi ??
+    site.physical_cell_id ??
+    site.cell_id ??
+    site.cell_id_representative;
   const nodebId = extractNodebId(site);
+  const siteIdResolved = getSiteId(site);
+  const siteNameResolved = getSiteName(site);
+  const siteKeyInferred = String(site.site_key_inferred ?? site.siteKeyInferred ?? siteIdResolved).trim();
+  const cellIdRepresentative = String(
+    site.cell_id_representative ?? site.cellIdRepresentative ?? site.cell_id ?? site.cellId ?? "",
+  ).trim();
+  const samples = Number.isFinite(Number(site.samples)) ? Number(site.samples) : null;
+  const azimuthReliability = Number.isFinite(Number(site.azimuth_reliability ?? site.azimuthReliability))
+    ? Number(site.azimuth_reliability ?? site.azimuthReliability)
+    : null;
+  const medianSampleDistanceM = Number.isFinite(
+    Number(site.median_sample_distance_m ?? site.medianSampleDistanceM),
+  )
+    ? Number(site.median_sample_distance_m ?? site.medianSampleDistanceM)
+    : null;
 
   let color;
   const mode = colorMode.toLowerCase();
@@ -203,7 +284,7 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
   const azimuthSpacing = 360 / sectorCount;
   for (let i = 0; i < sectorCount; i++) {
     const azimuth = (baseAzimuth + i * azimuthSpacing) % 360;
-    const siteIdPart = getSiteId(site) || `site_${siteIndex}`;
+    const siteIdPart = siteIdResolved || `site_${siteIndex}`;
     const rowIdPart = String(site.id ?? site.cell_id ?? siteIndex);
     const sectorPart = String(site.sector ?? site.sector_id ?? i);
     sectors.push({
@@ -214,11 +295,19 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
       beamwidth,
       color,
       network,
+      technology: tech,
+      band,
+      earfcnOrNarfcn,
       range,
       pci: pci !== null && pci !== undefined ? String(pci).trim() : null,
       nodebId,
-      siteId: getSiteId(site),
-      siteName: getSiteName(site),
+      siteId: siteIdResolved,
+      siteName: siteNameResolved,
+      siteKeyInferred: siteKeyInferred || null,
+      cellIdRepresentative: cellIdRepresentative || null,
+      samples,
+      azimuthReliability,
+      medianSampleDistanceM,
     });
   }
   return sectors;
@@ -822,8 +911,27 @@ const NetworkPlannerMap = ({
                   </div>
                   <div>Site ID: {sector.siteId || "N/A"}</div>
                   <div>Site Name: {sector.siteName || "N/A"}</div>
+                  <div>Site Key: {sector.siteKeyInferred || "N/A"}</div>
+                  <div>Cell ID: {sector.cellIdRepresentative || "N/A"}</div>
                   <div>NodeB ID: {sector.nodebId || "N/A"}</div>
                   <div>PCI: {sector.pci || "N/A"}</div>
+                  <div>Network: {sector.network || "N/A"}</div>
+                  <div>Technology: {sector.technology || "N/A"}</div>
+                  <div>Band: {sector.band || "N/A"}</div>
+                  <div>EARFCN/NRARFCN: {sector.earfcnOrNarfcn ?? "N/A"}</div>
+                  <div>Samples: {Number.isFinite(sector.samples) ? sector.samples : "N/A"}</div>
+                  <div>
+                    Azimuth Reliability:{" "}
+                    {Number.isFinite(sector.azimuthReliability)
+                      ? sector.azimuthReliability.toFixed(3)
+                      : "N/A"}
+                  </div>
+                  <div>
+                    Median Sample Distance:{" "}
+                    {Number.isFinite(sector.medianSampleDistanceM)
+                      ? `${sector.medianSampleDistanceM.toFixed(1)} m`
+                      : "N/A"}
+                  </div>
                   <div>Azimuth: {Math.round(sector.azimuth || 0)} deg</div>
                   <div>Beamwidth: {Math.round(sector.beamwidth || 0)} deg</div>
                   <div>Range: {Math.round(sector.range || 0)} m</div>
