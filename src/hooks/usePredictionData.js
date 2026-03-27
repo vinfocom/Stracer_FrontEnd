@@ -2,6 +2,17 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { mapViewApi } from '@/api/apiEndpoints';
+import {
+  normalizeBandName,
+  normalizeProviderName,
+  normalizeTechName,
+} from '@/utils/colorUtils';
+
+const toFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 export const usePredictionData = (projectId, selectedMetric, enabled = true) => {
   const [locations, setLocations] = useState([]);
@@ -42,13 +53,58 @@ export const usePredictionData = (projectId, selectedMetric, enabled = true) => 
           const lat = parseFloat(pt.lat ?? pt.latitude ?? pt.Lat);
           const lng = parseFloat(pt.lon ?? pt.lng ?? pt.longitude ?? pt.Lon);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+          const rawBand = pt.band ?? pt.Band ?? '';
+          const band = normalizeBandName(rawBand);
+          const networkRaw = pt.network ?? pt.Network ?? '';
+          const providerRaw =
+            pt.provider ??
+            pt.Provider ??
+            pt.operator ??
+            pt.Operator ??
+            pt.network_provider ??
+            pt.networkProvider ??
+            networkRaw;
+          const provider = normalizeProviderName(providerRaw) || 'Unknown';
+
+          const technologyRaw =
+            pt.technology ??
+            pt.Technology ??
+            pt.networkType ??
+            pt.network_type ??
+            pt.tech ??
+            networkRaw;
+          const technology = normalizeTechName(technologyRaw, band) || 'Unknown';
+
+          const rsrp = toFiniteNumber(pt.rsrp ?? pt.RSRP ?? pt.prm ?? pt.value);
+          const rsrq = toFiniteNumber(pt.rsrq ?? pt.RSRQ);
+          const sinr = toFiniteNumber(pt.sinr ?? pt.SINR);
+          const metricValue =
+            toFiniteNumber(pt.prm ?? pt.value ?? pt[selectedMetric]) ??
+            (selectedMetric === 'rsrp'
+              ? rsrp
+              : selectedMetric === 'rsrq'
+                ? rsrq
+                : selectedMetric === 'sinr'
+                  ? sinr
+                  : null);
+
           return {
             lat,
             lng,
             latitude: lat,
             longitude: lng,
-            [selectedMetric]: pt.prm ?? pt.value,
-            value: pt.prm ?? pt.value, // required by LtePredictionLocationLayer
+            [selectedMetric]: metricValue,
+            value: metricValue, // required by LtePredictionLocationLayer
+            rsrp,
+            rsrq,
+            sinr,
+            prm: toFiniteNumber(pt.prm),
+            provider,
+            network: networkRaw || provider,
+            technology,
+            networkType: technology,
+            band,
             isPrediction: true,
           };
         }).filter(Boolean);

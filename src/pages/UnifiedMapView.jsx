@@ -26,7 +26,9 @@ import MapLegend from "@/components/map/MapLegend";
 import SiteLegend from "@/components/unifiedMap/SiteLegend";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 import LoadingProgress from "@/components/LoadingProgress";
-import TechHandoverMarkers from "@/components/unifiedMap/TechHandoverMarkers";
+import TechHandoverMarkers, {
+  clearHandoverPolylines,
+} from "@/components/unifiedMap/TechHandoverMarkers";
 import SubSessionMarkers from "@/components/unifiedMap/SubSessionMarkers";
 import AddSiteFormDialog from "@/components/unifiedMap/AddSiteFormDialog";
 import LtePredictionLocationLayer from "@/components/unifiedMap/LtePredictionLocationLayer";
@@ -452,8 +454,114 @@ const getLookupCountForLocation = (loc, lookup) => {
 const getLocationIdentityKey = (loc) =>
   getLocationIdKey(loc) || getLocationCoordinateKey(loc);
 
+const isUnknownOption = (value) => {
+  if (value == null) return true;
+  const normalized = String(value).trim().toLowerCase();
+  return (
+    !normalized ||
+    normalized === "unknown" ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "null" ||
+    normalized === "undefined" ||
+    normalized === "-"
+  );
+};
+
+const getLocationSessionKey = (loc) =>
+  normalizeKey(
+    loc?.session_id ??
+    loc?.sessionId ??
+    loc?.SessionId ??
+    loc?.session ??
+    loc?.Session,
+  );
+
+const toEpochMilliseconds = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric > 1e11) return Math.trunc(numeric); // already in ms
+  if (numeric > 1e8) return Math.trunc(numeric * 1000); // epoch seconds
+  return null;
+};
+
+const getLocationTimestampMs = (loc) => {
+  const candidates = [
+    loc?.timestamp,
+    loc?.time_stamp,
+    loc?.timeStamp,
+    loc?.log_time,
+    loc?.logTime,
+    loc?.created_at,
+    loc?.createdAt,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate == null || candidate === "") continue;
+
+    const numericEpoch = toEpochMilliseconds(candidate);
+    if (numericEpoch !== null) return numericEpoch;
+
+    const parsed = Date.parse(String(candidate));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+};
+
+const compareNullableNumbers = (a, b) => {
+  const aMissing = a == null;
+  const bMissing = b == null;
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  return a - b;
+};
+
+const buildOrderedDriveLogs = (logs = []) =>
+  (logs || [])
+    .map((loc, originalIndex) => {
+      const logIdRaw = getLocationIdKey(loc);
+      const logIdNumber = Number(logIdRaw);
+
+      return {
+        loc,
+        originalIndex,
+        sessionKey: getLocationSessionKey(loc) ?? "__session_missing__",
+        logIdRaw,
+        logIdNumber: Number.isFinite(logIdNumber) ? logIdNumber : null,
+        timestampMs: getLocationTimestampMs(loc),
+      };
+    })
+    .sort((a, b) => {
+      const sessionCompare = String(a.sessionKey).localeCompare(
+        String(b.sessionKey),
+        undefined,
+        { numeric: true, sensitivity: "base" },
+      );
+      if (sessionCompare !== 0) return sessionCompare;
+
+      const idCompare = compareNullableNumbers(a.logIdNumber, b.logIdNumber);
+      if (idCompare !== 0) return idCompare;
+
+      const timeCompare = compareNullableNumbers(a.timestampMs, b.timestampMs);
+      if (timeCompare !== 0) return timeCompare;
+
+      if (a.logIdRaw && b.logIdRaw && a.logIdRaw !== b.logIdRaw) {
+        const rawIdCompare = a.logIdRaw.localeCompare(
+          b.logIdRaw,
+          undefined,
+          { numeric: true, sensitivity: "base" },
+        );
+        if (rawIdCompare !== 0) return rawIdCompare;
+      }
+
+      return a.originalIndex - b.originalIndex;
+    });
+
 const buildHandoverTransitions = (logs = []) => {
-  if (!Array.isArray(logs) || logs.length < 2) {
+  const orderedLogs = buildOrderedDriveLogs(logs);
+  if (orderedLogs.length < 2) {
     return {
       technologyTransitions: [],
       bandTransitions: [],
@@ -465,38 +573,65 @@ const buildHandoverTransitions = (logs = []) => {
   const bandTransitions = [];
   const pciTransitions = [];
 
-  let prevTech = normalizeTechName(logs[0]?.technology);
-  let prevBand = logs[0]?.band;
-  let prevPci = logs[0]?.pci;
-  let prevSession = logs[0]?.session_id ?? null;
+  let prevTech = normalizeTechName(orderedLogs[0].loc?.technology);
+  let prevBand = orderedLogs[0].loc?.band;
+  let prevPci = orderedLogs[0].loc?.pci;
+  let prevSessionKey = orderedLogs[0].sessionKey;
+  let prevEntry = orderedLogs[0];
 
-  for (let i = 1; i < logs.length; i++) {
-    const loc = logs[i];
+  for (let i = 1; i < orderedLogs.length; i++) {
+    const currentEntry = orderedLogs[i];
+    const loc = currentEntry.loc;
     if (!loc) continue;
 
-    const currSession = loc.session_id ?? null;
-    if (currSession !== prevSession) {
+    if (currentEntry.sessionKey !== prevSessionKey) {
       prevTech = normalizeTechName(loc.technology);
       prevBand = loc.band;
       prevPci = loc.pci;
-      prevSession = currSession;
+      prevSessionKey = currentEntry.sessionKey;
+      prevEntry = currentEntry;
       continue;
     }
 
     const lat = Number(loc.lat ?? loc.latitude);
     const lng = Number(loc.lng ?? loc.longitude);
     const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng);
+    const displaySessionId =
+      loc?.session_id ?? loc?.sessionId ?? loc?.SessionId ?? null;
+    const transitionMeta = {
+      atIndex: currentEntry.originalIndex,
+      orderIndex: i,
+      sequenceLogId: currentEntry.logIdRaw ?? null,
+      sequenceTimestamp: currentEntry.timestampMs,
+      sessionGroup: currentEntry.sessionKey,
+      timestamp:
+        loc?.timestamp ??
+        loc?.time_stamp ??
+        loc?.timeStamp ??
+        loc?.log_time ??
+        loc?.logTime ??
+        null,
+      session_id: displaySessionId,
+      previousSequenceLogId: prevEntry?.logIdRaw ?? null,
+      previousSequenceTimestamp: prevEntry?.timestampMs ?? null,
+    };
+    const prevLat = Number(prevEntry?.loc?.lat ?? prevEntry?.loc?.latitude);
+    const prevLng = Number(prevEntry?.loc?.lng ?? prevEntry?.loc?.longitude);
+    if (Number.isFinite(prevLat) && Number.isFinite(prevLng) && hasCoordinates) {
+      transitionMeta.fromLat = prevLat;
+      transitionMeta.fromLng = prevLng;
+      transitionMeta.toLat = lat;
+      transitionMeta.toLng = lng;
+    }
 
     const currTech = normalizeTechName(loc.technology);
     if (hasCoordinates && currTech && prevTech && currTech !== prevTech) {
       technologyTransitions.push({
         from: prevTech,
         to: currTech,
-        atIndex: i,
         lat,
         lng,
-        timestamp: loc.timestamp,
-        session_id: currSession,
+        ...transitionMeta,
         type: "technology",
       });
     }
@@ -512,11 +647,9 @@ const buildHandoverTransitions = (logs = []) => {
       bandTransitions.push({
         from: String(prevBand),
         to: String(currBand),
-        atIndex: i,
         lat,
         lng,
-        timestamp: loc.timestamp,
-        session_id: currSession,
+        ...transitionMeta,
         type: "band",
       });
     }
@@ -536,15 +669,14 @@ const buildHandoverTransitions = (logs = []) => {
       pciTransitions.push({
         from: String(prevPci),
         to: String(currPci),
-        atIndex: i,
         lat,
         lng,
-        timestamp: loc.timestamp,
-        session_id: currSession,
+        ...transitionMeta,
         type: "pci",
       });
     }
     prevPci = currPci;
+    prevEntry = currentEntry;
   }
 
   return { technologyTransitions, bandTransitions, pciTransitions };
@@ -984,6 +1116,30 @@ const UnifiedMapView = () => {
       setSelectedSubSessionTarget(null);
     }
   }, [showSubSession]);
+
+  useEffect(() => {
+    if (!techHandOver) {
+      clearHandoverPolylines("technology");
+    }
+  }, [techHandOver]);
+
+  useEffect(() => {
+    if (!bandHandover) {
+      clearHandoverPolylines("band");
+    }
+  }, [bandHandover]);
+
+  useEffect(() => {
+    if (!pciHandover) {
+      clearHandoverPolylines("pci");
+    }
+  }, [pciHandover]);
+
+  useEffect(() => {
+    return () => {
+      clearHandoverPolylines();
+    };
+  }, []);
 
   // ... (All existing useEffects and handlers remain exactly the same) ...
   const handleSitesLoaded = useCallback((data, isLoading) => {
@@ -1663,19 +1819,38 @@ const UnifiedMapView = () => {
     filteringPolygonChecker,
   ]);
 
+  const shouldUsePredictionThresholds = useMemo(() => {
+    if (enableDataToggle) return dataToggle === "prediction";
+    return isSitePredictionMode;
+  }, [enableDataToggle, dataToggle, isSitePredictionMode]);
+
   const effectiveThresholds = useMemo(() => {
-    if (predictionColorSettings?.length && dataToggle === "prediction") {
-      return {
-        ...baseThresholds,
-        [selectedMetric]: predictionColorSettings.map((s) => ({
-          min: parseFloat(s.min),
-          max: parseFloat(s.max),
-          color: s.color,
-        })),
-      };
+    if (!predictionColorSettings?.length || !shouldUsePredictionThresholds) {
+      return baseThresholds;
     }
-    return baseThresholds;
-  }, [baseThresholds, predictionColorSettings, selectedMetric, dataToggle]);
+
+    const thresholdKey = getThresholdKey(selectedMetric);
+    const normalizedPredictionThresholds = predictionColorSettings
+      .map((s) => ({
+        min: parseFloat(s.min),
+        max: parseFloat(s.max),
+        color: s.color,
+      }))
+      .filter((range) => Number.isFinite(range.min) && Number.isFinite(range.max))
+      .sort((a, b) => a.min - b.min);
+
+    if (!normalizedPredictionThresholds.length) return baseThresholds;
+
+    return {
+      ...baseThresholds,
+      [thresholdKey]: normalizedPredictionThresholds,
+    };
+  }, [
+    baseThresholds,
+    predictionColorSettings,
+    selectedMetric,
+    shouldUsePredictionThresholds,
+  ]);
 
   const {
     processedPolygons: bestNetworkPolygons,
@@ -1695,16 +1870,30 @@ const UnifiedMapView = () => {
     const technologies = new Set();
 
     (locations || []).forEach((loc) => {
-      if (loc.provider) providers.add(loc.provider);
+      const providerName = normalizeProviderName(
+        loc?.provider ?? loc?.Provider ?? loc?.network ?? loc?.Network ?? "",
+      );
+      if (providerName && !isUnknownOption(providerName)) {
+        providers.add(providerName);
+      }
       if (loc.band) {
         const norm = normalizeBandName(loc.band);
         if (norm && norm !== "Unknown") bands.add(norm);
       }
-      if (loc.technology) technologies.add(normalizeTechName(loc.technology));
+      const technologyName = normalizeTechName(
+        loc?.technology ?? loc?.networkType ?? "",
+        loc?.band,
+      );
+      if (technologyName && !isUnknownOption(technologyName)) {
+        technologies.add(technologyName);
+      }
     });
 
     (polygonFilteredNeighborData || []).forEach((n) => {
-      if (n.provider) providers.add(n.provider);
+      const providerName = normalizeProviderName(n?.provider ?? "");
+      if (providerName && !isUnknownOption(providerName)) {
+        providers.add(providerName);
+      }
       if (n.primaryBand) {
         const norm = normalizeBandName(n.primaryBand);
         if (norm && norm !== "Unknown") bands.add(norm);
@@ -1713,8 +1902,15 @@ const UnifiedMapView = () => {
         const norm = normalizeBandName(n.neighbourBand);
         if (norm && norm !== "Unknown") bands.add(norm);
       }
-      if (n.networkType)
-        technologies.add(normalizeTechName(n.networkType, n.neighbourBand));
+      if (n.networkType) {
+        const technologyName = normalizeTechName(
+          n.networkType,
+          n.neighbourBand,
+        );
+        if (technologyName && !isUnknownOption(technologyName)) {
+          technologies.add(technologyName);
+        }
+      }
     });
 
     return {
@@ -1809,7 +2005,12 @@ const UnifiedMapView = () => {
     }
     const { providers, bands, technologies, indoorOutdoor } = dataFilters;
     if (providers?.length)
-      result = result.filter((l) => providers.includes(l.provider));
+      result = result.filter((l) => {
+        const providerName = normalizeProviderName(
+          l?.provider ?? l?.Provider ?? l?.network ?? l?.Network ?? "",
+        );
+        return providerName ? providers.includes(providerName) : false;
+      });
     if (bands?.length)
       result = result.filter((l) => bands.includes(String(l.band)));
     if (technologies?.length)
@@ -2471,7 +2672,10 @@ const UnifiedMapView = () => {
     const hasTechFilter = technologies?.length > 0;
     if (hasProviderFilter || hasBandFilter || hasTechFilter) {
       data = data.filter((item) => {
-        if (hasProviderFilter && !providers.includes(item.provider))
+        if (
+          hasProviderFilter &&
+          !providers.includes(normalizeProviderName(item?.provider ?? ""))
+        )
           return false;
         if (
           hasTechFilter &&
@@ -2765,7 +2969,15 @@ const UnifiedMapView = () => {
         dominanceThreshold={dominanceThreshold}
         setDominanceThreshold={setDominanceThreshold}
         setPciThreshold={setPciThreshold}
-        onOpenChange={setIsSideOpen}
+        onOpenChange={(isOpen) => {
+          setIsSideOpen(isOpen);
+          if (!isOpen) {
+            // Reset all handover toggles when sidebar is closed to clear ghost lines
+            setTechHandOver(false);
+            setBandHandover(false);
+            setPciHandover(false);
+          }
+        }}
         enableDataToggle={enableDataToggle}
         setEnableDataToggle={setEnableDataToggle}
         dataToggle={dataToggle}
@@ -2855,6 +3067,10 @@ const UnifiedMapView = () => {
         coverageViolationThreshold={coverageViolationThreshold}
         setCoverageViolationThreshold={setCoverageViolationThreshold}
         onAddSiteClick={() => {
+          if (!Number.isFinite(Number(projectId)) || Number(projectId) <= 0) {
+            toast.error("Please select a valid project before adding a site.");
+            return;
+          }
           setAddSiteMode(true);
           addSiteModeRef.current = true;
           toast.info("Click on the map to pick a location for the new site", { autoClose: 4000 });
@@ -2994,7 +3210,7 @@ const UnifiedMapView = () => {
                   map={mapRef.current}
                   locations={
                     isDataPredictionMode
-                      ? predictionLocations || EMPTY_LIST
+                      ? finalDisplayLocations || EMPTY_LIST
                       : ltePredictionLocations || EMPTY_LIST
                   }
                   selectedMetric={selectedMetric}
@@ -3008,6 +3224,7 @@ const UnifiedMapView = () => {
                   mlGridEnabled={mlGridEnabled}
                   mlGridSize={mlGridSize}
                   mlGridAggregation={mlGridAggregation}
+                  legendFilter={legendFilter}
                 />
               )}
 
@@ -3084,26 +3301,35 @@ const UnifiedMapView = () => {
               )}
 
               {/* Handover Layers - New Implementation */}
-              <TechHandoverMarkers
-                transitions={technologyTransitions}
-                show={techHandOver}
-                type="technology"
-                showConnections={true}
-              />
+              {techHandOver && (
+                <TechHandoverMarkers
+                  key="technology-handover-layer"
+                  transitions={technologyTransitions}
+                  show={true}
+                  type="technology"
+                  showConnections={false}
+                />
+              )}
 
-              <TechHandoverMarkers
-                transitions={bandTransitions}
-                show={bandHandover}
-                type="band"
-                showConnections={false}
-              />
+              {bandHandover && (
+                <TechHandoverMarkers
+                  key="band-handover-layer"
+                  transitions={bandTransitions}
+                  show={true}
+                  type="band"
+                  showConnections={false}
+                />
+              )}
 
-              <TechHandoverMarkers
-                transitions={pciTransitions}
-                show={pciHandover}
-                type="pci"
-                showConnections={false}
-              />
+              {pciHandover && (
+                <TechHandoverMarkers
+                  key="pci-handover-layer"
+                  transitions={pciTransitions}
+                  show={true}
+                  type="pci"
+                  showConnections={false}
+                />
+              )}
 
               <SubSessionMarkers
                 show={showSubSession}

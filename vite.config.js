@@ -8,6 +8,18 @@ export default defineConfig({
     react(),
     tailwindcss(),   // Tailwind v4 works through this
   ],
+  optimizeDeps: {
+    // Pre-bundle heavy map deps used inside lazy-loaded UnifiedMapView to avoid
+    // mid-session re-optimization ("Outdated Optimize Dep" 504).
+    include: [
+      "deck.gl",
+      "@deck.gl/core",
+      "@deck.gl/layers",
+      "@deck.gl/google-maps",
+      "@loaders.gl/core",
+      "@loaders.gl/worker-utils",
+    ],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

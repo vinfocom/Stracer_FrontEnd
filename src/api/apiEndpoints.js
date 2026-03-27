@@ -395,9 +395,12 @@ export const predictionApi = {
         session_ids: params.session_ids,
         grid_value: params.grid_value ?? 25.0,
         radius_m: params.radius_m ?? 5000.0,
-        polygon_area: params.polygon_area || [],
         building: params.building ?? true
       };
+
+      if (Array.isArray(params.polygon_area) && params.polygon_area.length >= 3) {
+        payload.polygon_area = params.polygon_area;
+      }
 
       const response = await pythonApi.post("/api/lte-prediction/run", payload, {
         timeout: 600000, // 10 minutes

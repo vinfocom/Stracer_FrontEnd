@@ -1,6 +1,11 @@
 import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { IconLayer, PolygonLayer } from "@deck.gl/layers";
+import {
+  normalizeBandName,
+  normalizeProviderName,
+  normalizeTechName,
+} from "@/utils/colorUtils";
 
 const FALLBACK_COLORS = [
   { min: 0.8, color: "#16a34a" },
@@ -120,6 +125,75 @@ const normalizePath = (poly) => {
   return rawPath.map((p) => normalizePathPoint(p)).filter(Boolean);
 };
 
+const getMetricValueFromPoint = (point, metric) => {
+  const m = String(metric || "").toLowerCase();
+  const aliases = {
+    dl_thpt: ["dl_thpt", "dl_tpt", "dl_rpt", "dl_throughput", "throughput_dl", "download"],
+    ul_thpt: ["ul_thpt", "ul_tpt", "ul_rpt", "ul_throughput", "throughput_ul", "upload"],
+  };
+  const keys = aliases[m] || [m];
+  for (const key of keys) {
+    const raw = point?.[key];
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+  }
+  if (m === String(point?.selectedMetric || "").toLowerCase()) {
+    const value = Number(point?.value);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+const getLegendCategoryValue = (point, key) => {
+  if (key === "provider") {
+    return normalizeProviderName(
+      point?.provider ?? point?.Provider ?? point?.network ?? point?.Network ?? "",
+    ) || "Unknown";
+  }
+
+  if (key === "technology") {
+    return normalizeTechName(
+      point?.technology ?? point?.networkType ?? point?.network ?? "",
+      point?.band,
+    );
+  }
+
+  if (key === "band") {
+    return normalizeBandName(
+      point?.band ?? point?.Band ?? point?.neighbourBand ?? point?.neighborBand ?? "",
+    );
+  }
+
+  return "Unknown";
+};
+
+const matchesLegendFilter = (point, legendFilter, selectedMetric) => {
+  if (!legendFilter) return true;
+
+  if (legendFilter.type === "metric") {
+    const metric = legendFilter.metric || selectedMetric;
+    const value = getMetricValueFromPoint(point, metric);
+    return Number.isFinite(value) && value >= legendFilter.min && value < legendFilter.max;
+  }
+
+  if (legendFilter.type === "category") {
+    const current = getLegendCategoryValue(point, legendFilter.key);
+    return String(current) === String(legendFilter.value);
+  }
+
+  if (legendFilter.type === "pci") {
+    const pci = Number(point?.pci ?? point?.PCI ?? point?.cell_id);
+    return Number.isFinite(pci) && Math.floor(pci) === Number(legendFilter.value);
+  }
+
+  if (legendFilter.type === "tac") {
+    const tac = point?.tac ?? point?.TAC;
+    return String(tac ?? "") === String(legendFilter.value ?? "");
+  }
+
+  return true;
+};
+
 const getPathBounds = (path) => {
   if (!Array.isArray(path) || path.length === 0) return null;
   let north = -Infinity;
@@ -220,6 +294,7 @@ const LtePredictionLocationLayer = ({
   mlGridEnabled = false,
   mlGridSize = 50,
   mlGridAggregation = "mean",
+  legendFilter = null,
 }) => {
   const overlayRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(13);
@@ -252,20 +327,24 @@ const LtePredictionLocationLayer = ({
         const siteId = String(p.siteId ?? p.site_id ?? "").trim();
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
         return {
+          ...p,
           lat,
           lng,
           value: Number.isFinite(value) ? value : null,
           sampleCount: Number.isFinite(sampleCount) ? sampleCount : 0,
           siteId,
+          selectedMetric,
         };
       })
       .filter(Boolean);
-  }, [enabled, locations]);
+  }, [enabled, locations, selectedMetric]);
 
   const filteredPoints = useMemo(() => {
     if (!Array.isArray(parsedPoints) || parsedPoints.length === 0) return [];
 
-    let points = parsedPoints;
+    let points = parsedPoints.filter((point) =>
+      matchesLegendFilter(point, legendFilter, selectedMetric),
+    );
 
     if (mlGridEnabled || aggregateOverlaps) {
       const grouped = new Map();
@@ -388,6 +467,8 @@ const LtePredictionLocationLayer = ({
     return points;
   }, [
     parsedPoints,
+    legendFilter,
+    selectedMetric,
     filterInsidePolygons,
     polygonPaths,
     aggregateOverlaps,
@@ -407,15 +488,15 @@ const LtePredictionLocationLayer = ({
 
   const resolveMetricColor = useCallback(
     (value) => {
+      const thresholdColor = getColorFromThresholds(value, selectedMetric, thresholds);
+      if (thresholdColor) return thresholdColor;
+
       const hookColor =
         typeof getMetricColor === "function"
           ? getMetricColor(value, selectedMetric)
           : null;
       if (hookColor && hookColor !== "#808080") return hookColor;
-      return (
-        getColorFromThresholds(value, selectedMetric, thresholds) ||
-        getFallbackColor(value, selectedMetric)
-      );
+      return getFallbackColor(value, selectedMetric);
     },
     [getMetricColor, selectedMetric, thresholds],
   );

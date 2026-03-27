@@ -131,7 +131,7 @@ const AddSiteFormDialog = ({
 }) => {
   // Initial State matching the new JSON structure
   const [form, setForm] = useState({
-    projectId: projectId ? Number(projectId) : 1,
+    projectId: projectId ? Number(projectId) : 0,
     site: "",
     cluster: "", // Site level optional
     bands: [], 
@@ -164,7 +164,7 @@ const AddSiteFormDialog = ({
   useEffect(() => {
     if (open) {
       setForm({
-        projectId: projectId ? Number(projectId) : 1,
+        projectId: projectId ? Number(projectId) : 0,
         site: "",
         cluster: "",
         bands: [],
@@ -272,29 +272,76 @@ const AddSiteFormDialog = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const projectIdValue = Number(form.projectId);
+    const siteValue = String(form.site || "").trim();
+    const latitudeValue = Number.parseFloat(form.latitude);
+    const longitudeValue = Number.parseFloat(form.longitude);
+    const sectorCount = form.sectors.length;
+
+    if (!Number.isFinite(projectIdValue) || projectIdValue <= 0) {
+      toast.error("Project ID is required.");
+      return;
+    }
+    if (!siteValue) {
+      toast.error("Site ID is required.");
+      return;
+    }
+    if (!Number.isFinite(latitudeValue) || latitudeValue < -90 || latitudeValue > 90) {
+      toast.error("Enter a valid latitude.");
+      return;
+    }
+    if (!Number.isFinite(longitudeValue) || longitudeValue < -180 || longitudeValue > 180) {
+      toast.error("Enter a valid longitude.");
+      return;
+    }
+    if (!Array.isArray(form.bands) || form.bands.length === 0) {
+      toast.error("Select at least one band.");
+      return;
+    }
+    if (!Array.isArray(form.technologies) || form.technologies.length === 0) {
+      toast.error("Add at least one technology.");
+      return;
+    }
+    if (!Array.isArray(form.azimuths) || form.azimuths.length !== sectorCount) {
+      toast.error("Azimuths must match sector count.");
+      return;
+    }
+    for (const tech of form.technologies) {
+      const techName = String(tech?.technology || "").trim();
+      const idValues = Array.isArray(tech?.idValues) ? tech.idValues : [];
+      const numericIds = idValues.map((value) => Number(value));
+      if (!techName) {
+        toast.error("Technology type is required.");
+        return;
+      }
+      if (numericIds.length !== sectorCount || numericIds.some((value) => !Number.isFinite(value))) {
+        toast.error(`Select ${sectorCount} valid IDs for ${techName}.`);
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
       // Construct payload strictly matching the requirement
       const payload = {
         projectId: Number(form.projectId),
-        site: form.site, // string
-        cluster: form.cluster, // NEW
-        bands: form.bands, // array of strings
-        sectors: form.sectors.map(Number), // array of numbers
-        azimuths: form.azimuths.map(Number), // array of numbers
-        heights: form.heights.map(Number), // NEW
-        mechanicalTilts: form.mechanicalTilts.map(Number), // NEW
-        electricalTilts: form.electricalTilts.map(Number), // NEW
-        // Add root-level Technnology for backward compatibility/validation
-        technology: form.technologies[0]?.technology || "4G", 
-        technologies: form.technologies.map(t => ({
-          technology: t.technology,
-          idValues: t.idValues.map(Number), // ensure numbers
-          earfcn: t.earfcn // NEW
+        site: siteValue,
+        cluster: String(form.cluster || "").trim(),
+        bands: form.bands.map((band) => String(band).trim()).filter(Boolean),
+        sectors: form.sectors.map(Number),
+        azimuths: form.azimuths.map(Number),
+        heights: form.heights.map(Number),
+        mechanicalTilts: form.mechanicalTilts.map(Number),
+        electricalTilts: form.electricalTilts.map(Number),
+        technology: form.technologies[0]?.technology || "4G",
+        technologies: form.technologies.map((t) => ({
+          technology: String(t.technology || "").trim(),
+          idValues: (Array.isArray(t.idValues) ? t.idValues : []).map(Number),
+          earfcn: String(t.earfcn || "").trim(),
         })),
-        latitude: parseFloat(form.latitude),
-        longitude: parseFloat(form.longitude)
+        latitude: latitudeValue,
+        longitude: longitudeValue,
       };
 
       console.log("Submitting Payload Details:", JSON.stringify(payload, null, 2));
@@ -305,7 +352,24 @@ const AddSiteFormDialog = ({
       onSuccess?.();
     } catch (error) {
       console.error("Add site error:", error);
-      toast.error(error?.response?.data?.Message || "Failed to add site");
+      const apiError = error?.response?.data ?? error?.data;
+      const errorBag =
+        (apiError?.errors && typeof apiError.errors === "object" && apiError.errors) ||
+        (apiError?.Errors && typeof apiError.Errors === "object" && apiError.Errors) ||
+        null;
+      const validationErrors = errorBag
+        ? Object.values(errorBag).flat().filter(Boolean)
+        : [];
+      const firstValidationError =
+        validationErrors.length > 0 ? String(validationErrors[0]) : null;
+      const message =
+        firstValidationError ||
+        (typeof apiError === "string"
+          ? apiError
+          : apiError?.Message || apiError?.message || apiError?.Title || apiError?.title) ||
+        error?.message ||
+        "Failed to add site";
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -331,6 +395,13 @@ const AddSiteFormDialog = ({
     alignItems: "center",
     justifyContent: "space-between"
   };
+
+  const renderLabel = (text, required = false) => (
+    <label style={labelStyle}>
+      {text}
+      {required && <span className="ml-1 text-red-500">*</span>}
+    </label>
+  );
 
   return (
     <>
@@ -364,7 +435,7 @@ const AddSiteFormDialog = ({
             {/* Top Row: Site & Lat/Lng */}
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label style={labelStyle}>Site ID</label>
+                {renderLabel("Site ID", true)}
                 <input
                   value={form.site}
                   onChange={(e) => handleBasicChange("site", e.target.value)}
@@ -373,7 +444,7 @@ const AddSiteFormDialog = ({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Cluster</label>
+                {renderLabel("Cluster", false)}
                 <input
                   value={form.cluster}
                   onChange={(e) => handleBasicChange("cluster", e.target.value)}
@@ -382,7 +453,7 @@ const AddSiteFormDialog = ({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Project ID</label>
+                {renderLabel("Project ID", true)}
                 <input
                   value={form.projectId}
                   disabled
@@ -393,7 +464,7 @@ const AddSiteFormDialog = ({
 
             <div className="grid grid-cols-2 gap-4">
                <div>
-                <label style={labelStyle}>Latitude</label>
+                {renderLabel("Latitude", true)}
                  <input
                   type="number"
                   step="any"
@@ -403,7 +474,7 @@ const AddSiteFormDialog = ({
                  />
                </div>
                <div>
-                <label style={labelStyle}>Longitude</label>
+                {renderLabel("Longitude", true)}
                  <input
                   type="number"
                   step="any"
@@ -416,7 +487,7 @@ const AddSiteFormDialog = ({
 
             {/* Bands MultiSelect */}
             <div className="space-y-2">
-              <label style={labelStyle}>Bands</label>
+              {renderLabel("Bands", true)}
               <MultiSelect
                 title="Bands"
                 placeholder="Select bands..."
@@ -432,7 +503,10 @@ const AddSiteFormDialog = ({
             {/* Sectors Section */}
             <div>
               <div style={sectionTitle}>
-                <span>Sectors & Azimuths</span>
+                <span>
+                  Sectors & Azimuths
+                  <span className="ml-1 text-red-500">*</span>
+                </span>
                 <Button 
                   type="button" 
                   size="sm" 
@@ -449,7 +523,9 @@ const AddSiteFormDialog = ({
                    <div key={idx} className="relative p-2 border border-slate-100 bg-white rounded-md shadow-sm">
                       <div className="grid grid-cols-3 gap-3 mb-2">
                         <div>
-                          <label className="text-xs font-medium text-slate-500 mb-1 block">Sector ID</label>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">
+                            Sector ID <span className="text-red-500">*</span>
+                          </label>
                           <input
                             type="number"
                             value={sector}
@@ -458,7 +534,9 @@ const AddSiteFormDialog = ({
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-medium text-slate-500 mb-1 block">Azimuth (°)</label>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">
+                            Azimuth (°) <span className="text-red-500">*</span>
+                          </label>
                           <input
                             type="number"
                             value={form.azimuths[idx]}
@@ -518,7 +596,10 @@ const AddSiteFormDialog = ({
             {/* Technologies Section */}
             <div>
               <div style={sectionTitle}>
-                <span>Technologies & Ids</span>
+                <span>
+                  Technologies & Ids
+                  <span className="ml-1 text-red-500">*</span>
+                </span>
                 <Button 
                   type="button" 
                   size="sm" 
@@ -545,7 +626,9 @@ const AddSiteFormDialog = ({
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                       <div>
-                        <label className="text-xs font-medium text-slate-500 mb-1 block">Type</label>
+                        <label className="text-xs font-medium text-slate-500 mb-1 block">
+                          Type <span className="text-red-500">*</span>
+                        </label>
                         <select
                           value={tech.technology}
                           onChange={(e) => handleTechChange(idx, "technology", e.target.value)}
@@ -567,7 +650,9 @@ const AddSiteFormDialog = ({
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-slate-500 mb-1 block">PCIs / IDs</label>
+                      <label className="text-xs font-medium text-slate-500 mb-1 block">
+                        PCIs / IDs <span className="text-red-500">*</span>
+                      </label>
                       <MultiSelect
                         title="PCIs"
                         placeholder="Select IDs..."
@@ -580,6 +665,10 @@ const AddSiteFormDialog = ({
                 ))}
               </div>
             </div>
+
+            <p className="text-xs text-slate-500">
+              <span className="text-red-500">*</span> Required fields
+            </p>
 
           </form>
         </div>

@@ -67,6 +67,16 @@ function useColorForLog() {
 
     useEffect(() => {
         fetchThreshold();
+
+        if (typeof window === "undefined") return undefined;
+        const handleThresholdUpdate = () => {
+            fetchThreshold();
+        };
+
+        window.addEventListener("thresholds:updated", handleThresholdUpdate);
+        return () => {
+            window.removeEventListener("thresholds:updated", handleThresholdUpdate);
+        };
     }, [fetchThreshold]);
 
     const getMetricColor = useCallback((value, metric) => {

@@ -48,32 +48,88 @@ function normalizeComparableSiteId(value) {
   return raw;
 }
 
+const INVALID_MATCH_VALUES = new Set(["unknown", "null", "undefined", "na", "n/a", "-1"]);
+
 function normalizeMatchValue(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
+  const lowered = raw.toLowerCase();
+  if (INVALID_MATCH_VALUES.has(lowered)) return null;
   const numeric = Number(raw);
   if (Number.isFinite(numeric)) return String(numeric);
-  return raw.toLowerCase();
+  return lowered;
+}
+
+function extractMatchValue(source, keys = []) {
+  if (!source || typeof source !== "object" || !Array.isArray(keys) || keys.length === 0) {
+    return null;
+  }
+
+  const candidates = [
+    source,
+    source.loc,
+    source.location,
+    source.properties,
+    source.data,
+    source.raw,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    for (const key of keys) {
+      if (!(key in candidate)) continue;
+      const normalized = normalizeMatchValue(candidate[key]);
+      if (normalized !== null) return normalized;
+    }
+  }
+  return null;
 }
 
 function extractNodebId(source) {
-  if (!source || typeof source !== "object") return null;
+  return extractMatchValue(source, [
+    "node_id",
+    "nodeId",
+    "nodeID",
+    "node",
+    "Node",
+    "NodeID",
+    "NodeId",
+    "node_b",
+    "nodeB",
+    "nodeb_id",
+    "nodebId",
+    "nodeb",
+    "NodeB",
+    "NodeBId",
+    "NodeB_ID",
+    "Node_B",
+    "Node_B_ID",
+    "eNodeB",
+    "enodeb",
+    "enodeb_id",
+    "e_nodeb",
+    "gNodeB",
+    "gnodeb",
+    "gnodeb_id",
+    "g_nodeb",
+    "site",
+    "site_id",
+    "siteId",
+  ]);
+}
 
-  const value =
-    source.nodeb_id ??
-    source.nodebId ??
-    source.nodeb ??
-    source.NodeB ??
-    source.NodeBId ??
-    source.NodeB_ID ??
-    source.eNodeB ??
-    source.enodeb ??
-    source.enodeb_id ??
-    source.gNodeB ??
-    source.gnodeb ??
-    source.gnodeb_id;
-
-  return normalizeMatchValue(value);
+function extractPciValue(source) {
+  return extractMatchValue(source, [
+    "pci",
+    "PCI",
+    "physical_cell_id",
+    "physicalCellId",
+    "cell_id",
+    "cellId",
+    "pci_or_psi",
+    "primaryPci",
+    "primary_pci",
+  ]);
 }
 
 function normalizeSiteRows(rows = []) {
@@ -98,7 +154,9 @@ function normalizeSiteRows(rows = []) {
       band: item.band || item.frequency_band || "Unknown",
       technology: item.Technology || item.tech || item.technology || "Unknown",
       pci: item.pci ?? item.PCI ?? item.pci_or_psi ?? item.cell_id,
-      nodebId: extractNodebId(item),
+      nodebId:
+        extractNodebId(item) ??
+        normalizeMatchValue(item.site ?? item.site_id ?? item.siteId ?? item.site_name),
     }))
     .filter((item) => item.lat !== 0 && Number.isFinite(item.lat) && Number.isFinite(item.lng));
 }
@@ -608,11 +666,6 @@ const NetworkPlannerMap = ({
     );
   }, [siteMarkers, viewport]);
 
-  const logNodebId = useMemo(() => {
-    if (!hoveredLog) return null;
-    return extractNodebId(hoveredLog);
-  }, [hoveredLog]);
-
   const logCoords = useMemo(() => {
     if (!hoveredLog) return null;
 
@@ -621,6 +674,11 @@ const NetworkPlannerMap = ({
 
     if (!Number.isNaN(lat) && !Number.isNaN(lng)) return { lat, lng };
     return null;
+  }, [hoveredLog]);
+
+  const logPci = useMemo(() => {
+    if (!hoveredLog) return null;
+    return extractPciValue(hoveredLog);
   }, [hoveredLog]);
 
   if (!enableSiteToggle) return null;
@@ -704,9 +762,9 @@ const NetworkPlannerMap = ({
           lng: (p0.lng + p1.lng + p2.lng) / 3,
         };
 
-        const activeNodebId = logNodebId;
         const activeCoords = logCoords;
-        const isHoveredMatch = activeNodebId !== null && sector.nodebId === activeNodebId;
+        const sectorPci = normalizeMatchValue(sector.pci);
+        const isHoveredMatch = logPci !== null && sectorPci !== null && sectorPci === logPci;
         const isSelectedSector = selectedSectorInfo?.renderKey === sectorRenderKey;
 
         return (

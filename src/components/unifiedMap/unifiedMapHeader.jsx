@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import SettingsPage from "@/pages/Setting";
 
-const REQUIRED_SITE_COLUMNS = [
+const UPLOAD_SITE_COLUMNS = [
   "site",
   "sector",
   "cell_id",
@@ -44,7 +44,17 @@ const REQUIRED_SITE_COLUMNS = [
   "earfcn",
   "cluster",
   "technology",
+  "m_tilt",
+  "e_tilt",
+  "height",
 ];
+
+const DEFAULT_SITE_COLUMN_VALUES = {
+  technology: "4G",
+  m_tilt: "0",
+  e_tilt: "0",
+  height: "30",
+};
 
 const SITE_COLUMN_ALIASES = {
   site: ["site", "siteid", "site_id", "sitename", "site_name", "nodeb", "enodeb", "gnodeb"],
@@ -58,6 +68,9 @@ const SITE_COLUMN_ALIASES = {
   earfcn: ["earfcn", "dl_earfcn", "arfcn", "uarfcn", "nrarfcn"],
   cluster: ["cluster", "operator", "network", "provider", "circle"],
   technology: ["technology", "tech", "rat", "networktype", "network_type"],
+  m_tilt: ["m_tilt", "mtilt", "mechanicaltilt", "mechanical_tilt", "m-tilt"],
+  e_tilt: ["e_tilt", "etilt", "electricaltilt", "electrical_tilt", "e-tilt"],
+  height: ["height", "antennaheight", "antenna_height", "hgt"],
 };
 
 const normalizeHeaderToken = (value = "") =>
@@ -104,53 +117,159 @@ const toCsvField = (value = "") => {
   return `"${str.replace(/"/g, '""')}"`;
 };
 
-const normalizeSiteCsvHeaders = async (file) => {
-  const content = await file.text();
-  const newline = content.includes("\r\n") ? "\r\n" : "\n";
-  const firstNewlineIndex = content.indexOf("\n");
-
-  const rawHeaderLine =
-    firstNewlineIndex === -1
-      ? content.replace(/\r$/, "")
-      : content.slice(0, firstNewlineIndex).replace(/\r$/, "");
-
-  const restContent = firstNewlineIndex === -1 ? "" : content.slice(firstNewlineIndex + 1);
-  const rawHeaders = parseCsvLine(rawHeaderLine);
-
+const getNormalizedAliasMap = () => {
   const normalizedAliasMap = new Map();
   Object.entries(SITE_COLUMN_ALIASES).forEach(([canonical, aliases]) => {
     aliases.forEach((alias) => normalizedAliasMap.set(normalizeHeaderToken(alias), canonical));
   });
+  return normalizedAliasMap;
+};
 
-  const normalizedHeaders = rawHeaders.map((header) => {
-    const aliasKey = normalizeHeaderToken(header);
-    return normalizedAliasMap.get(aliasKey) || header.trim();
+const normalizeBandValue = (value = "") => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/(\d+)/);
+  return match ? match[1] : raw;
+};
+
+const inferTechnology = (rawBand = "", rawEarfcn = "") => {
+  const band = String(rawBand ?? "").trim().toLowerCase();
+  if (band.startsWith("n") || band.includes("nr") || band === "5g") return "5G";
+
+  const earfcnNum = Number(String(rawEarfcn ?? "").trim());
+  if (Number.isFinite(earfcnNum) && earfcnNum >= 100000) return "5G";
+  return "4G";
+};
+
+const buildNormalizedSiteCsv = (headers, rows) => {
+  const normalizedAliasMap = getNormalizedAliasMap();
+  const headerIndexByCanonical = new Map();
+
+  headers.forEach((header, index) => {
+    const canonical =
+      normalizedAliasMap.get(normalizeHeaderToken(header)) ||
+      normalizeHeaderToken(header);
+    if (!canonical || headerIndexByCanonical.has(canonical)) return;
+    headerIndexByCanonical.set(canonical, index);
   });
 
-  const normalizedHeaderSet = new Set(
-    normalizedHeaders.map((header) => normalizeHeaderToken(header))
-  );
-  const missingColumns = REQUIRED_SITE_COLUMNS.filter(
-    (required) => !normalizedHeaderSet.has(normalizeHeaderToken(required))
+  const missingColumns = UPLOAD_SITE_COLUMNS.filter(
+    (column) =>
+      !headerIndexByCanonical.has(column) &&
+      DEFAULT_SITE_COLUMN_VALUES[column] === undefined
   );
 
   if (missingColumns.length > 0) {
-    return {
-      ok: false,
-      missingColumns,
+    return { ok: false, missingColumns };
+  }
+
+  const normalizedRows = rows
+    .map((rawRow) => {
+      const valueByCanonical = {};
+      UPLOAD_SITE_COLUMNS.forEach((column) => {
+        const idx = headerIndexByCanonical.get(column);
+        valueByCanonical[column] = idx !== undefined ? String(rawRow[idx] ?? "").trim() : "";
+      });
+
+      if (!valueByCanonical.technology) {
+        valueByCanonical.technology = inferTechnology(
+          valueByCanonical.band,
+          valueByCanonical.earfcn,
+        );
+      }
+
+      valueByCanonical.band = normalizeBandValue(valueByCanonical.band);
+
+      Object.entries(DEFAULT_SITE_COLUMN_VALUES).forEach(([column, fallback]) => {
+        if (!valueByCanonical[column]) valueByCanonical[column] = fallback;
+      });
+
+      return UPLOAD_SITE_COLUMNS.map((column) => valueByCanonical[column] ?? "");
+    })
+    .filter((row) => row.some((cell) => String(cell).trim() !== ""));
+
+  return {
+    ok: true,
+    csv: [
+      UPLOAD_SITE_COLUMNS.map((column) => toCsvField(column)).join(","),
+      ...normalizedRows.map((row) => row.map((cell) => toCsvField(cell)).join(",")),
+    ].join("\n"),
+  };
+};
+
+const toCsvFile = (csvContent, originalFile) => {
+  const baseName = String(originalFile?.name || "site_upload")
+    .replace(/\.[^.]+$/, "")
+    .trim();
+  return new File([csvContent], `${baseName}_normalized.csv`, {
+    type: "text/csv",
+  });
+};
+
+const normalizeSiteUploadFile = async (file) => {
+  const fileName = String(file?.name || "").toLowerCase();
+  const fileType = String(file?.type || "").toLowerCase();
+
+  const isCsv = fileName.endsWith(".csv") || fileType.includes("csv");
+  const isXlsx =
+    fileName.endsWith(".xlsx") ||
+    fileType.includes("spreadsheetml") ||
+    fileType.includes("excel");
+
+  if (isCsv) {
+    const content = await file.text();
+    const lines = content.split(/\r?\n/);
+    const nonEmptyLines = lines.filter((line, idx) => idx === 0 || line.trim() !== "");
+    const headers = parseCsvLine(nonEmptyLines[0] || "");
+    const rows = nonEmptyLines.slice(1).map((line) => parseCsvLine(line));
+    const normalized = buildNormalizedSiteCsv(headers, rows);
+    if (!normalized.ok) return normalized;
+    return { ok: true, file: toCsvFile(normalized.csv, file) };
+  }
+
+  if (isXlsx) {
+    const excelModule = await import("exceljs");
+    const ExcelJS = excelModule?.default ?? excelModule;
+    const workbook = new ExcelJS.Workbook();
+    const buffer = await file.arrayBuffer();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.worksheets?.[0];
+    if (!worksheet) return { ok: false, missingColumns: ["sheet"] };
+
+    const cellToString = (cellValue) => {
+      if (cellValue == null) return "";
+      if (typeof cellValue === "object") {
+        if (Array.isArray(cellValue.richText)) {
+          return cellValue.richText.map((part) => part?.text || "").join("");
+        }
+        if (cellValue.text != null) return String(cellValue.text);
+        if (cellValue.result != null) return String(cellValue.result);
+      }
+      return String(cellValue);
     };
+
+    const headerRow = worksheet.getRow(1);
+    const headers = [];
+    for (let col = 1; col <= headerRow.cellCount; col += 1) {
+      headers.push(cellToString(headerRow.getCell(col).value).trim());
+    }
+
+    const rows = [];
+    for (let rowNo = 2; rowNo <= worksheet.rowCount; rowNo += 1) {
+      const row = worksheet.getRow(rowNo);
+      const rowValues = [];
+      for (let col = 1; col <= headers.length; col += 1) {
+        rowValues.push(cellToString(row.getCell(col).value).trim());
+      }
+      rows.push(rowValues);
+    }
+
+    const normalized = buildNormalizedSiteCsv(headers, rows);
+    if (!normalized.ok) return normalized;
+    return { ok: true, file: toCsvFile(normalized.csv, file) };
   }
 
-  const headersChanged = normalizedHeaders.some((header, idx) => header !== rawHeaders[idx]);
-  if (!headersChanged) {
-    return { ok: true, file };
-  }
-
-  const normalizedHeaderLine = normalizedHeaders.map(toCsvField).join(",");
-  const normalizedContent = normalizedHeaderLine + (firstNewlineIndex === -1 ? "" : `${newline}${restContent}`);
-
-  const normalizedFile = new File([normalizedContent], file.name, { type: file.type || "text/csv" });
-  return { ok: true, file: normalizedFile };
+  return { ok: false, missingColumns: ["unsupported_file_type"] };
 };
 
 export default function UnifiedHeader({
@@ -224,16 +343,19 @@ export default function UnifiedHeader({
 
     let uploadFile = selectedFile;
     try {
-      const normalizedCsv = await normalizeSiteCsvHeaders(selectedFile);
+      const normalizedCsv = await normalizeSiteUploadFile(selectedFile);
       if (!normalizedCsv.ok) {
+        const unsupported = normalizedCsv.missingColumns?.includes("unsupported_file_type");
         toast.error(
-          `Missing required CSV columns: ${normalizedCsv.missingColumns.join(", ")}`
+          unsupported
+            ? "Unsupported file type. Please upload CSV or XLSX."
+            : `Missing required columns: ${normalizedCsv.missingColumns.join(", ")}`
         );
         return;
       }
       uploadFile = normalizedCsv.file;
     } catch (e) {
-      toast.error("Unable to read CSV file. Please verify file format.");
+      toast.error("Unable to read file. Please verify CSV/XLSX format.");
       return;
     }
 
@@ -281,9 +403,17 @@ export default function UnifiedHeader({
     let polygonAreaCoords = [];
     if (polygonStats?.geometry?.type === "polygon" && polygonStats.geometry.polygon) {
       // Map [{lat, lng}] to [[lng, lat], ...] as commonly expected by PostGIS/Python WKT or GeoJSON
-      polygonAreaCoords = polygonStats.geometry.polygon.map(pt => [pt.lng, pt.lat]);
+      polygonAreaCoords = polygonStats.geometry.polygon
+        .map((pt) => [Number(pt?.lng), Number(pt?.lat)])
+        .filter(
+          (pair) =>
+            Array.isArray(pair) &&
+            pair.length === 2 &&
+            Number.isFinite(pair[0]) &&
+            Number.isFinite(pair[1]),
+        );
       // Ensure it's closed (first point == last point) to be a valid coordinate ring
-      if (polygonAreaCoords.length > 0) {
+      if (polygonAreaCoords.length >= 3) {
         const first = polygonAreaCoords[0];
         const last = polygonAreaCoords[polygonAreaCoords.length - 1];
         if (first[0] !== last[0] || first[1] !== last[1]) {
@@ -294,14 +424,19 @@ export default function UnifiedHeader({
 
     setIsPredicting(true);
     try {
-      await predictionApi.runLtePrediction({
+      const payload = {
         project_id: effectiveProjectId,
         session_ids: effectiveSessionIds,
         grid_value: parseFloat(gridValue) || 25.0,
         radius_m: parseFloat(radiusM) || 5000.0,
-        polygon_area: polygonAreaCoords,
         building: true
-      });
+      };
+
+      if (polygonAreaCoords.length >= 3) {
+        payload.polygon_area = polygonAreaCoords;
+      }
+
+      await predictionApi.runLtePrediction(payload);
       toast.success("LTE Prediction started successfully.");
       setShowPredictionPrompt(false);
     } catch (error) {
@@ -618,13 +753,13 @@ export default function UnifiedHeader({
                 <label className="w-full flex flex-col items-center px-4 py-6 bg-gray-700 rounded-lg border-2 border-dashed border-gray-500 cursor-pointer hover:border-blue-500 transition-colors">
                   <UploadCloud className="h-10 w-10 text-gray-400 mb-2" />
                   <span className="text-sm">
-                    {selectedFile ? selectedFile.name : "Select .csv file"}
+                    {selectedFile ? selectedFile.name : "Select .csv or .xlsx file"}
                   </span>
                   <input 
                     type="file" 
                     className="hidden" 
                     onChange={handleFileChange}
-                    accept=".csv"
+                    accept=".csv,.xlsx,.xls"
                   />
                 </label>
                 

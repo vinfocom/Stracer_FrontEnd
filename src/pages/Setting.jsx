@@ -132,7 +132,11 @@ const ThresholdRow = memo(({ row, index, onChange, onDelete }) => {
                     type="number"
                     step="any"
                     value={minStr}
-                    onChange={e => setMinStr(e.target.value)}
+                    onChange={e => {
+                        const next = e.target.value;
+                        setMinStr(next);
+                        syncToParent({ min: parseNumber(next) });
+                    }}
                     onBlur={handleMinBlur}
                     onKeyDown={e => {
                         if (e.key === 'Enter') {
@@ -149,7 +153,11 @@ const ThresholdRow = memo(({ row, index, onChange, onDelete }) => {
                     type="number"
                     step="any"
                     value={maxStr}
-                    onChange={e => setMaxStr(e.target.value)}
+                    onChange={e => {
+                        const next = e.target.value;
+                        setMaxStr(next);
+                        syncToParent({ max: parseNumber(next) });
+                    }}
                     onBlur={handleMaxBlur}
                     onKeyDown={e => {
                         if (e.key === 'Enter') {
@@ -175,7 +183,11 @@ const ThresholdRow = memo(({ row, index, onChange, onDelete }) => {
                         className="text-white bg-slate-800 border-slate-600 flex-1 text-xs"
                         placeholder="#00ff00"
                         value={color}
-                        onChange={e => setColor(e.target.value)}
+                        onChange={e => {
+                            const next = e.target.value;
+                            setColor(next);
+                            syncToParent({ color: next });
+                        }}
                         onBlur={e => syncToParent({ color: e.target.value })}
                     />
                 </div>
@@ -187,7 +199,11 @@ const ThresholdRow = memo(({ row, index, onChange, onDelete }) => {
                     className="text-white bg-slate-800 border-slate-600 focus:border-blue-500"
                     placeholder="e.g., Good, Poor"
                     value={label}
-                    onChange={e => setLabel(e.target.value)}
+                    onChange={e => {
+                        const next = e.target.value;
+                        setLabel(next);
+                        syncToParent({ label: next });
+                    }}
                     onBlur={() => syncToParent({ label })}
                 />
             </div>
@@ -256,13 +272,8 @@ const ThresholdForm = memo(({ paramKey, paramName, initialData, onUpdate, onClos
     useEffect(() => {
         if (isInitialMount.current) return;
         if (!pendingUpdate.current) return;
-
-        const timer = setTimeout(() => {
-            onUpdate(localData);
-            pendingUpdate.current = false;
-        }, 300);
-
-        return () => clearTimeout(timer);
+        onUpdate(localData);
+        pendingUpdate.current = false;
     }, [localData, onUpdate]);
 
     return (
@@ -392,13 +403,8 @@ const VoLTECallForm = memo(({ value, setValue, onClose }) => {
     useEffect(() => {
         if (isInitialMount.current) return;
         if (!pendingUpdate.current) return;
-
-        const timer = setTimeout(() => {
-            setValue(localData);
-            pendingUpdate.current = false;
-        }, 300);
-
-        return () => clearTimeout(timer);
+        setValue(localData);
+        pendingUpdate.current = false;
     }, [localData, setValue]);
 
     return (
@@ -688,6 +694,12 @@ const SettingsPage = ({ onSaveSuccess }) => {
             toast.error("No thresholds to save");
             return;
         }
+
+        // Ensure any focused input commits its latest value before building payload.
+        if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
         
         setSaving(true);
         try {
@@ -705,6 +717,15 @@ const SettingsPage = ({ onSaveSuccess }) => {
                 if (refetchData?.Status === 1 && refetchData.Data) {
                     const refetched = parseThresholdData(refetchData.Data);
                     setThresholds(refetched);
+
+                    // Notify other views/hooks (map, legends, etc.) to refetch fresh thresholds.
+                    if (typeof window !== "undefined") {
+                        window.dispatchEvent(
+                            new CustomEvent("thresholds:updated", {
+                                detail: { updatedAt: Date.now(), thresholdId: refetchData.Data.id ?? null },
+                            }),
+                        );
+                    }
                 }
             } else {
                 toast.error(data?.Message || "Save failed");
