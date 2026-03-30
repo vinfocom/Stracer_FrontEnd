@@ -9,6 +9,8 @@ import {
 } from "@/utils/colorUtils";
 import { useSiteData } from "@/hooks/useSiteData";
 import { mapViewApi } from "@/api/apiEndpoints";
+import { toast } from "react-toastify";
+import EditSiteFormDialog from "@/components/unifiedMap/EditSiteFormDialog";
 
 function computeOffset(center, distanceMeters, headingDegrees) {
   const earthRadius = 6371000;
@@ -162,6 +164,132 @@ function inferTechnologyFromCarrier(technologyValue, earfcnValue) {
   return "Unknown";
 }
 
+const NUMERIC_FIELD_HINTS = new Set([
+  "site",
+  "site_id",
+  "node_id",
+  "nodeb_id",
+  "cell_id",
+  "sec_id",
+  "pci",
+  "azimuth",
+  "bw",
+  "height",
+  "m_tilt",
+  "e_tilt",
+  "earfcn",
+  "latitude",
+  "longitude",
+  "tac",
+  "tbl_project_id",
+  "tbl_upload_id",
+  "uplink_center_frequency",
+  "downlink_frequency",
+  "frequency",
+  "bandwidth",
+  "beamwidth",
+  "range",
+]);
+
+const EDITABLE_SITE_FIELDS = [
+  "site",
+  "site_name",
+  "sector",
+  "cell_id",
+  "sec_id",
+  "longitude",
+  "latitude",
+  "tac",
+  "pci",
+  "azimuth",
+  "height",
+  "bw",
+  "m_tilt",
+  "e_tilt",
+  "maximum_transmission_power_of_resource",
+  "real_transmit_power_of_resource",
+  "reference_signal_power",
+  "cellsize",
+  "frequency",
+  "band",
+  "uplink_center_frequency",
+  "downlink_frequency",
+  "earfcn",
+  "cluster",
+  "Technology",
+];
+
+const EDIT_FIELD_ALIAS_MAP = {
+  site: ["site", "site_id", "siteId", "site_key_inferred", "siteKeyInferred"],
+  site_name: ["site_name", "siteName"],
+  sector: ["sector", "sector_id", "sectorId"],
+  cell_id: ["cell_id", "cellId", "cell_id_representative", "cellIdRepresentative"],
+  sec_id: ["sec_id", "secId"],
+  longitude: ["longitude", "lng", "lon", "lon_pred"],
+  latitude: ["latitude", "lat", "lat_pred"],
+  tac: ["tac"],
+  pci: ["pci", "PCI", "pci_or_psi", "physical_cell_id", "physicalCellId"],
+  azimuth: ["azimuth", "azimuth_deg_5", "azimuth_deg_5_soft"],
+  height: ["height"],
+  bw: ["bw", "beamwidth", "beamwidth_deg_est"],
+  m_tilt: ["m_tilt", "mTilt"],
+  e_tilt: ["e_tilt", "eTilt"],
+  maximum_transmission_power_of_resource: ["maximum_transmission_power_of_resource"],
+  real_transmit_power_of_resource: ["real_transmit_power_of_resource"],
+  reference_signal_power: ["reference_signal_power"],
+  cellsize: ["cellsize", "cell_size"],
+  frequency: ["frequency"],
+  band: ["band", "frequency_band"],
+  uplink_center_frequency: ["uplink_center_frequency"],
+  downlink_frequency: ["downlink_frequency"],
+  earfcn: ["earfcn", "earfcn_or_narfcn", "earfcnOrNarfcn"],
+  cluster: ["cluster", "operator", "network", "Network"],
+  Technology: ["Technology", "technology", "tech"],
+};
+
+function isPrimitiveValue(value) {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function toComparableValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return String(value);
+}
+
+function convertFormValueForApi(key, rawValue, originalValue) {
+  const value = String(rawValue ?? "");
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+
+  if (typeof originalValue === "boolean") {
+    return trimmed.toLowerCase() === "true";
+  }
+
+  if (typeof originalValue === "number" || NUMERIC_FIELD_HINTS.has(String(key || "").toLowerCase())) {
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+
+  return value;
+}
+
+function pickValueByAliases(source, aliases = []) {
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(source, alias)) {
+      return source[alias];
+    }
+  }
+  return undefined;
+}
+
 function normalizeSiteRows(rows = []) {
   if (!Array.isArray(rows)) return [];
 
@@ -259,6 +387,8 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
   const cellIdRepresentative = String(
     site.cell_id_representative ?? site.cellIdRepresentative ?? site.cell_id ?? site.cellId ?? "",
   ).trim();
+  const cellIdRaw = site.cell_id ?? site.cellId ?? null;
+  const sectorRaw = site.sector ?? site.sector_id ?? site.sectorId ?? null;
   const samples = Number.isFinite(Number(site.samples)) ? Number(site.samples) : null;
   const azimuthReliability = Number.isFinite(Number(site.azimuth_reliability ?? site.azimuthReliability))
     ? Number(site.azimuth_reliability ?? site.azimuthReliability)
@@ -289,6 +419,8 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
     const sectorPart = String(site.sector ?? site.sector_id ?? i);
     sectors.push({
       id: `sector-${siteIdPart}-${rowIdPart}-${sectorPart}-${i}`,
+      sourceRowId: site.id != null ? Number(site.id) : null,
+      rawSite: site,
       lat,
       lng,
       azimuth,
@@ -303,8 +435,14 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
       nodebId,
       siteId: siteIdResolved,
       siteName: siteNameResolved,
+      siteNameRaw:
+        site.site_name != null && String(site.site_name).trim() !== ""
+          ? String(site.site_name).trim()
+          : "",
       siteKeyInferred: siteKeyInferred || null,
       cellIdRepresentative: cellIdRepresentative || null,
+      cellId: cellIdRaw != null && String(cellIdRaw).trim() !== "" ? String(cellIdRaw).trim() : null,
+      sector: sectorRaw != null && String(sectorRaw).trim() !== "" ? String(sectorRaw).trim() : null,
       samples,
       azimuthReliability,
       medianSampleDistanceM,
@@ -351,6 +489,10 @@ const NetworkPlannerMap = ({
   const [selectedSiteDataById, setSelectedSiteDataById] = useState({});
   const [loadingSitesQueue, setLoadingSitesQueue] = useState(new Set());
   const [selectedSectorInfo, setSelectedSectorInfo] = useState(null);
+  const [isSavingSectorEdit, setIsSavingSectorEdit] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [sectorEditFormData, setSectorEditFormData] = useState({});
+  const [sectorEditOriginalData, setSectorEditOriginalData] = useState({});
 
   const normalizedPolygonPaths = useMemo(() => {
     if (!Array.isArray(filterPolygons) || filterPolygons.length === 0) return [];
@@ -449,6 +591,9 @@ const NetworkPlannerMap = ({
       setSelectedSiteIds([]);
       setSelectedSiteDataById({});
       setSelectedSectorInfo(null);
+      setIsEditDialogOpen(false);
+      setSectorEditFormData({});
+      setSectorEditOriginalData({});
       siteFetchTokenRef.current = {};
       setLoadingSitesQueue(new Set());
     }
@@ -458,6 +603,7 @@ const NetworkPlannerMap = ({
     if (showSiteSectors) return;
     clearSectorOverlays();
     setSelectedSectorInfo(null);
+    setIsEditDialogOpen(false);
   }, [showSiteSectors, clearSectorOverlays]);
 
   useEffect(() => {
@@ -770,6 +916,230 @@ const NetworkPlannerMap = ({
     return extractPciValue(hoveredLog);
   }, [hoveredLog]);
 
+  const openSectorInfo = useCallback((sector, infoPos) => {
+    const next = {
+      ...sector,
+      renderKey: sector.renderKey,
+      infoPos,
+    };
+    setSelectedSectorInfo(next);
+  }, []);
+
+  const openSiteEditDialog = useCallback((sector) => {
+    if (!sector) return;
+    if (String(siteToggle || "").toLowerCase() !== "cell") {
+      toast.info("Editing is available only for Cell toggle (site_prediction).");
+      return;
+    }
+
+    const raw = sector.rawSite && typeof sector.rawSite === "object" ? sector.rawSite : {};
+    const source = { ...raw };
+    const seed = { id: raw.id ?? sector.sourceRowId ?? null };
+
+    EDITABLE_SITE_FIELDS.forEach((field) => {
+      const aliases = EDIT_FIELD_ALIAS_MAP[field] || [field];
+      let value = pickValueByAliases(source, aliases);
+
+      if (value === undefined) {
+        if (field === "site_name") value = sector.siteNameRaw ?? sector.siteName ?? null;
+        else if (field === "sector") value = sector.sector ?? null;
+        else if (field === "cell_id") value = sector.cellId ?? sector.cellIdRepresentative ?? null;
+        else if (field === "pci") value = sector.pci ?? null;
+        else if (field === "Technology") value = sector.technology ?? null;
+        else if (field === "band") value = sector.band ?? null;
+        else if (field === "azimuth") value = sector.azimuth ?? null;
+        else if (field === "latitude") value = sector.lat ?? null;
+        else if (field === "longitude") value = sector.lng ?? null;
+        else if (field === "cluster") value = sector.network ?? null;
+      }
+
+      if (isPrimitiveValue(value) || value === null) {
+        seed[field] = value ?? null;
+      }
+    });
+
+    const formState = Object.fromEntries(
+      Object.entries(seed).map(([key, value]) => [
+        key,
+        value === null || value === undefined ? "" : String(value),
+      ]),
+    );
+
+    setSectorEditOriginalData(seed);
+    setSectorEditFormData(formState);
+    setIsEditDialogOpen(true);
+  }, [siteToggle]);
+
+  const handleSectorEditFieldChange = useCallback((field, value) => {
+    setSectorEditFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }, []);
+
+  const handleSectorEditSave = useCallback(async () => {
+    if (!selectedSectorInfo) return;
+    const rowId = Number(sectorEditOriginalData.id ?? selectedSectorInfo.sourceRowId);
+    if (!Number.isFinite(rowId) || rowId <= 0) {
+      toast.error("Unable to update this site row: missing row id.");
+      return;
+    }
+
+    const azimuthValue = String(sectorEditFormData.azimuth ?? "").trim();
+    if (azimuthValue !== "") {
+      const azimuthNumber = Number(azimuthValue);
+      if (!Number.isFinite(azimuthNumber) || azimuthNumber < 0 || azimuthNumber > 360) {
+        toast.error("Azimuth must be a number between 0 and 360.");
+        return;
+      }
+    }
+
+    const latitudeValue = String(sectorEditFormData.latitude ?? "").trim();
+    if (latitudeValue !== "") {
+      const latitudeNumber = Number(latitudeValue);
+      if (!Number.isFinite(latitudeNumber) || latitudeNumber < -90 || latitudeNumber > 90) {
+        toast.error("Latitude must be between -90 and 90.");
+        return;
+      }
+    }
+
+    const longitudeValue = String(sectorEditFormData.longitude ?? "").trim();
+    if (longitudeValue !== "") {
+      const longitudeNumber = Number(longitudeValue);
+      if (!Number.isFinite(longitudeNumber) || longitudeNumber < -180 || longitudeNumber > 180) {
+        toast.error("Longitude must be between -180 and 180.");
+        return;
+      }
+    }
+
+    const payloadItem = { id: rowId };
+    Object.keys(sectorEditFormData).forEach((key) => {
+      if (key === "id") return;
+      const originalValue = sectorEditOriginalData[key];
+      const converted = convertFormValueForApi(key, sectorEditFormData[key], originalValue);
+      if (toComparableValue(originalValue) !== toComparableValue(converted)) {
+        payloadItem[key] = converted;
+      }
+    });
+
+    if (Object.keys(payloadItem).length === 1) {
+      toast.info("No changes to save.");
+      setIsEditDialogOpen(false);
+      return;
+    }
+
+    if ("site_name" in payloadItem && String(payloadItem.site_name ?? "").trim() === "") {
+      payloadItem.site_name = null;
+    }
+    if ("sector" in payloadItem && String(payloadItem.sector ?? "").trim() === "") {
+      payloadItem.sector = null;
+    }
+
+    setIsSavingSectorEdit(true);
+    try {
+      const response = await mapViewApi.updateSitePrediction([payloadItem]);
+      const rowsAffected =
+        Number(response?.Data ?? response?.data?.Data ?? response?.rowsAffected ?? response?.RowsAffected ?? 0) || 0;
+
+      const nextRaw = {
+        ...(selectedSectorInfo.rawSite || {}),
+        ...payloadItem,
+        id: rowId,
+      };
+      const nextSiteName = String(nextRaw.site_name ?? selectedSectorInfo.siteNameRaw ?? "").trim();
+      const nextSector = String(nextRaw.sector ?? selectedSectorInfo.sector ?? "").trim();
+      const nextAzimuth = Number(nextRaw.azimuth ?? selectedSectorInfo.azimuth ?? 0);
+      const nextBand = String(nextRaw.band ?? selectedSectorInfo.band ?? "").trim();
+      const nextPci =
+        nextRaw.pci ?? nextRaw.PCI ?? nextRaw.pci_or_psi ?? nextRaw.cell_id ?? selectedSectorInfo.pci ?? null;
+      const nextTechnology = inferTechnologyFromCarrier(
+        nextRaw.technology ?? nextRaw.Technology ?? nextRaw.tech ?? selectedSectorInfo.technology,
+        nextRaw.earfcn_or_narfcn ?? nextRaw.earfcnOrNarfcn ?? nextRaw.earfcn,
+      );
+      const nextNetwork = String(
+        nextRaw.network ?? nextRaw.Network ?? nextRaw.operator ?? nextRaw.cluster ?? selectedSectorInfo.network ?? "",
+      ).trim();
+      const nextNodeId = extractNodebId(nextRaw) ?? selectedSectorInfo.nodebId ?? null;
+      const nextCellId =
+        nextRaw.cell_id ??
+        nextRaw.cellId ??
+        nextRaw.cell_id_representative ??
+        nextRaw.cellIdRepresentative ??
+        selectedSectorInfo.cellId ??
+        selectedSectorInfo.cellIdRepresentative ??
+        null;
+
+      setSelectedSiteDataById((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((siteId) => {
+          const existing = next[siteId];
+          if (!existing?.sectors) return;
+          next[siteId] = {
+            ...existing,
+            sectors: existing.sectors.map((sector) => {
+              if (Number(sector.sourceRowId) !== rowId) return sector;
+              return {
+                ...sector,
+                rawSite: nextRaw,
+                siteNameRaw: nextSiteName,
+                siteName: nextSiteName || sector.siteName || sector.siteId || "Unknown",
+                sector: nextSector || null,
+                azimuth: Number.isFinite(nextAzimuth) ? nextAzimuth : sector.azimuth,
+                band: nextBand || sector.band,
+                pci: nextPci !== null && nextPci !== undefined ? String(nextPci).trim() : sector.pci,
+                technology: nextTechnology || sector.technology,
+                network: nextNetwork || sector.network,
+                nodebId: nextNodeId ?? sector.nodebId,
+                cellId: nextCellId !== null && nextCellId !== undefined ? String(nextCellId).trim() : sector.cellId,
+              };
+            }),
+          };
+        });
+        return next;
+      });
+
+      setSelectedSectorInfo((prev) =>
+        prev && Number(prev.sourceRowId) === rowId
+          ? {
+              ...prev,
+              rawSite: nextRaw,
+              siteNameRaw: nextSiteName,
+              siteName: nextSiteName || prev.siteName || prev.siteId || "Unknown",
+              sector: nextSector || null,
+              azimuth: Number.isFinite(nextAzimuth) ? nextAzimuth : prev.azimuth,
+              band: nextBand || prev.band,
+              pci: nextPci !== null && nextPci !== undefined ? String(nextPci).trim() : prev.pci,
+              technology: nextTechnology || prev.technology,
+              network: nextNetwork || prev.network,
+              nodebId: nextNodeId ?? prev.nodebId,
+              cellId: nextCellId !== null && nextCellId !== undefined ? String(nextCellId).trim() : prev.cellId,
+            }
+          : prev,
+      );
+
+      setSectorEditOriginalData(nextRaw);
+      setSectorEditFormData(
+        Object.fromEntries(
+          Object.entries(nextRaw).map(([key, value]) => [
+            key,
+            value === null || value === undefined ? "" : String(value),
+          ]),
+        ),
+      );
+      setIsEditDialogOpen(false);
+      toast.success(rowsAffected > 0 ? `Updated (${rowsAffected} row${rowsAffected > 1 ? "s" : ""}).` : "Site updated.");
+
+      const marker = siteMarkers.find((item) => item.siteId === selectedSectorInfo.siteId);
+      if (marker) {
+        void loadSiteData(marker, true);
+      }
+    } catch (error) {
+      toast.error(error?.message || "Failed to update site.");
+    } finally {
+      setIsSavingSectorEdit(false);
+    }
+  }, [selectedSectorInfo, sectorEditFormData, sectorEditOriginalData, siteMarkers, loadSiteData]);
+
   if (!enableSiteToggle) return null;
   if (error) return null;
 
@@ -855,6 +1225,8 @@ const NetworkPlannerMap = ({
         const sectorPci = normalizeMatchValue(sector.pci);
         const isHoveredMatch = logPci !== null && sectorPci !== null && sectorPci === logPci;
         const isSelectedSector = selectedSectorInfo?.renderKey === sectorRenderKey;
+        const infoSector = isSelectedSector ? selectedSectorInfo || sector : sector;
+        const canEditSitePrediction = String(siteToggle || "").toLowerCase() === "cell";
 
         return (
           <React.Fragment key={sectorRenderKey}>
@@ -867,13 +1239,12 @@ const NetworkPlannerMap = ({
                 strokeColor: isSelectedSector ? "#111827" : isHoveredMatch ? "#FF0000" : sector.color,
                 zIndex: isSelectedSector ? 3000 : isHoveredMatch ? 2001 : 2000,
               }}
-              onClick={() =>
-                setSelectedSectorInfo({
-                  ...sector,
-                  renderKey: sectorRenderKey,
-                  infoPos,
-                })
-              }
+              onClick={() => openSectorInfo({ ...sector, renderKey: sectorRenderKey }, infoPos)}
+              onRightClick={() => {
+                const nextSector = { ...sector, renderKey: sectorRenderKey };
+                openSectorInfo(nextSector, infoPos);
+                openSiteEditDialog(nextSector);
+              }}
               onLoad={(polygon) => {
                 if (polygon) polygonRefs.current.add(polygon);
               }}
@@ -903,44 +1274,53 @@ const NetworkPlannerMap = ({
             {isSelectedSector && (
               <InfoWindowF
                 position={selectedSectorInfo.infoPos}
-                onCloseClick={() => setSelectedSectorInfo(null)}
+                onCloseClick={() => {
+                  setSelectedSectorInfo(null);
+                }}
               >
                 <div className="min-w-[210px] border border-slate-300 bg-white p-2 text-xs shadow-sm">
-                  <div className="mb-1 border-b border-slate-200 pb-1 font-semibold">
-                    Sector Info
+                  <div className="mb-1 flex items-center justify-between border-b border-slate-200 pb-1 font-semibold">
+                    <span>Site Info</span>
+                    <button
+                      type="button"
+                      onClick={() => openSiteEditDialog(infoSector)}
+                      disabled={!canEditSitePrediction}
+                      className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      title={
+                        canEditSitePrediction
+                          ? "Edit site fields"
+                          : "Switch Site toggle to Cell to edit site_prediction fields"
+                      }
+                    >
+                      Edit
+                    </button>
                   </div>
-                  <div>Site ID: {sector.siteId || "N/A"}</div>
-                  <div>Site Name: {sector.siteName || "N/A"}</div>
-                  <div>Site Key: {sector.siteKeyInferred || "N/A"}</div>
-                  <div>Cell ID: {sector.cellIdRepresentative || "N/A"}</div>
-                  <div>NodeB ID: {sector.nodebId || "N/A"}</div>
-                  <div>PCI: {sector.pci || "N/A"}</div>
-                  <div>Network: {sector.network || "N/A"}</div>
-                  <div>Technology: {sector.technology || "N/A"}</div>
-                  <div>Band: {sector.band || "N/A"}</div>
-                  <div>EARFCN/NRARFCN: {sector.earfcnOrNarfcn ?? "N/A"}</div>
-                  <div>Samples: {Number.isFinite(sector.samples) ? sector.samples : "N/A"}</div>
-                  <div>
-                    Azimuth Reliability:{" "}
-                    {Number.isFinite(sector.azimuthReliability)
-                      ? sector.azimuthReliability.toFixed(3)
-                      : "N/A"}
-                  </div>
-                  <div>
-                    Median Sample Distance:{" "}
-                    {Number.isFinite(sector.medianSampleDistanceM)
-                      ? `${sector.medianSampleDistanceM.toFixed(1)} m`
-                      : "N/A"}
-                  </div>
-                  <div>Azimuth: {Math.round(sector.azimuth || 0)} deg</div>
-                  <div>Beamwidth: {Math.round(sector.beamwidth || 0)} deg</div>
-                  <div>Range: {Math.round(sector.range || 0)} m</div>
+                  <div>Site ID: {infoSector.siteId || "N/A"}</div>
+                  <div>Cell ID: {infoSector.cellId || infoSector.cellIdRepresentative || "N/A"}</div>
+                  <div>NodeB ID: {infoSector.nodebId || "N/A"}</div>
+                  <div>PCI: {infoSector.pci || "N/A"}</div>
+                  <div>Network: {infoSector.network || "N/A"}</div>
+                  <div>Technology: {infoSector.technology || "N/A"}</div>
+                  <div>Band: {infoSector.band || "N/A"}</div>
                 </div>
               </InfoWindowF>
             )}
           </React.Fragment>
         );
       })}
+
+      <EditSiteFormDialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+        }}
+        formValues={sectorEditFormData}
+        onFieldChange={handleSectorEditFieldChange}
+        onSave={() => {
+          void handleSectorEditSave();
+        }}
+        submitting={isSavingSectorEdit}
+      />
     </>
   );
 };

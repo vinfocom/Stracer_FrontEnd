@@ -954,6 +954,8 @@ export const mapViewApi = {
 
   getSitePrediction: (params) =>
     api.get("/api/MapView/GetSitePrediction", { params }),
+  updateSitePrediction: (payload) =>
+    api.post("/api/MapView/UpdateSitePrediction", payload),
 
   assignSitePredictionToProject: (projectId, siteIds) => {
     const params = new URLSearchParams();
