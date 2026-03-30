@@ -471,7 +471,7 @@ const NetworkPlannerMap = ({
   getMetricColor = null,
   onSiteSelect = null,
 }) => {
-  const { siteData, loading, error } = useSiteData({
+  const { siteData, loading, error, fetchSiteData } = useSiteData({
     enableSiteToggle,
     siteToggle,
     projectId,
@@ -493,6 +493,9 @@ const NetworkPlannerMap = ({
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [sectorEditFormData, setSectorEditFormData] = useState({});
   const [sectorEditOriginalData, setSectorEditOriginalData] = useState({});
+  const [dragMode, setDragMode] = useState(null); // "sector" | "site" | null
+  const [pendingMovePosition, setPendingMovePosition] = useState(null);
+  const [isApplyingDraggedMove, setIsApplyingDraggedMove] = useState(false);
 
   const normalizedPolygonPaths = useMemo(() => {
     if (!Array.isArray(filterPolygons) || filterPolygons.length === 0) return [];
@@ -591,6 +594,8 @@ const NetworkPlannerMap = ({
       setSelectedSiteIds([]);
       setSelectedSiteDataById({});
       setSelectedSectorInfo(null);
+      setDragMode(null);
+      setPendingMovePosition(null);
       setIsEditDialogOpen(false);
       setSectorEditFormData({});
       setSectorEditOriginalData({});
@@ -603,6 +608,8 @@ const NetworkPlannerMap = ({
     if (showSiteSectors) return;
     clearSectorOverlays();
     setSelectedSectorInfo(null);
+    setDragMode(null);
+    setPendingMovePosition(null);
     setIsEditDialogOpen(false);
   }, [showSiteSectors, clearSectorOverlays]);
 
@@ -923,7 +930,125 @@ const NetworkPlannerMap = ({
       infoPos,
     };
     setSelectedSectorInfo(next);
+    setDragMode(null);
+    setPendingMovePosition(null);
   }, []);
+
+  const startDragMove = useCallback((mode) => {
+    if (!selectedSectorInfo) return;
+    if (String(siteToggle || "").toLowerCase() !== "cell") {
+      toast.info("Drag move is available only for Cell toggle (site_prediction).");
+      return;
+    }
+
+    const lat = Number(selectedSectorInfo.lat);
+    const lng = Number(selectedSectorInfo.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      toast.error("Cannot start drag move: invalid sector location.");
+      return;
+    }
+
+    setDragMode(mode);
+    setPendingMovePosition({ lat, lng });
+    toast.info(mode === "site" ? "Drag marker to move full site, then click Update Location." : "Drag marker to move this sector, then click Update Location.");
+  }, [selectedSectorInfo, siteToggle]);
+
+  const applyDraggedMove = useCallback(async () => {
+    if (!selectedSectorInfo || !dragMode || !pendingMovePosition) return;
+    const lat = Number(pendingMovePosition.lat);
+    const lng = Number(pendingMovePosition.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      toast.error("Invalid target position.");
+      return;
+    }
+
+    const rowIds =
+      dragMode === "site"
+        ? Array.from(
+            new Set(
+              allSectors
+                .filter((s) => s.siteId === selectedSectorInfo.siteId)
+                .map((s) => Number(s.sourceRowId))
+                .filter((id) => Number.isFinite(id) && id > 0),
+            ),
+          )
+        : [Number(selectedSectorInfo.sourceRowId)].filter((id) => Number.isFinite(id) && id > 0);
+
+    if (rowIds.length === 0) {
+      toast.error("No valid rows found to update.");
+      return;
+    }
+
+    const payload = rowIds.map((id) => ({
+      id,
+      latitude: lat,
+      longitude: lng,
+    }));
+
+    setIsApplyingDraggedMove(true);
+    try {
+      const response = await mapViewApi.updateSitePrediction(payload);
+      const rowsAffected =
+        Number(response?.RowsAffected ?? response?.rowsAffected ?? response?.Data ?? response?.data?.Data ?? 0) || 0;
+
+      if (rowsAffected <= 0) {
+        toast.warning("No rows were updated. Check site toggle and row ids.");
+      } else {
+        toast.success(`Location updated for ${rowsAffected} row${rowsAffected > 1 ? "s" : ""}.`);
+      }
+
+      setSelectedSiteDataById((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((siteId) => {
+          const existing = next[siteId];
+          if (!existing?.sectors) return;
+          next[siteId] = {
+            ...existing,
+            sectors: existing.sectors.map((sector) => {
+              if (!rowIds.includes(Number(sector.sourceRowId))) return sector;
+              return {
+                ...sector,
+                lat,
+                lng,
+                rawSite: {
+                  ...(sector.rawSite || {}),
+                  latitude: lat,
+                  longitude: lng,
+                },
+              };
+            }),
+          };
+        });
+        return next;
+      });
+
+      setSelectedSectorInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              lat,
+              lng,
+              infoPos: { lat, lng },
+              rawSite: {
+                ...(prev.rawSite || {}),
+                latitude: lat,
+                longitude: lng,
+              },
+            }
+          : prev,
+      );
+
+      setDragMode(null);
+      setPendingMovePosition(null);
+
+      await fetchSiteData();
+      if (map?.panTo) map.panTo({ lat, lng });
+    } catch (error) {
+      toast.error(error?.message || "Failed to update moved location.");
+    } finally {
+      setIsApplyingDraggedMove(false);
+    }
+  }, [selectedSectorInfo, dragMode, pendingMovePosition, allSectors, fetchSiteData, map]);
 
   const openSiteEditDialog = useCallback((sector) => {
     if (!sector) return;
@@ -1068,6 +1193,10 @@ const NetworkPlannerMap = ({
         selectedSectorInfo.cellId ??
         selectedSectorInfo.cellIdRepresentative ??
         null;
+      const nextLat = Number(nextRaw.latitude ?? nextRaw.lat ?? selectedSectorInfo.lat ?? 0);
+      const nextLng = Number(
+        nextRaw.longitude ?? nextRaw.lng ?? nextRaw.lon ?? selectedSectorInfo.lng ?? 0,
+      );
 
       setSelectedSiteDataById((prev) => {
         const next = { ...prev };
@@ -1091,6 +1220,8 @@ const NetworkPlannerMap = ({
                 network: nextNetwork || sector.network,
                 nodebId: nextNodeId ?? sector.nodebId,
                 cellId: nextCellId !== null && nextCellId !== undefined ? String(nextCellId).trim() : sector.cellId,
+                lat: Number.isFinite(nextLat) ? nextLat : sector.lat,
+                lng: Number.isFinite(nextLng) ? nextLng : sector.lng,
               };
             }),
           };
@@ -1113,6 +1244,12 @@ const NetworkPlannerMap = ({
               network: nextNetwork || prev.network,
               nodebId: nextNodeId ?? prev.nodebId,
               cellId: nextCellId !== null && nextCellId !== undefined ? String(nextCellId).trim() : prev.cellId,
+              lat: Number.isFinite(nextLat) ? nextLat : prev.lat,
+              lng: Number.isFinite(nextLng) ? nextLng : prev.lng,
+              infoPos:
+                Number.isFinite(nextLat) && Number.isFinite(nextLng)
+                  ? { lat: nextLat, lng: nextLng }
+                  : prev.infoPos,
             }
           : prev,
       );
@@ -1133,12 +1270,48 @@ const NetworkPlannerMap = ({
       if (marker) {
         void loadSiteData(marker, true);
       }
+      if ("latitude" in payloadItem || "longitude" in payloadItem) {
+        await fetchSiteData();
+        if (Number.isFinite(nextLat) && Number.isFinite(nextLng)) {
+          const movedPoint = { lat: nextLat, lng: nextLng };
+          const outsidePolygonFilter =
+            onlyInsidePolygons && normalizedPolygonPaths.length > 0 && !pointInsideAnyPolygon(movedPoint);
+          const outsideViewport =
+            viewport &&
+            (nextLat < viewport.south ||
+              nextLat > viewport.north ||
+              nextLng < viewport.west ||
+              nextLng > viewport.east);
+
+          if (outsidePolygonFilter) {
+            toast.info("Site moved outside active polygon filter, so it is hidden.");
+          } else if (outsideViewport) {
+            toast.info("Site moved outside current view. Map is panning to new location.");
+          }
+
+          if (map?.panTo) {
+            map.panTo(movedPoint);
+          }
+        }
+      }
     } catch (error) {
       toast.error(error?.message || "Failed to update site.");
     } finally {
       setIsSavingSectorEdit(false);
     }
-  }, [selectedSectorInfo, sectorEditFormData, sectorEditOriginalData, siteMarkers, loadSiteData]);
+  }, [
+    selectedSectorInfo,
+    sectorEditFormData,
+    sectorEditOriginalData,
+    siteMarkers,
+    loadSiteData,
+    fetchSiteData,
+    map,
+    onlyInsidePolygons,
+    normalizedPolygonPaths,
+    pointInsideAnyPolygon,
+    viewport,
+  ]);
 
   if (!enableSiteToggle) return null;
   if (error) return null;
@@ -1168,6 +1341,81 @@ const NetworkPlannerMap = ({
           {selectedSiteIds.length} selected
         </div>
       </div>
+
+      {selectedSectorInfo && (
+        <div className="absolute right-3 top-12 z-[2100] w-[290px] rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
+          <div className="mb-2 flex items-center justify-between border-b border-slate-200 pb-1">
+            <span className="font-semibold text-slate-800">Move Controls</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSectorInfo(null);
+                setDragMode(null);
+                setPendingMovePosition(null);
+              }}
+              className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="mb-2 text-[11px] text-slate-600">
+            Site: <span className="font-semibold">{selectedSectorInfo.siteId || "N/A"}</span>
+          </div>
+
+          {String(siteToggle || "").toLowerCase() !== "cell" ? (
+            <div className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+              Move is available on <b>Cell</b> toggle only.
+            </div>
+          ) : !dragMode ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => startDragMove("sector")}
+                className="rounded bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white"
+              >
+                Move Sector
+              </button>
+              <button
+                type="button"
+                onClick={() => startDragMove("site")}
+                className="rounded bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white"
+              >
+                Move Site
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-[11px] text-slate-600">
+                Drag orange marker on map, then click update.
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void applyDraggedMove();
+                  }}
+                  disabled={isApplyingDraggedMove}
+                  className="rounded bg-green-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
+                >
+                  {isApplyingDraggedMove ? "Updating..." : "Update Location"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDragMode(null);
+                    setPendingMovePosition(null);
+                  }}
+                  disabled={isApplyingDraggedMove}
+                  className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700"
+                >
+                  Cancel Move
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {showSiteMarkers &&
         visibleSiteMarkers.map((site) => (
@@ -1276,6 +1524,8 @@ const NetworkPlannerMap = ({
                 position={selectedSectorInfo.infoPos}
                 onCloseClick={() => {
                   setSelectedSectorInfo(null);
+                  setDragMode(null);
+                  setPendingMovePosition(null);
                 }}
               >
                 <div className="min-w-[210px] border border-slate-300 bg-white p-2 text-xs shadow-sm">
@@ -1302,8 +1552,82 @@ const NetworkPlannerMap = ({
                   <div>Network: {infoSector.network || "N/A"}</div>
                   <div>Technology: {infoSector.technology || "N/A"}</div>
                   <div>Band: {infoSector.band || "N/A"}</div>
+                  {canEditSitePrediction && (
+                    <div className="mt-2 border-t border-slate-200 pt-2">
+                      {!dragMode ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startDragMove("sector")}
+                            className="rounded bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white"
+                          >
+                            Move Sector
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startDragMove("site")}
+                            className="rounded bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white"
+                          >
+                            Move Site
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="text-[11px] text-slate-700">
+                            Drag marker, then click update.
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void applyDraggedMove();
+                              }}
+                              disabled={isApplyingDraggedMove}
+                              className="rounded bg-green-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
+                            >
+                              {isApplyingDraggedMove ? "Updating..." : "Update Location"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDragMode(null);
+                                setPendingMovePosition(null);
+                              }}
+                              disabled={isApplyingDraggedMove}
+                              className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </InfoWindowF>
+            )}
+
+            {isSelectedSector && dragMode && pendingMovePosition && (
+              <MarkerF
+                position={pendingMovePosition}
+                draggable
+                zIndex={5000}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: "#f97316",
+                  fillOpacity: 0.95,
+                  strokeColor: "#ffffff",
+                  strokeWeight: 2,
+                }}
+                onDragEnd={(event) => {
+                  const lat = event?.latLng?.lat?.();
+                  const lng = event?.latLng?.lng?.();
+                  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                    setPendingMovePosition({ lat, lng });
+                  }
+                }}
+              />
             )}
           </React.Fragment>
         );
