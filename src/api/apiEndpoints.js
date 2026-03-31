@@ -636,7 +636,10 @@ export const adminApi = {
 
 export const mapViewApi = {
   addSitePrediction: (payload) => api.post("/api/Mapview/AddSitePrediction", payload),
-  getLtePfrection: (params) => api.get("/api/MapView/GetLtePredictionLocationStats", { params }),
+  getLtePfrection: (params, config = {}) =>
+    api.get("/api/MapView/GetLtePredictionLocationStats", { params, ...config }),
+  getLtePredictionLocationStatsRefined: (params, config = {}) =>
+    api.get("/api/MapView/GetLtePredictionLocationStatsRefined", { params, ...config }),
 
   signup: (user) => api.post("/api/MapView/user_signup", user),
   startSession: (data) => api.post("/api/MapView/start_session", data),

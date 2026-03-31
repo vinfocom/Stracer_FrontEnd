@@ -3,6 +3,10 @@ import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleMapsOverlay } from '@deck.gl/google-maps';
 import { ScatterplotLayer, PolygonLayer, TextLayer } from '@deck.gl/layers';
 
+const MAX_PRIMARY_RENDER_POINTS = 30000;
+const MAX_NEIGHBOR_RENDER_POINTS = 20000;
+const MAX_IMAGE_RENDER_POINTS = 4000;
+
 const parseColorToRGB = (colorStr) => {
   if (!colorStr || typeof colorStr !== 'string') return [128, 128, 128, 200];
 
@@ -67,6 +71,12 @@ const getSquarePolygon = (lat, lng, sizeMeters) => {
   ];
 };
 
+const downsample = (rows, maxRows) => {
+  if (!Array.isArray(rows) || rows.length <= maxRows) return rows;
+  const step = Math.ceil(rows.length / maxRows);
+  return rows.filter((_, index) => index % step === 0).slice(0, maxRows);
+};
+
 
 const DeckGLOverlay = ({
   onHover,
@@ -125,7 +135,8 @@ const DeckGLOverlay = ({
     if (!overlayRef.current) {
       overlayRef.current = new GoogleMapsOverlay({ 
         interleaved: false,
-        glOptions: { preserveDrawingBuffer: true } 
+        // Keep WebGL memory bounded. preserveDrawingBuffer causes large persistent buffers.
+        glOptions: { preserveDrawingBuffer: false }
       });
     }
 
@@ -180,26 +191,35 @@ const DeckGLOverlay = ({
   }, [map, isValidMapInstance, canAttachOverlay]);
 
   const handlePrimaryClick = useCallback((info) => {
-    if (info.object && onClick) onClick(info.index, info.object);
+    if (!onClick || !info?.object) return;
+    onClick(info.index, info.object.source ?? info.object);
   }, [onClick]);
 
   const handleNeighborClick = useCallback((info) => {
-    if (info.object && onNeighborClick) onNeighborClick(info.object);
+    if (!onNeighborClick || !info?.object) return;
+    onNeighborClick(info.object.source ?? info.object);
   }, [onNeighborClick]);
 
   const handleImageLogClick = useCallback((info) => {
-    if (info.object && onImageLogClick) onImageLogClick(info.object);
+    if (!onImageLogClick || !info?.object) return;
+    onImageLogClick(info.object.source ?? info.object);
   }, [onImageLogClick]);
 
-  // Pre-compute colors in memo to avoid repeat parsing
-  // In src/components/maps/DeckGLOverlay.jsx
+  const handlePrimaryHover = useCallback((info) => {
+    if (!onHover) return;
+    if (info?.object?.source) {
+      onHover({ ...info, object: info.object.source });
+      return;
+    }
+    onHover(info);
+  }, [onHover]);
 
   const primaryData = useMemo(() => {
     if (!showPrimaryLogs || !locations?.length) return [];
-    return locations.map((loc, idx) => ({
-      ...loc,
+    const sampled = downsample(locations, MAX_PRIMARY_RENDER_POINTS);
+    return sampled.map((loc, idx) => ({
       index: idx,
-      // Safely check all coordinate naming conventions
+      source: loc,
       position: [
         parseFloat(loc.lng ?? loc.longitude ?? loc.lon ?? loc.Lng ?? 0), 
         parseFloat(loc.lat ?? loc.latitude ?? loc.Lat ?? 0)
@@ -208,15 +228,12 @@ const DeckGLOverlay = ({
     }));
   }, [locations, showPrimaryLogs, getColor]);
 
-  useEffect(() => {
-    console.log("[DEBUG] DeckGLOverlay primaryData:", primaryData?.length || 0);
-  }, [primaryData]);
-
   const neighborData = useMemo(() => {
     if (!showNeighbors || !neighbors?.length) return [];
-    return neighbors.map((n, idx) => ({
-      ...n,
+    const sampled = downsample(neighbors, MAX_NEIGHBOR_RENDER_POINTS);
+    return sampled.map((n, idx) => ({
       index: idx,
+      source: n,
       polygon: getSquarePolygon(n.lat, n.lng, neighborSquareSize),
       // ✅ Use new robust parser
       computedColor: getNeighborColor ? parseColorToRGB(getNeighborColor(n)) : [139, 92, 246, 180],
@@ -226,15 +243,17 @@ const DeckGLOverlay = ({
   const imageLogData = useMemo(() => {
     if (!showImageLogs || !imageLogs?.length) return [];
 
-    return imageLogs
+    const sampled = downsample(imageLogs, MAX_IMAGE_RENDER_POINTS);
+
+    return sampled
       .map((log, idx) => {
         const lat = Number(log?.lat ?? log?.latitude ?? log?.Lat);
         const lng = Number(log?.lng ?? log?.longitude ?? log?.lon ?? log?.Lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
         return {
-          ...log,
           index: idx,
+          source: log,
           position: [lng, lat],
         };
       })
@@ -280,7 +299,7 @@ const DeckGLOverlay = ({
         opacity,
         pickable,
         autoHighlight,
-        onHover: onHover,
+        onHover: handlePrimaryHover,
         onClick: handlePrimaryClick,
         updateTriggers: {
           getFillColor: [getColor],
@@ -293,7 +312,7 @@ const DeckGLOverlay = ({
           id: 'primary-logs-text-layer',
           data: primaryData,
           getPosition: d => d.position,
-          getText: d => d.num_cells ? String(d.num_cells) : '',
+          getText: d => d.source?.num_cells ? String(d.source.num_cells) : '',
           getSize: 14,
           getColor: [0, 0, 0, 255],
           getTextAnchor: 'middle',
@@ -329,7 +348,7 @@ const DeckGLOverlay = ({
     } catch (e) {
       // Overlay can detach during map teardown; skip this update.
     }
-  }, [map, primaryData, neighborData, imageLogData, showPrimaryLogs, showNeighbors, showImageLogs, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor, handleImageLogClick, isValidMapInstance]);
+  }, [map, primaryData, neighborData, imageLogData, showPrimaryLogs, showNeighbors, showImageLogs, selectedIndex, radius, radiusMinPixels, radiusMaxPixels, opacity, neighborOpacity, showNumCells, getColor, getNeighborColor, handleImageLogClick, handlePrimaryHover, isValidMapInstance]);
 
   useEffect(() => {
     return () => {

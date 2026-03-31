@@ -319,6 +319,8 @@ const UnifiedMapSidebar = ({
   pciTransitions,
   siteToggle,
   setSiteToggle,
+  sitePredictionVersion = "original",
+  setSitePredictionVersion,
   modeMethod,
   setModeMethod,
   projectId,
@@ -344,10 +346,6 @@ const UnifiedMapSidebar = ({
   setPolygonSource,
   onlyInsidePolygons,
   polygonCount,
-  showSiteMarkers,
-  setShowSiteMarkers,
-  showSiteSectors,
-  setShowSiteSectors,
   loading,
   reloadData,
   isZoomLocked = false,
@@ -711,18 +709,23 @@ const UnifiedMapSidebar = ({
                   ]}
                 />
 
-                <div className="space-y-2 pt-2">
-                  <ToggleRow
-                    label="Show Markers"
-                    checked={showSiteMarkers}
-                    onChange={setShowSiteMarkers}
-                  />
-                  <ToggleRow
-                    label="Show Sectors"
-                    checked={showSiteSectors}
-                    onChange={setShowSiteSectors}
-                  />
-                </div>
+                {siteToggle === "Cell" && (
+                  <div className="space-y-1.5 pt-2">
+                    <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
+                      <ArrowLeftRight className="w-3 h-3" /> Cell Version
+                    </Label>
+                    <SegmentedControl
+                      value={sitePredictionVersion}
+                      onChange={(nextValue) =>
+                        setSitePredictionVersion?.(nextValue)
+                      }
+                      options={[
+                        { value: "original", label: "Baselined" },
+                        { value: "updated", label: "Optimized" },
+                      ]}
+                    />
+                  </div>
+                )}
 
                 <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-2">
                   <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">

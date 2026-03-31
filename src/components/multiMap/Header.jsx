@@ -21,6 +21,8 @@ export default function Header({
   thresholds,
   metchOnly = false,
   onMetchOnlyChange,
+  displayMode = "logs",
+  onDisplayModeChange,
   ui,
   onUIChange,
 }) {
@@ -91,6 +93,31 @@ export default function Header({
 
       <div className="flex items-center gap-3">
         <DrawingControlsPanel position="relative" onUIChange={onUIChange} ui={ui} />
+        <div className="flex items-center gap-2 rounded bg-slate-700 px-2 py-1">
+          <button
+            type="button"
+            onClick={() => onDisplayModeChange?.("logs")}
+            className={`rounded px-2 py-1 text-xs font-semibold ${
+              displayMode === "logs"
+                ? "bg-blue-600 text-white"
+                : "bg-transparent text-slate-200 hover:bg-slate-600"
+            }`}
+          >
+            Logs
+          </button>
+          <button
+            type="button"
+            onClick={() => onDisplayModeChange?.("site")}
+            className={`rounded px-2 py-1 text-xs font-semibold ${
+              displayMode === "site"
+                ? "bg-blue-600 text-white"
+                : "bg-transparent text-slate-200 hover:bg-slate-600"
+            }`}
+          >
+            Site
+          </button>
+        </div>
+
         {/* Navigation Buttons */}
         <Button
           size="sm"

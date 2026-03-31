@@ -33,27 +33,28 @@ function computeOffset(center, distanceMeters, headingDegrees) {
 }
 
 function getSiteId(site) {
-  return String(
-    site?.site_key_inferred ||
-      site?.siteKeyInferred ||
-      site?.site ||
-      site?.site_id ||
-      site?.siteId ||
-      site?.nodeb_id ||
-      site?.nodebId ||
-      site?.id ||
+  return normalizeComparableSiteId(
+    site?.site ??
+      site?.site_id ??
+      site?.siteId ??
+      site?.site_key_inferred ??
+      site?.siteKeyInferred ??
+      site?.nodeb_id ??
+      site?.nodebId ??
+      site?.id ??
       "",
-  ).trim();
+  );
 }
 
 function getSiteName(site) {
   return String(
     site?.site_name ||
       site?.siteName ||
-      site?.site_key_inferred ||
-      site?.siteKeyInferred ||
       site?.site ||
       site?.site_id ||
+      site?.siteId ||
+      site?.site_key_inferred ||
+      site?.siteKeyInferred ||
       "Unknown",
   ).trim();
 }
@@ -130,9 +131,9 @@ function extractNodebId(source) {
     "gnodeb",
     "gnodeb_id",
     "g_nodeb",
-    "site",
     "site_id",
     "siteId",
+    "site",
     "site_key_inferred",
     "siteKeyInferred",
     "cell_id_representative",
@@ -163,6 +164,180 @@ function inferTechnologyFromCarrier(technologyValue, earfcnValue) {
   }
   return "Unknown";
 }
+
+function getFirstFiniteNumber(values = [], fallback = 0) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return fallback;
+}
+
+function normalizeBeamwidth(value, fallback = 65) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.max(5, Math.min(180, numeric));
+}
+
+function normalizeSectorRange(value, fallback = 220) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.max(20, Math.min(5000, numeric));
+}
+
+function normalizeBaselineLteMetric(metric) {
+  const raw = String(metric || "rsrp").trim().toLowerCase();
+  if (raw === "rsrq") return "RSRQ";
+  if (raw === "sinr" || raw === "snr") return "SINR";
+  return "RSRP";
+}
+
+function normalizeLteRows(rawRows = [], fallbackSiteId = "", selectedMetric = "rsrp") {
+  if (!Array.isArray(rawRows)) return [];
+  const metricLower = String(selectedMetric || "rsrp").trim().toLowerCase();
+  const metricCandidates =
+    metricLower === "rsrq"
+      ? ["reference_signal_quality", "rsrq"]
+      : metricLower === "sinr" || metricLower === "snr"
+        ? ["signal_to_noise_ratio", "sinr", "snr"]
+        : ["reference_signal_power", "rsrp"];
+  const genericCandidates = [
+    "value",
+    "Value",
+    "measured",
+    "measured_value",
+    "metric_value",
+    "avg_value",
+    metricLower,
+    metricLower.toUpperCase(),
+  ];
+
+  return rawRows
+    .map((item) => {
+      const lat = Number(
+        item?.lat ??
+          item?.latitude ??
+          item?.Lat ??
+          item?.Latitude ??
+          item?.LATITUDE,
+      );
+      const lng = Number(
+        item?.lng ??
+          item?.lon ??
+          item?.longitude ??
+          item?.Lng ??
+          item?.Lon ??
+          item?.Longitude ??
+          item?.LONGITUDE,
+      );
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+      let rawValue = item?.value;
+      if (rawValue === undefined || rawValue === null) {
+        const allCandidates = [...metricCandidates, ...genericCandidates];
+        for (const key of allCandidates) {
+          if (Object.prototype.hasOwnProperty.call(item, key)) {
+            rawValue = item[key];
+            break;
+          }
+        }
+      }
+      if (rawValue === undefined || rawValue === null) {
+        const metricHint = metricLower.replace(/[^a-z0-9]/g, "");
+        const hintedKey = Object.keys(item || {}).find((k) =>
+          String(k || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "")
+            .includes(metricHint),
+        );
+        if (hintedKey) rawValue = item[hintedKey];
+      }
+
+      const value = Number(rawValue);
+      const sampleCount = Number(item?.sampleCount ?? item?.sample_count ?? 1);
+      const siteId = String(item?.siteId ?? item?.site_id ?? item?.site ?? fallbackSiteId ?? "").trim();
+
+      return {
+        ...item,
+        lat,
+        lng,
+        latitude: lat,
+        longitude: lng,
+        value: Number.isFinite(value) ? value : null,
+        sampleCount: Number.isFinite(sampleCount) ? sampleCount : 1,
+        siteId,
+      };
+    })
+    .filter(Boolean);
+}
+
+function computeDistanceMeters(a, b) {
+  const lat1 = Number(a?.lat);
+  const lng1 = Number(a?.lng);
+  const lat2 = Number(b?.lat);
+  const lng2 = Number(b?.lng);
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return Number.POSITIVE_INFINITY;
+
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const earthRadius = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const aa =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+  return earthRadius * c;
+}
+
+function dedupeLteRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const seen = new Set();
+  const deduped = [];
+  rows.forEach((row) => {
+    const key = [
+      Number(row?.lat).toFixed(6),
+      Number(row?.lng).toFixed(6),
+      Number.isFinite(Number(row?.value)) ? Number(row.value).toFixed(2) : "na",
+      String(row?.siteId || "").trim(),
+    ].join("|");
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(row);
+  });
+  return deduped;
+}
+
+const MAX_SITE_LTE_POINTS = 3000;
+const LTE_FALLBACK_RADIUS_METERS = 3000;
+const MAX_RENDERED_LTE_MARKERS = 700;
+
+function downsampleRows(rows = [], maxCount = MAX_RENDERED_LTE_MARKERS) {
+  if (!Array.isArray(rows) || rows.length <= maxCount) return Array.isArray(rows) ? rows : [];
+  const stride = Math.ceil(rows.length / maxCount);
+  const sampled = [];
+  for (let i = 0; i < rows.length; i += stride) {
+    sampled.push(rows[i]);
+  }
+  if (sampled.length > maxCount) sampled.length = maxCount;
+  return sampled;
+}
+
+function isSiteLteDebugEnabled() {
+  if (typeof window === "undefined") return false;
+  try {
+    const queryValue = new URLSearchParams(window.location.search)
+      .get("debugSiteLte")
+      ?.toLowerCase();
+    const localValue = String(window.localStorage.getItem("debug.siteLte") || "").toLowerCase();
+    return queryValue === "1" || queryValue === "true" || localValue === "1" || localValue === "true";
+  } catch {
+    return false;
+  }
+}
+
+const MIN_TRIANGLE_SCALE_MULTIPLIER = 0.25;
+const MAX_TRIANGLE_SCALE_MULTIPLIER = 3;
+const TRIANGLE_SCALE_STEP = 0.25;
 
 const NUMERIC_FIELD_HINTS = new Set([
   "site",
@@ -281,6 +456,22 @@ function convertFormValueForApi(key, rawValue, originalValue) {
   return value;
 }
 
+function extractApiErrorDetails(error) {
+  const parts = [];
+  const primary = String(error?.message || "").trim();
+  const details = String(error?.data?.Details || error?.Details || "").trim();
+  const failedId = error?.data?.FailedId ?? error?.FailedId ?? null;
+
+  if (primary) parts.push(primary);
+  if (details && !parts.some((entry) => entry.includes(details))) {
+    parts.push(`Details: ${details}`);
+  }
+  if (failedId !== null && failedId !== undefined && failedId !== "") {
+    parts.push(`FailedId: ${failedId}`);
+  }
+  return parts.filter(Boolean).join(" | ");
+}
+
 function pickValueByAliases(source, aliases = []) {
   for (const alias of aliases) {
     if (Object.prototype.hasOwnProperty.call(source, alias)) {
@@ -297,11 +488,11 @@ function normalizeSiteRows(rows = []) {
     .map((item, index) => ({
       ...item,
       site:
-        item.site_key_inferred ||
-        item.siteKeyInferred ||
         item.site ||
         item.site_id ||
         item.siteId ||
+        item.site_key_inferred ||
+        item.siteKeyInferred ||
         item.site_name ||
         item.siteName ||
         item.nodeb_id ||
@@ -311,9 +502,12 @@ function normalizeSiteRows(rows = []) {
         `site_${index}`,
       lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
       lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
-      azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth_deg_5_soft || item.azimuth || 0),
-      beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
-      range: parseFloat(item.range || item.radius || 220),
+      azimuth: getFirstFiniteNumber([item.azimuth_deg_5, item.azimuth_deg_5_soft, item.azimuth], 0),
+      beamwidth: normalizeBeamwidth(
+        getFirstFiniteNumber([item.bw, item.beamwidth, item.beamwidth_deg_est], 65),
+        65,
+      ),
+      range: normalizeSectorRange(getFirstFiniteNumber([item.range, item.radius], 220), 220),
       operator: item.network || item.Network || item.operator || item.cluster || "Unknown",
       band: item.band || item.frequency_band || item.frequency || "Unknown",
       technology: inferTechnologyFromCarrier(
@@ -334,37 +528,61 @@ function normalizeSiteRows(rows = []) {
       nodebId:
         extractNodebId(item) ??
         normalizeMatchValue(
-          item.site_key_inferred ??
-            item.site ??
+          item.site ??
             item.site_id ??
             item.siteId ??
+            item.site_key_inferred ??
             item.site_name ??
             item.cell_id_representative,
         ),
+      id:
+        item.original_id ??
+        item.id ??
+        item.cell_id ??
+        item.cell_id_representative ??
+        item.site ??
+        item.site_key_inferred ??
+        index,
     }))
     .filter((item) => item.lat !== 0 && Number.isFinite(item.lat) && Number.isFinite(item.lng));
 }
 
-function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
+function generateSectorsFromSite(site, siteIndex, colorMode = "Operator", options = {}) {
   const sectors = [];
   const parsedSectorCount = Number(site.sector_count ?? site.sectorCount);
+  const forceSingleSector = Boolean(options?.forceSingleSector);
   const hasSingleSectorHint =
     site.sector !== undefined &&
     site.sector !== null &&
     String(site.sector).trim() !== "";
+  const hasExplicitSectorIdentity =
+    [
+      site.sector,
+      site.sector_id,
+      site.sectorId,
+      site.sec_id,
+      site.secId,
+      site.cell_id,
+      site.cellId,
+      site.cell_id_representative,
+      site.cellIdRepresentative,
+    ].some((value) => value !== undefined && value !== null && String(value).trim() !== "");
   const sectorCount =
     Number.isFinite(parsedSectorCount) && parsedSectorCount > 0
       ? parsedSectorCount
-      : hasSingleSectorHint
+      : forceSingleSector || hasSingleSectorHint || hasExplicitSectorIdentity
         ? 1
         : 3;
 
   const lat = parseFloat(site.lat ?? site.latitude ?? site.lat_pred ?? site.Lat ?? 0);
   const lng = parseFloat(site.lng ?? site.longitude ?? site.lon_pred ?? site.lon ?? site.Lng ?? 0);
 
-  const baseAzimuth = parseFloat(site.azimuth ?? site.azimuth_deg_5 ?? 0);
-  const beamwidth = parseFloat(site.beamwidth ?? site.beamwidth_deg_est ?? site.bw ?? 65);
-  const range = parseFloat(site.range ?? 220);
+  const baseAzimuth = getFirstFiniteNumber([site.azimuth, site.azimuth_deg_5, site.azimuth_deg_5_soft], 0);
+  const beamwidth = normalizeBeamwidth(
+    getFirstFiniteNumber([site.bw, site.beamwidth, site.beamwidth_deg_est], 65),
+    65,
+  );
+  const range = normalizeSectorRange(getFirstFiniteNumber([site.range, site.radius], 220), 220);
 
   const network = site.operator || site.network || site.cluster || "Unknown";
   const band = site.band || site.frequency_band || site.frequency || "Unknown";
@@ -415,11 +633,14 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator") {
   for (let i = 0; i < sectorCount; i++) {
     const azimuth = (baseAzimuth + i * azimuthSpacing) % 360;
     const siteIdPart = siteIdResolved || `site_${siteIndex}`;
-    const rowIdPart = String(site.id ?? site.cell_id ?? siteIndex);
+    const rowIdPart = String(site.id ?? site.original_id ?? site.cell_id ?? siteIndex);
     const sectorPart = String(site.sector ?? site.sector_id ?? i);
     sectors.push({
       id: `sector-${siteIdPart}-${rowIdPart}-${sectorPart}-${i}`,
-      sourceRowId: site.id != null ? Number(site.id) : null,
+      sourceRowId:
+        Number.isFinite(Number(site.id)) && Number(site.id) > 0
+          ? Number(site.id)
+          : null,
       rawSite: site,
       lat,
       lng,
@@ -455,6 +676,7 @@ const NetworkPlannerMap = ({
   radius = 120,
   projectId,
   siteToggle = "NoML",
+  sitePredictionVersion = "original",
   enableSiteToggle = true,
   showSiteMarkers = true,
   showSiteSectors = true,
@@ -470,10 +692,15 @@ const NetworkPlannerMap = ({
   thresholds = {},
   getMetricColor = null,
   onSiteSelect = null,
+  enableSiteLteOverlay = false,
+  singleSiteSelection = false,
+  showBulkSiteActions = true,
 }) => {
+  const siteLteDebugEnabled = useMemo(() => isSiteLteDebugEnabled(), []);
   const { siteData, loading, error, fetchSiteData } = useSiteData({
     enableSiteToggle,
     siteToggle,
+    sitePredictionVersion,
     projectId,
     autoFetch: true,
     filterEnabled: onlyInsidePolygons,
@@ -496,6 +723,21 @@ const NetworkPlannerMap = ({
   const [dragMode, setDragMode] = useState(null); // "sector" | "site" | null
   const [pendingMovePosition, setPendingMovePosition] = useState(null);
   const [isApplyingDraggedMove, setIsApplyingDraggedMove] = useState(false);
+  const [triangleScaleMultiplier, setTriangleScaleMultiplier] = useState(1);
+
+  const effectiveSectorScale = useMemo(() => {
+    const baseScaleRaw = Number(options?.scale);
+    const baseScale =
+      Number.isFinite(baseScaleRaw) && baseScaleRaw > 0 ? baseScaleRaw : 1;
+    const multiplierRaw = Number(triangleScaleMultiplier);
+    const multiplier = Number.isFinite(multiplierRaw)
+      ? Math.min(
+          MAX_TRIANGLE_SCALE_MULTIPLIER,
+          Math.max(MIN_TRIANGLE_SCALE_MULTIPLIER, multiplierRaw),
+        )
+      : 1;
+    return baseScale * multiplier;
+  }, [options?.scale, triangleScaleMultiplier]);
 
   const normalizedPolygonPaths = useMemo(() => {
     if (!Array.isArray(filterPolygons) || filterPolygons.length === 0) return [];
@@ -583,6 +825,40 @@ const NetworkPlannerMap = ({
   const selectedSiteIdSet = useMemo(() => new Set(selectedSiteIds), [selectedSiteIds]);
 
   useEffect(() => {
+    // Keep memory bounded by retaining cache only for currently selected site ids.
+    setSelectedSiteDataById((prev) => {
+      if (!prev || Object.keys(prev).length === 0) return prev;
+      const keep = new Set(selectedSiteIds);
+      let changed = false;
+      const next = {};
+      Object.keys(prev).forEach((siteId) => {
+        if (keep.has(siteId)) {
+          next[siteId] = prev[siteId];
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    const keep = new Set(selectedSiteIds);
+    let pruned = false;
+    Object.keys(siteFetchTokenRef.current || {}).forEach((siteId) => {
+      if (!keep.has(siteId)) {
+        delete siteFetchTokenRef.current[siteId];
+        pruned = true;
+      }
+    });
+    if (pruned || keep.size === 0) {
+      setLoadingSitesQueue((prev) => {
+        if (!(prev instanceof Set) || prev.size === 0) return prev;
+        const next = new Set([...prev].filter((siteId) => keep.has(siteId)));
+        return next.size === prev.size ? prev : next;
+      });
+    }
+  }, [selectedSiteIds]);
+
+  useEffect(() => {
     if (onDataLoaded) {
       onDataLoaded(siteData, loading);
     }
@@ -630,8 +906,13 @@ const NetworkPlannerMap = ({
   }, [siteData, onlyInsidePolygons, normalizedPolygonPaths, pointInsideAnyPolygon]);
 
   const allSectors = useMemo(
-    () => filteredSiteData.flatMap((site, idx) => generateSectorsFromSite(site, idx, colorMode)),
-    [filteredSiteData, colorMode],
+    () =>
+      filteredSiteData.flatMap((site, idx) =>
+        generateSectorsFromSite(site, idx, colorMode, {
+          forceSingleSector: String(siteToggle || "").toLowerCase() === "cell",
+        }),
+      ),
+    [filteredSiteData, colorMode, siteToggle],
   );
 
   const uniqueSectors = useMemo(() => {
@@ -682,7 +963,21 @@ const NetworkPlannerMap = ({
 
   const fetchSitePayload = useCallback(
     async (siteMarker) => {
-      const baseParams = { projectId: projectId || "" };
+      const normalizedVersion =
+        String(sitePredictionVersion || "original").toLowerCase() === "updated"
+          ? "updated"
+          : "original";
+      const normalizedSiteId = normalizeComparableSiteId(siteMarker?.siteId);
+      const debug = {
+        siteId: String(siteMarker?.siteId || ""),
+        version: normalizedVersion,
+        lte: {
+          attempts: [],
+          selectedAttempt: null,
+          finalRows: 0,
+        },
+      };
+      const baseParams = { projectId: projectId || "", version: normalizedVersion };
       const candidateParams = [
         { ...baseParams, siteId: siteMarker.siteId },
         { ...baseParams, site_id: siteMarker.siteId },
@@ -691,53 +986,181 @@ const NetworkPlannerMap = ({
       ];
 
       let rows = [];
+      let siteFetchFailed = false;
       for (const params of candidateParams) {
         try {
           const res = await mapViewApi.getSitePrediction(params);
           const rawRows = res?.Data || res?.data?.Data || res?.data || [];
           const normalizedAll = normalizeSiteRows(rawRows);
           const normalizedMatch = normalizedAll.filter(
-            (r) => getSiteId(r) === siteMarker.siteId,
+            (r) => normalizeComparableSiteId(getSiteId(r)) === normalizedSiteId,
           );
 
           if (normalizedMatch.length > 0) {
             rows = normalizedMatch;
             break;
           }
-          if (normalizedAll.length > 0) {
+          if (normalizedAll.length === 1) {
             rows = normalizedAll;
             break;
           }
         } catch {
-          toast.error("Failed to fetch site data");
-          
+          siteFetchFailed = true;
         }
       }
 
       if (rows.length === 0) {
-        rows = filteredSiteData.filter((r) => getSiteId(r) === siteMarker.siteId);
+        rows = filteredSiteData.filter(
+          (r) => normalizeComparableSiteId(getSiteId(r)) === normalizedSiteId,
+        );
+      }
+      if (rows.length === 0 && siteFetchFailed) {
+        toast.error("Failed to fetch site data");
       }
 
       const sectors = rows
-        .flatMap((site, idx) => generateSectorsFromSite(site, idx, colorMode))
+        .flatMap((site, idx) =>
+          generateSectorsFromSite(site, idx, colorMode, {
+            forceSingleSector: String(siteToggle || "").toLowerCase() === "cell",
+          }),
+        )
         .filter((s) => pointInsideAnyPolygon({ lat: s.lat, lng: s.lng }));
 
-      return { sectors, lteRows: [] };
+      let lteRows = [];
+      if (enableSiteLteOverlay && Number(projectId) > 0) {
+        const lteFetchFn =
+          normalizedVersion === "updated"
+            ? mapViewApi.getLtePredictionLocationStatsRefined
+            : mapViewApi.getLtePfrection;
+        const effectiveMetric =
+          normalizedVersion === "updated"
+            ? "MEASURED"
+            : normalizeBaselineLteMetric(selectedMetric);
+        const lteBaseParams = {
+          projectId: Number(projectId),
+          metric: effectiveMetric,
+          statType: "avg",
+          stat: "avg",
+        };
+        const lteCandidateParams = [
+          { ...lteBaseParams, siteId: String(siteMarker.siteId || "").trim() },
+          { ...lteBaseParams, site: String(siteMarker.siteId || "").trim() },
+          { ...lteBaseParams, site_id: String(siteMarker.siteId || "").trim() },
+        ];
+
+        for (const lteParams of lteCandidateParams) {
+          const paramKey = Object.prototype.hasOwnProperty.call(lteParams, "siteId")
+            ? "siteId"
+            : Object.prototype.hasOwnProperty.call(lteParams, "site")
+              ? "site"
+              : "site_id";
+          const attempt = {
+            paramKey,
+            rawRows: 0,
+            normalizedRows: 0,
+            withSiteRows: 0,
+            strictMatchedRows: 0,
+            fallbackMatchedRows: 0,
+            polygonFilteredRows: 0,
+            finalRows: 0,
+            error: "",
+          };
+          try {
+            const lteRes = await lteFetchFn(lteParams);
+            const rawLteRows = lteRes?.Data || lteRes?.data?.Data || lteRes?.data || [];
+            attempt.rawRows = Array.isArray(rawLteRows) ? rawLteRows.length : 0;
+            if (!Array.isArray(rawLteRows) || rawLteRows.length === 0) continue;
+            const normalizedLte = normalizeLteRows(rawLteRows, siteMarker.siteId, selectedMetric);
+            attempt.normalizedRows = normalizedLte.length;
+            if (!normalizedLte.length) continue;
+
+            const withSite = normalizedLte.filter((row) => String(row.siteId || "").trim() !== "");
+            attempt.withSiteRows = withSite.length;
+            const strictMatchedRows =
+              withSite.length > 0
+                ? withSite.filter(
+                    (row) => normalizeComparableSiteId(row.siteId) === normalizedSiteId,
+                  )
+                : [];
+            attempt.strictMatchedRows = strictMatchedRows.length;
+            let matchedRows = strictMatchedRows;
+
+            // Some backend responses omit site id in each point. In that case, infer by proximity
+            // and avoid storing project-wide payloads for every selected site.
+            if (matchedRows.length === 0 && withSite.length === 0) {
+              const byDistance = normalizedLte.filter(
+                (row) =>
+                  computeDistanceMeters(
+                    { lat: row.lat, lng: row.lng },
+                    { lat: siteMarker.lat, lng: siteMarker.lng },
+                  ) <= LTE_FALLBACK_RADIUS_METERS,
+              );
+              if (byDistance.length > 0 && byDistance.length < normalizedLte.length) {
+                matchedRows = byDistance;
+              } else if (normalizedLte.length <= 250) {
+                matchedRows = normalizedLte;
+              } else {
+                matchedRows = [];
+              }
+            }
+            attempt.fallbackMatchedRows = matchedRows.length;
+            if (matchedRows.length === 0) continue;
+
+            const lteRowsInsidePolygon = matchedRows.filter((row) =>
+              pointInsideAnyPolygon({ lat: row.lat, lng: row.lng }),
+            );
+            attempt.polygonFilteredRows = lteRowsInsidePolygon.length;
+            lteRows = dedupeLteRows(
+              lteRowsInsidePolygon.length > 0 || !onlyInsidePolygons
+                ? lteRowsInsidePolygon
+                : matchedRows,
+            ).slice(0, MAX_SITE_LTE_POINTS);
+            attempt.finalRows = lteRows.length;
+            debug.lte.attempts.push(attempt);
+            if (lteRows.length > 0) break;
+          } catch {
+            attempt.error = "fetch-failed";
+            debug.lte.attempts.push(attempt);
+            continue;
+          }
+        }
+      }
+      debug.lte.selectedAttempt = debug.lte.attempts.find((entry) => entry.finalRows > 0) || null;
+      debug.lte.finalRows = lteRows.length;
+
+      return { sectors, lteRows, debug };
     },
-    [projectId, filteredSiteData, colorMode, selectedMetric, pointInsideAnyPolygon],
+    [
+      projectId,
+      sitePredictionVersion,
+      filteredSiteData,
+      colorMode,
+      selectedMetric,
+      pointInsideAnyPolygon,
+      siteToggle,
+      enableSiteLteOverlay,
+    ],
   );
 
   const loadSiteData = useCallback(
     async (siteMarker, forceRefresh = false) => {
       if (!siteMarker?.siteId) return;
       const siteId = siteMarker.siteId;
+      if (siteFetchTokenRef.current[siteId] && !forceRefresh) return;
       const metricKey = String(selectedMetric || "rsrp").toLowerCase();
+      const versionKey =
+        String(sitePredictionVersion || "original").toLowerCase() === "updated"
+          ? "updated"
+          : "original";
+      const overlayKey = enableSiteLteOverlay ? "site-lte-on" : "site-lte-off";
       const cached = selectedSiteDataById[siteId];
       if (
         !forceRefresh &&
         cached &&
         cached.metricKey === metricKey &&
-        cached.colorMode === colorMode
+        cached.colorMode === colorMode &&
+        cached.versionKey === versionKey &&
+        cached.overlayKey === overlayKey
       ) {
         return;
       }
@@ -751,7 +1174,7 @@ const NetworkPlannerMap = ({
       });
 
       try {
-        const { sectors, lteRows } = await fetchSitePayload(siteMarker);
+        const { sectors, lteRows, debug } = await fetchSitePayload(siteMarker);
         if (!mountedRef.current) return;
         if (siteFetchTokenRef.current[siteId] !== token) return;
 
@@ -763,6 +1186,10 @@ const NetworkPlannerMap = ({
             lteRows,
             metricKey,
             colorMode,
+            versionKey,
+            overlayKey,
+            hydrated: true,
+            debug,
           },
         }));
       } finally {
@@ -778,7 +1205,14 @@ const NetworkPlannerMap = ({
         }
       }
     },
-    [colorMode, fetchSitePayload, selectedMetric, selectedSiteDataById],
+    [
+      colorMode,
+      fetchSitePayload,
+      selectedMetric,
+      selectedSiteDataById,
+      sitePredictionVersion,
+      enableSiteLteOverlay,
+    ],
   );
 
   const handleSiteMarkerClick = useCallback(
@@ -790,30 +1224,48 @@ const NetworkPlannerMap = ({
       if (selectedSiteIdSet.has(siteId)) {
         const nextIds = selectedSiteIds.filter((id) => id !== siteId);
         setSelectedSiteIds(nextIds);
+        setSelectedSiteDataById((prev) => {
+          if (!prev || !Object.prototype.hasOwnProperty.call(prev, siteId)) return prev;
+          const next = { ...prev };
+          delete next[siteId];
+          return next;
+        });
         if (onSiteSelect) onSiteSelect(nextIds);
         return;
       }
 
-      const nextIds = [...selectedSiteIds, siteId];
+      const nextIds = singleSiteSelection ? [siteId] : [...selectedSiteIds, siteId];
       setSelectedSiteIds(nextIds);
       if (onSiteSelect) onSiteSelect(nextIds);
-      await loadSiteData(siteMarker);
+      await loadSiteData(siteMarker, Boolean(singleSiteSelection));
     },
-    [loadSiteData, selectedSiteIdSet, selectedSiteIds, onSiteSelect],
+    [loadSiteData, selectedSiteIdSet, selectedSiteIds, onSiteSelect, singleSiteSelection],
   );
 
   const handleSelectAllSites = useCallback(async () => {
     if (!Array.isArray(siteMarkers) || siteMarkers.length === 0) return;
     setSelectedSectorInfo(null);
+    if (singleSiteSelection) {
+      const firstSite = siteMarkers[0];
+      if (!firstSite?.siteId) return;
+      const nextIds = [firstSite.siteId];
+      setSelectedSiteIds(nextIds);
+      if (onSiteSelect) onSiteSelect(nextIds);
+      await loadSiteData(firstSite, true);
+      return;
+    }
     const allIds = siteMarkers.map((site) => site.siteId);
     setSelectedSiteIds(allIds);
     if (onSiteSelect) onSiteSelect(allIds);
     await Promise.all(siteMarkers.map((site) => loadSiteData(site)));
-  }, [loadSiteData, siteMarkers, onSiteSelect]);
+  }, [loadSiteData, siteMarkers, onSiteSelect, singleSiteSelection]);
 
   const handleClearSelectedSites = useCallback(() => {
     setSelectedSectorInfo(null);
     setSelectedSiteIds([]);
+    setSelectedSiteDataById({});
+    siteFetchTokenRef.current = {};
+    setLoadingSitesQueue(new Set());
     if (onSiteSelect) onSiteSelect([]);
   }, [onSiteSelect]);
 
@@ -825,13 +1277,34 @@ const NetworkPlannerMap = ({
     selectedSiteIds.forEach((siteId) => {
       const siteMarker = siteById.get(siteId);
       if (!siteMarker) return;
+      if (siteFetchTokenRef.current[siteId]) return;
       const cached = selectedSiteDataById[siteId];
       const metricKey = String(selectedMetric || "rsrp").toLowerCase();
-      if (!cached || cached.metricKey !== metricKey || cached.colorMode !== colorMode) {
-        void loadSiteData(siteMarker, true);
+      const versionKey =
+        String(sitePredictionVersion || "original").toLowerCase() === "updated"
+          ? "updated"
+          : "original";
+      const overlayKey = enableSiteLteOverlay ? "site-lte-on" : "site-lte-off";
+      if (
+        !cached ||
+        cached.metricKey !== metricKey ||
+        cached.colorMode !== colorMode ||
+        cached.versionKey !== versionKey ||
+        cached.overlayKey !== overlayKey
+      ) {
+        void loadSiteData(siteMarker, Boolean(cached));
       }
     });
-  }, [colorMode, loadSiteData, selectedMetric, selectedSiteDataById, selectedSiteIds, siteMarkers]);
+  }, [
+    colorMode,
+    loadSiteData,
+    selectedMetric,
+    selectedSiteDataById,
+    selectedSiteIds,
+    siteMarkers,
+    sitePredictionVersion,
+    enableSiteLteOverlay,
+  ]);
 
   const selectedSiteSectors = useMemo(() => {
     if (!Array.isArray(selectedSiteIds) || selectedSiteIds.length === 0) return [];
@@ -864,10 +1337,36 @@ const NetworkPlannerMap = ({
     );
   }, [selectedSiteDataById, selectedSiteIds]);
 
+  const selectedSiteLteDebugRows = useMemo(() => {
+    if (!siteLteDebugEnabled || !Array.isArray(selectedSiteIds) || selectedSiteIds.length === 0) return [];
+    return selectedSiteIds.map((siteId) => {
+      const debug = selectedSiteDataById[siteId]?.debug?.lte || null;
+      const selectedAttempt = debug?.selectedAttempt || null;
+      return {
+        siteId,
+        finalRows: Number(debug?.finalRows || 0),
+        attempts: Array.isArray(debug?.attempts) ? debug.attempts.length : 0,
+        paramKey: selectedAttempt?.paramKey || "none",
+        rawRows: Number(selectedAttempt?.rawRows || 0),
+        normalizedRows: Number(selectedAttempt?.normalizedRows || 0),
+        strictMatchedRows: Number(selectedAttempt?.strictMatchedRows || 0),
+      };
+    });
+  }, [selectedSiteDataById, selectedSiteIds, siteLteDebugEnabled]);
+
+  const allSelectedSitesHydrated = useMemo(() => {
+    if (!Array.isArray(selectedSiteIds) || selectedSiteIds.length === 0) return false;
+    return selectedSiteIds.every(
+      (siteId) => selectedSiteDataById[siteId]?.hydrated === true,
+    );
+  }, [selectedSiteDataById, selectedSiteIds]);
+
   const sectorsToRender = useMemo(() => {
     if (!showSiteSectors) return [];
     const source =
-      selectedSiteIds.length > 0 && selectedSiteSectors.length > 0 ? selectedSiteSectors : uniqueSectors;
+      selectedSiteIds.length > 0 && allSelectedSitesHydrated && selectedSiteSectors.length > 0
+        ? selectedSiteSectors
+        : uniqueSectors;
     const seen = new Set();
     return source.filter((sector, idx) => {
       const key =
@@ -884,7 +1383,24 @@ const NetworkPlannerMap = ({
       seen.add(key);
       return true;
     });
-  }, [showSiteSectors, selectedSiteIds, selectedSiteSectors, uniqueSectors]);
+  }, [showSiteSectors, selectedSiteIds, selectedSiteSectors, uniqueSectors, allSelectedSitesHydrated]);
+
+  const visibleSelectedSiteLteLocations = useMemo(() => {
+    if (!enableSiteLteOverlay || !Array.isArray(selectedSiteLteLocations)) return [];
+    if (!viewport) return selectedSiteLteLocations;
+    return selectedSiteLteLocations.filter(
+      (p) =>
+        Number(p.lat) >= viewport.south &&
+        Number(p.lat) <= viewport.north &&
+        Number(p.lng) >= viewport.west &&
+        Number(p.lng) <= viewport.east,
+    );
+  }, [enableSiteLteOverlay, selectedSiteLteLocations, viewport]);
+
+  const renderedSelectedSiteLteLocations = useMemo(
+    () => downsampleRows(visibleSelectedSiteLteLocations, MAX_RENDERED_LTE_MARKERS),
+    [visibleSelectedSiteLteLocations],
+  );
 
   const visibleSectors = useMemo(() => {
     if (!viewport) return sectorsToRender;
@@ -966,9 +1482,11 @@ const NetworkPlannerMap = ({
       dragMode === "site"
         ? Array.from(
             new Set(
-              allSectors
-                .filter((s) => s.siteId === selectedSectorInfo.siteId)
-                .map((s) => Number(s.sourceRowId))
+              [
+                ...(selectedSiteDataById[selectedSectorInfo.siteId]?.sectors || []),
+                ...allSectors.filter((s) => s.siteId === selectedSectorInfo.siteId),
+              ]
+                .map((s) => Number(s?.sourceRowId))
                 .filter((id) => Number.isFinite(id) && id > 0),
             ),
           )
@@ -1044,11 +1562,19 @@ const NetworkPlannerMap = ({
       await fetchSiteData();
       if (map?.panTo) map.panTo({ lat, lng });
     } catch (error) {
-      toast.error(error?.message || "Failed to update moved location.");
+      toast.error(extractApiErrorDetails(error) || "Failed to update moved location.");
     } finally {
       setIsApplyingDraggedMove(false);
     }
-  }, [selectedSectorInfo, dragMode, pendingMovePosition, allSectors, fetchSiteData, map]);
+  }, [
+    selectedSectorInfo,
+    dragMode,
+    pendingMovePosition,
+    allSectors,
+    selectedSiteDataById,
+    fetchSiteData,
+    map,
+  ]);
 
   const openSiteEditDialog = useCallback((sector) => {
     if (!sector) return;
@@ -1295,7 +1821,7 @@ const NetworkPlannerMap = ({
         }
       }
     } catch (error) {
-      toast.error(error?.message || "Failed to update site.");
+      toast.error(extractApiErrorDetails(error) || "Failed to update site.");
     } finally {
       setIsSavingSectorEdit(false);
     }
@@ -1319,16 +1845,18 @@ const NetworkPlannerMap = ({
   return (
     <>
       <div className="absolute right-3 top-3 z-[2100] flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            void handleSelectAllSites();
-          }}
-          disabled={!siteMarkers.length}
-          className="rounded bg-slate-900/90 px-2.5 py-1 text-[11px] font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Select All Sites
-        </button>
+        {showBulkSiteActions && !singleSiteSelection && (
+          <button
+            type="button"
+            onClick={() => {
+              void handleSelectAllSites();
+            }}
+            disabled={!siteMarkers.length}
+            className="rounded bg-slate-900/90 px-2.5 py-1 text-[11px] font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Select All Sites
+          </button>
+        )}
         <button
           type="button"
           onClick={handleClearSelectedSites}
@@ -1339,6 +1867,53 @@ const NetworkPlannerMap = ({
         </button>
         <div className="rounded bg-blue-600/90 px-2 py-1 text-[11px] font-semibold text-white shadow">
           {selectedSiteIds.length} selected
+        </div>
+        <div className="flex items-center gap-1 rounded bg-slate-900/90 px-2 py-1 text-[11px] font-semibold text-white shadow">
+          <span className="mr-1 text-slate-200">Triangles</span>
+          <button
+            type="button"
+            onClick={() =>
+              setTriangleScaleMultiplier((prev) =>
+                Math.max(
+                  MIN_TRIANGLE_SCALE_MULTIPLIER,
+                  Number((prev - TRIANGLE_SCALE_STEP).toFixed(2)),
+                ),
+              )
+            }
+            disabled={triangleScaleMultiplier <= MIN_TRIANGLE_SCALE_MULTIPLIER}
+            className="h-5 w-5 rounded bg-slate-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+            title="Decrease triangle size"
+          >
+            -
+          </button>
+          <span className="min-w-[44px] text-center">
+            {triangleScaleMultiplier.toFixed(2)}x
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              setTriangleScaleMultiplier((prev) =>
+                Math.min(
+                  MAX_TRIANGLE_SCALE_MULTIPLIER,
+                  Number((prev + TRIANGLE_SCALE_STEP).toFixed(2)),
+                ),
+              )
+            }
+            disabled={triangleScaleMultiplier >= MAX_TRIANGLE_SCALE_MULTIPLIER}
+            className="h-5 w-5 rounded bg-slate-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+            title="Increase triangle size"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => setTriangleScaleMultiplier(1)}
+            disabled={Math.abs(triangleScaleMultiplier - 1) < 0.001}
+            className="ml-1 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] text-white disabled:cursor-not-allowed disabled:opacity-50"
+            title="Reset triangle size"
+          >
+            Reset
+          </button>
         </div>
       </div>
 
@@ -1448,12 +2023,64 @@ const NetworkPlannerMap = ({
           Loading {loadingSitesQueue.size} site(s)...
         </div>
       )}
+      {enableSiteLteOverlay && selectedSiteIds.length > 0 && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[2100] rounded bg-slate-900/85 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md">
+          LTE points: {renderedSelectedSiteLteLocations.length}/{visibleSelectedSiteLteLocations.length}
+        </div>
+      )}
+      {siteLteDebugEnabled && enableSiteLteOverlay && selectedSiteIds.length > 0 && (
+        <div className="absolute left-3 top-20 z-[2100] max-w-[520px] rounded bg-black/80 px-3 py-2 text-[11px] text-white shadow-md">
+          <div className="font-semibold">LTE Debug</div>
+          <div className="text-slate-200">
+            selectedSites={selectedSiteIds.length} totalRows={selectedSiteLteLocations.length} visibleRows=
+            {visibleSelectedSiteLteLocations.length} renderedRows={renderedSelectedSiteLteLocations.length}
+          </div>
+          {selectedSiteLteDebugRows.map((row) => (
+            <div key={`debug-site-${row.siteId}`} className="text-slate-100">
+              site={row.siteId} final={row.finalRows} attempts={row.attempts} key={row.paramKey} raw=
+              {row.rawRows} normalized={row.normalizedRows} strictMatched={row.strictMatchedRows}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {enableSiteLteOverlay &&
+        renderedSelectedSiteLteLocations.map((point, index) => {
+          const colorRaw =
+            typeof getMetricColor === "function"
+              ? getMetricColor(point.value, selectedMetric)
+              : "#0ea5e9";
+          const pointColor =
+            typeof colorRaw === "string" && colorRaw.trim() !== ""
+              ? colorRaw
+              : "#0ea5e9";
+          const key = `site-lte-${point.siteId || "na"}-${Number(point.lat).toFixed(6)}-${Number(
+            point.lng,
+          ).toFixed(6)}-${index}`;
+
+          return (
+            <MarkerF
+              key={key}
+              position={{ lat: Number(point.lat), lng: Number(point.lng) }}
+              icon={{
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 4.5,
+                fillColor: pointColor,
+                fillOpacity: 0.95,
+                strokeColor: "#ffffff",
+                strokeWeight: 1.2,
+              }}
+              zIndex={3600}
+            />
+          );
+        })}
 
       {visibleSectors.map((sector, index) => {
         const p0 = { lat: sector.lat, lng: sector.lng };
-        const r = (sector.range || radius) * (options.scale || 1);
-        const p1 = computeOffset(p0, r, sector.azimuth - sector.beamwidth / 2);
-        const p2 = computeOffset(p0, r, sector.azimuth + sector.beamwidth / 2);
+        const r = (sector.range || radius) * effectiveSectorScale;
+        const safeBeamwidth = normalizeBeamwidth(sector.beamwidth, 65);
+        const p1 = computeOffset(p0, r, sector.azimuth - safeBeamwidth / 2);
+        const p2 = computeOffset(p0, r, sector.azimuth + safeBeamwidth / 2);
         const sectorRenderKey =
           sector.renderKey ||
           [

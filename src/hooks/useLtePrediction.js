@@ -29,11 +29,13 @@ export const useLtePrediction = ({
   projectId,
   siteId = null,
   metric = 'rsrp',
+  sitePredictionVersion = 'original',
   stat = 'avg',
   enabled = true,
   autoFetch = true,
   filterEnabled = false,
   polygons = [],
+  maxLocations = 12000,
 } = {}) => {
   const [locations, setLocations] = useState([]);
   const [meta, setMeta] = useState({
@@ -78,11 +80,24 @@ export const useLtePrediction = ({
     setError(null);
 
     try {
-      console.log(`[LTE PREDICTION FETCH] Attempting fetch for projectId: ${projectId}, siteId: ${siteId}, metric: ${metric}`);
+      const requestedMetricUpper = String(metric || '').trim().toUpperCase();
+      const allowedBaselineMetrics = new Set(['RSRP', 'RSRQ', 'SINR', 'SNR']);
+      const normalizedBaselineMetric = allowedBaselineMetrics.has(requestedMetricUpper)
+        ? (requestedMetricUpper === 'SNR' ? 'SINR' : requestedMetricUpper)
+        : 'RSRP';
+      const isOptimizedVersion =
+        String(sitePredictionVersion || 'original').trim().toLowerCase() === 'updated';
+      const effectiveMetric = isOptimizedVersion
+        ? 'MEASURED'
+        : normalizedBaselineMetric;
+      const fetchFn = isOptimizedVersion
+        ? mapViewApi.getLtePredictionLocationStatsRefined
+        : mapViewApi.getLtePfrection;
 
       const params = {
         projectId: Number(projectId),
-        metric: String(metric || '').toLowerCase(),
+        metric: effectiveMetric,
+        statType: stat,
         stat,
       };
 
@@ -91,30 +106,24 @@ export const useLtePrediction = ({
 
       if (siteId && siteId.includes(",")) {
         const ids = siteId.split(",").map(id => id.trim()).filter(Boolean);
-        const promises = ids.map(id =>
-          mapViewApi.getLtePfrection({ ...params, siteId: id }, { signal }).catch(e => null)
-        );
-        const responses = await Promise.all(promises);
-
-        responses.forEach((res) => {
+        for (const id of ids) {
+          const res = await fetchFn({ ...params, siteId: id }, { signal }).catch(() => null);
           if (res && Array.isArray(res.Data)) {
             rawData = rawData.concat(res.Data);
             if (!combinedResponse && res.Status === 1) {
               combinedResponse = res;
             }
           }
-        });
+        }
 
         if (!combinedResponse) {
           combinedResponse = { Status: 1, TotalLocations: rawData.length };
         }
-        console.log(`[LTE PREDICTION RESPONSE] MULTI-SITE`, { TotalData: rawData.length, Sample: rawData[0] });
       } else {
         if (siteId) {
           params.siteId = siteId;
         }
-        combinedResponse = await mapViewApi.getLtePfrection(params, { signal });
-        console.log(`[LTE PREDICTION RESPONSE]`, combinedResponse);
+        combinedResponse = await fetchFn(params, { signal });
         rawData = Array.isArray(combinedResponse?.Data) ? combinedResponse.Data : [];
       }
 
@@ -173,12 +182,17 @@ export const useLtePrediction = ({
           polygons.some((poly) => isPointInPolygon(pt, poly)),
         );
       }
+      const maxAllowed = Number(maxLocations);
+      if (Number.isFinite(maxAllowed) && maxAllowed > 0 && finalLocations.length > maxAllowed) {
+        const step = Math.ceil(finalLocations.length / maxAllowed);
+        finalLocations = finalLocations.filter((_, index) => index % step === 0).slice(0, maxAllowed);
+      }
 
       setLocations(finalLocations);
       setMeta({
         status: combinedResponse?.Status ?? null,
         projectId: combinedResponse?.ProjectId ?? Number(projectId),
-        metric: combinedResponse?.Metric ?? String(metric || '').toUpperCase(),
+        metric: combinedResponse?.Metric ?? effectiveMetric,
         statRequested: combinedResponse?.StatRequested ?? stat,
         totalLocations: combinedResponse?.TotalLocations ?? finalLocations.length,
       });
@@ -189,7 +203,10 @@ export const useLtePrediction = ({
       setMeta({
         status: null,
         projectId: Number(projectId) || null,
-        metric: String(metric || '').toUpperCase(),
+        metric:
+          String(sitePredictionVersion || 'original').trim().toLowerCase() === 'updated'
+            ? 'MEASURED'
+            : String(metric || '').trim().toUpperCase() || 'RSRP',
         statRequested: stat,
         totalLocations: 0,
       });
@@ -198,7 +215,7 @@ export const useLtePrediction = ({
         setLoading(false);
       }
     }
-  }, [enabled, projectId, siteId, metric, stat, filterEnabled, polygons]);
+  }, [enabled, projectId, siteId, metric, sitePredictionVersion, stat, filterEnabled, polygons, maxLocations]);
 
   useEffect(() => {
     if (!autoFetch) return;

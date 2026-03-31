@@ -1,15 +1,19 @@
 // src/components/multiMap/MapChild.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
 import { normalizeProviderName, normalizeTechName } from "@/utils/colorUtils";
 import MapwithMultipleCircle from "../unifiedMap/MapwithMultipleCircle";
+import NetworkPlannerMap from "@/components/unifiedMap/NetworkPlannerMap";
+import LtePredictionLocationLayer from "@/components/unifiedMap/LtePredictionLocationLayer";
 import MapLegend from "@/components/map/MapLegend";
 import MapChildFooter from "./MapChildFooter";
 import DrawingToolsLayer from "@/components/map/tools/DrawingToolsLayer";
 import { PolygonF } from "@react-google-maps/api";
+import { useLtePrediction } from "@/hooks/useLtePrediction";
 
 
 const EMPTY_SESSIONS = [];
+const EMPTY_POINTS = [];
 const toPoint = (item) => {
   const lat = Number(item?.lat ?? item?.latitude ?? item?.Lat);
   const lng = Number(item?.lng ?? item?.longitude ?? item?.Lng ?? item?.lon);
@@ -76,6 +80,9 @@ const MapChild = ({
   mapRole = "primary",
   onRemove,
   onRoleChange,
+  displayMode = "logs",
+  sitePredictionVersion = "original",
+  onSitePredictionVersionChange,
   thresholds,
   projectId,
   sharedPolygons = [],
@@ -89,14 +96,53 @@ const MapChild = ({
 }) => {
   const isSecondaryView = mapRole === "secondary";
   const isAllView = mapRole === "all";
+  const isSiteMode = String(displayMode || "logs").toLowerCase() === "site";
   const [metric, setMetric] = useState("rsrp");
   const [provider, setProvider] = useState("All");
   const [band, setBand] = useState("All");
   const [tech, setTech] = useState("All");
   const [legendFilter, setLegendFilter] = useState(null);
   const [mapRef, setMapRef] = useState(null);
+  const [selectedSiteIds, setSelectedSiteIds] = useState([]);
+
+  const shouldFetchSiteLtePrediction =
+    isSiteMode && Number(projectId) > 0 && selectedSiteIds.length > 0;
+
+  const {
+    locations: siteLtePredictionLocations,
+    loading: siteLtePredictionLoading,
+    error: siteLtePredictionError,
+  } = useLtePrediction({
+    projectId,
+    siteId: selectedSiteIds.join(","),
+    metric,
+    sitePredictionVersion,
+    enabled: shouldFetchSiteLtePrediction,
+    filterEnabled: false,
+    polygons: EMPTY_POINTS,
+  });
+
+  useEffect(() => {
+    if (!isSiteMode && selectedSiteIds.length > 0) {
+      setSelectedSiteIds([]);
+    }
+  }, [isSiteMode, selectedSiteIds.length]);
+
+  const handleSiteSelectionChange = useCallback((siteIds = []) => {
+    const normalized = Array.isArray(siteIds)
+      ? siteIds.map((id) => String(id ?? "").trim()).filter(Boolean)
+      : [];
+    const next = normalized.length > 0 ? [normalized[normalized.length - 1]] : [];
+    setSelectedSiteIds((prev) => {
+      if (prev.length === next.length && prev.every((id, idx) => id === next[idx])) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
 
   const filteredPrimaryData = useMemo(() => {
+    if (isSiteMode) return EMPTY_POINTS;
     if (!allLocations) return [];
     return allLocations.filter((loc) => {
       if (tech !== "All") {
@@ -113,9 +159,10 @@ const MapChild = ({
       }
       return true;
     });
-  }, [allLocations, tech, provider, band]);
+  }, [allLocations, tech, provider, band, isSiteMode]);
 
   const filteredNeighborData = useMemo(() => {
+    if (isSiteMode) return EMPTY_POINTS;
     if (!allNeighbors) return [];
     return allNeighbors.filter((neighbor) => {
       const lat = parseFloat(
@@ -145,7 +192,7 @@ const MapChild = ({
 
       return true;
     });
-  }, [allNeighbors, tech, provider, band]);
+  }, [allNeighbors, tech, provider, band, isSiteMode]);
 
   const normalizedPolygons = useMemo(() => {
     if (!Array.isArray(sharedPolygons) || sharedPolygons.length === 0) return [];
@@ -232,6 +279,14 @@ const MapChild = ({
   const footerData = displayData;
 
   const options = useMemo(() => {
+    if (isSiteMode) {
+      return {
+        tech: ["All"],
+        provs: ["All"],
+        bands: ["All"],
+      };
+    }
+
     const techSet = new Set(["All"]);
     const providerSet = new Set(["All"]);
     const bandSet = new Set(["All"]);
@@ -296,7 +351,7 @@ const MapChild = ({
       provs: Array.from(providerSet).sort(),
       bands: Array.from(bandSet).sort(),
     };
-  }, [allLocations, allNeighbors, isSecondaryView, isAllView]);
+  }, [allLocations, allNeighbors, isSecondaryView, isAllView, isSiteMode]);
 
   return (
     <div className="relative w-full h-full flex flex-col border rounded-lg bg-white shadow-sm overflow-hidden">
@@ -328,6 +383,17 @@ const MapChild = ({
             <option value="primary">Primary</option>
             <option value="secondary">Secondary</option>
           </select>
+
+          {isSiteMode && (
+            <select
+              value={sitePredictionVersion}
+              onChange={(e) => onSitePredictionVersionChange?.(id, e.target.value)}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-700 bg-white"
+            >
+              <option value="original">Baselined</option>
+              <option value="updated">Optimized</option>
+            </select>
+          )}
 
           {/* Metric Selector */}
           <select
@@ -403,11 +469,11 @@ const MapChild = ({
       >
         <MapwithMultipleCircle
           isLoaded={true}
-          locations={isSecondaryView ? [] : primaryDataForRender}
+          locations={isSiteMode ? EMPTY_POINTS : isSecondaryView ? EMPTY_POINTS : primaryDataForRender}
           selectedMetric={metric}
           thresholds={thresholds}
-          neighborData={isSecondaryView || isAllView ? neighborDataForRender : []}
-          showNeighbors={isSecondaryView || isAllView}
+          neighborData={isSiteMode ? EMPTY_POINTS : isSecondaryView || isAllView ? neighborDataForRender : EMPTY_POINTS}
+          showNeighbors={isSiteMode ? false : isSecondaryView || isAllView}
           neighborSquareSize={30}
           neighborMinSquareSize={8}
           disableDeckInteractions={drawEnabled && Boolean(drawShapeMode)}
@@ -419,30 +485,68 @@ const MapChild = ({
           showPolygonBoundary={true}
           filterPolygons={sharedPolygons}
           filterInsidePolygons={sharedPolygons.length > 0}
-          showPoints={!isSecondaryView}
+          showPoints={isSiteMode ? false : !isSecondaryView}
           legendFilter={legendFilter}
           onLoad={(map) => {
             // Keep a local map reference for drawing tools.
             setMapRef(map);
           }}
         >
-        {/* Render shared polygon visually on sibling (non-drawing) maps.
-             The draw-source map already has the native polygon from DrawingToolsLayer,
-             so we only add PolygonF on maps that are NOT currently drawing. */}
-        {!drawEnabled && normalizedPolygons.map((poly, i) => (
+        {isSiteMode && mapRef && (
+          <NetworkPlannerMap
+            projectId={projectId}
+            map={mapRef}
+            siteToggle="Cell"
+            sitePredictionVersion={sitePredictionVersion}
+            enableSiteToggle
+            showSiteMarkers
+            showSiteSectors
+            selectedMetric={metric}
+            onlyInsidePolygons={sharedPolygons.length > 0}
+            filterPolygons={sharedPolygons}
+            onSiteSelect={handleSiteSelectionChange}
+            enableSiteLteOverlay={false}
+            singleSiteSelection={true}
+            showBulkSiteActions={false}
+            colorMode="Operator"
+            options={{
+              scale: 0.6,
+              opacity: 0.6,
+            }}
+          />
+        )}
+
+        {isSiteMode && mapRef && selectedSiteIds.length > 0 && (
+          <LtePredictionLocationLayer
+            enabled={true}
+            map={mapRef}
+            locations={siteLtePredictionLocations || EMPTY_POINTS}
+            selectedMetric={metric}
+            thresholds={thresholds}
+            filterPolygons={sharedPolygons}
+            filterInsidePolygons={sharedPolygons.length > 0}
+            legendFilter={legendFilter}
+            maxPoints={4000}
+            aggregateOverlaps={true}
+          />
+        )}
+
+        {/* Always render shared polygon overlay so users can see the active filter
+            on every map, including the draw-source map. */}
+        {normalizedPolygons.map((poly, i) => (
           <PolygonF
             key={`shared-poly-${i}`}
             paths={poly.path}
             options={{
               strokeColor: "#1d4ed8",
-              strokeWeight: 2,
+              strokeWeight: 3,
               strokeOpacity: 1,
               fillColor: "#1d4ed8",
-              fillOpacity: 0.08,
+              fillOpacity: 0.05,
               clickable: false,
               editable: false,
               draggable: false,
-              zIndex: 100,
+              zIndex: 4500,
             }}
           />
         ))}
@@ -465,39 +569,52 @@ const MapChild = ({
         )}
         </MapwithMultipleCircle>
 
-        <div className="absolute top-14 right-2 z-20 pointer-events-auto">
-          <div className="scale-90 origin-top-right">
-            <MapLegend
+        {!isSiteMode && (
+          <div className="absolute top-14 right-2 z-20 pointer-events-auto">
+            <div className="scale-90 origin-top-right">
+              <MapLegend
+                thresholds={thresholds}
+                selectedMetric={metric}
+                logs={footerData}
+                activeFilter={legendFilter}
+                onFilterChange={setLegendFilter}
+                className="relative" // Added to fix positioning
+              />
+            </div>
+          </div>
+        )}
+
+        {!isSiteMode && (
+          <div>
+            <MapChildFooter
+              data={footerData}
+              metric={metric}
               thresholds={thresholds}
-              selectedMetric={metric}
-              logs={footerData}
-              activeFilter={legendFilter}
-              onFilterChange={setLegendFilter}
-              className="relative" // Added to fix positioning
             />
           </div>
-        </div>
-
-        <div>
-          <MapChildFooter
-            data={footerData}
-            metric={metric}
-            thresholds={thresholds}
-          />
-        </div>
+        )}
 
         {/* Stats Overlay */}
-        <div className="absolute bottom-2 left-2 bg-white/90 p-1 rounded text-[10px] shadow z-10">
-          Pts: {footerData.length} | Avg:{" "}
-          {footerData.length > 0
-            ? (
-                footerData.reduce(
-                  (acc, curr) => acc + (parseFloat(curr[metric]) || 0),
-                  0,
-                ) / footerData.length
-              ).toFixed(1)
-            : 0}
-        </div>
+        {!isSiteMode && (
+          <div className="absolute bottom-2 left-2 bg-white/90 p-1 rounded text-[10px] shadow z-10">
+            Pts: {footerData.length} | Avg:{" "}
+            {footerData.length > 0
+              ? (
+                  footerData.reduce(
+                    (acc, curr) => acc + (parseFloat(curr[metric]) || 0),
+                    0,
+                  ) / footerData.length
+                ).toFixed(1)
+              : 0}
+          </div>
+        )}
+
+        {isSiteMode && selectedSiteIds.length > 0 && (
+          <div className="absolute bottom-2 left-2 bg-black/80 p-1 rounded text-[10px] shadow z-20 text-white">
+            Site LTE: {siteLtePredictionLoading ? "Loading..." : `${siteLtePredictionLocations.length} points`}
+            {siteLtePredictionError ? " | error" : ""}
+          </div>
+        )}
       </div>
     </div>
   );

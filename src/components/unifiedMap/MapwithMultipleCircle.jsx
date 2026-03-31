@@ -11,6 +11,7 @@ import { normalizeProviderName, normalizeTechName, getLogColor, generateColorFro
 
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 const CSHARP_API_BASE_URL = (import.meta.env.VITE_CSHARP_API_URL || "").replace(/\/+$/, "");
+const EMPTY_ARRAY = [];
 
 const normalizeImagePath = (rawPath) => {
   if (rawPath === null || rawPath === undefined) return null;
@@ -740,14 +741,14 @@ const MapWithMultipleCircles = ({
 
   // Filter primary locations by polygon & Legend
   const locationsToRender = useMemo(() => {
-    if (!locations?.length) return [];
+    if (!locations?.length) return EMPTY_ARRAY;
     
     let filtered = locations;
 
     // A. Apply Polygon Filter — only when filtering is explicitly requested
     if (filterInsidePolygons && enablePolygonFilter) {
       // Wait for polygons to be ready before filtering — prevents flash of all points
-      if (!activePolygonsReady) return [];
+      if (!activePolygonsReady) return EMPTY_ARRAY;
       if (hasActivePolygons) {
         filtered = activePolygonChecker.filterLocations(filtered);
       }
@@ -806,10 +807,6 @@ const MapWithMultipleCircles = ({
     hasActivePolygons,
   ]);
 
-  useEffect(() => {
-    console.log("[DEBUG] MapWithMultipleCircles locationsToRender:", locationsToRender?.length || 0);
-  }, [locationsToRender]);
-
   const handleHover = useCallback((info) => {
     if (info.object) {
       onMarkerHover?.(info.object);
@@ -820,7 +817,7 @@ const MapWithMultipleCircles = ({
 
   // Process and filter neighbor data by polygon AND Legend
   const processedNeighbors = useMemo(() => {
-    if (!showNeighbors || !neighborData?.length) return [];
+    if (!showNeighbors || !neighborData?.length) return EMPTY_ARRAY;
 
     let parsed = neighborData
       .filter(n => {
@@ -1074,10 +1071,10 @@ const MapWithMultipleCircles = ({
   }, []);
 
   const showPoints = showPointsProp && !enableGrid && !areaEnabled;
-  const showImageIcons = showPointsProp;
+  const showImageIcons = showPointsProp && locationsToRender.length > 0;
 
   const imageLogs = useMemo(() => {
-    if (!showImageIcons || !locationsToRender?.length) return [];
+    if (!showImageIcons || !locationsToRender?.length) return EMPTY_ARRAY;
 
     return locationsToRender
       .filter((log) => normalizeImagePath(log?.image_path))
@@ -1090,6 +1087,11 @@ const MapWithMultipleCircles = ({
         };
       });
   }, [locationsToRender, showImageIcons]);
+
+  const shouldRenderDeckOverlay =
+    (showPoints && locationsToRender.length > 0) ||
+    (showNeighbors && processedNeighbors.length > 0) ||
+    (showImageIcons && imageLogs.length > 0);
 
   const handleImageLogClick = useCallback((log) => {
     setSelectedImageLog(log);
@@ -1118,7 +1120,7 @@ const MapWithMultipleCircles = ({
           <PolygonF
             key={`polygon-${idx}`}
             paths={path}
-            options={{ fillColor: "transparent", fillOpacity: 0, strokeColor: "#2563eb", strokeWeight: 2, strokeOpacity: 0.8, zIndex: 1,clickable: false
+            options={{ fillColor: "transparent", fillOpacity: 0, strokeColor: "#2563eb", strokeWeight: 3, strokeOpacity: 0.95, zIndex: 2500,clickable: false
 
 
              }}
@@ -1144,7 +1146,7 @@ const MapWithMultipleCircles = ({
           />
         ))}
 
-        {map && (
+        {map && shouldRenderDeckOverlay && (
           <DeckGLOverlay
             map={map}
             locations={showPoints ? locationsToRender : []}

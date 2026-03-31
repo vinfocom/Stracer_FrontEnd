@@ -2,6 +2,26 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mapViewApi } from '@/api/apiEndpoints';
 
+const getFirstFiniteNumber = (values = [], fallback = 0) => {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return fallback;
+};
+
+const normalizeBeamwidth = (value, fallback = 65) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.max(5, Math.min(180, numeric));
+};
+
+const normalizeSectorRange = (value, fallback = 220) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.max(20, Math.min(5000, numeric));
+};
+
 const isPointInPolygon = (point, polygon) => {
   const path = Array.isArray(polygon?.paths?.[0])
     ? polygon.paths[0]
@@ -29,6 +49,7 @@ const isPointInPolygon = (point, polygon) => {
 export const useSiteData = ({ 
   enableSiteToggle, 
   siteToggle, 
+  sitePredictionVersion = "original",
   projectId, 
   sessionIds,
   autoFetch = false,
@@ -44,7 +65,7 @@ export const useSiteData = ({
 
   // DEBUG: Log current state on every render
   useEffect(() => {
-  }, [enableSiteToggle, siteToggle, siteData.length]);
+  }, [enableSiteToggle, siteToggle, sitePredictionVersion, siteData.length]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -64,6 +85,7 @@ export const useSiteData = ({
     // Prevents duplicate calls
     const currentParams = JSON.stringify({
       siteToggle,
+      sitePredictionVersion,
       projectId,
       sessionIds,
       filterEnabled,
@@ -80,9 +102,18 @@ export const useSiteData = ({
     try {
       const params = { projectId: projectId || '' };
       let response;
+      const normalizedVersion =
+        String(sitePredictionVersion || "original").toLowerCase() === "updated"
+          ? "updated"
+          : "original";
 
       switch (siteToggle) {
-        case 'Cell': response = await mapViewApi.getSitePrediction(params); break;
+        case 'Cell':
+          response = await mapViewApi.getSitePrediction({
+            ...params,
+            version: normalizedVersion,
+          });
+          break;
         case 'NoML': response = await mapViewApi.getSiteNoMl(params); break;
         case 'ML': response = await mapViewApi.getSiteMl(params); break;
         default: response = { data: [] };
@@ -102,11 +133,11 @@ export const useSiteData = ({
           return {
             ...item,
             site:
-              item.site_key_inferred ||
-              item.siteKeyInferred ||
               item.site ||
               item.site_id ||
               item.siteId ||
+              item.site_key_inferred ||
+              item.siteKeyInferred ||
               item.nodeb_id ||
               item.nodebId ||
               item.cell_id_representative ||
@@ -114,9 +145,12 @@ export const useSiteData = ({
               `site_${index}`,
             lat: parseFloat(item.lat_pred || item.lat || item.latitude || 0),
             lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
-            azimuth: parseFloat(item.azimuth_deg_5 || item.azimuth_deg_5_soft || item.azimuth || 0),
-            beamwidth: parseFloat(item.beamwidth_deg_est || item.beamwidth || 65),
-            range: parseFloat(item.range || item.radius || 220),
+            azimuth: getFirstFiniteNumber([item.azimuth_deg_5, item.azimuth_deg_5_soft, item.azimuth], 0),
+            beamwidth: normalizeBeamwidth(
+              getFirstFiniteNumber([item.bw, item.beamwidth, item.beamwidth_deg_est], 65),
+              65,
+            ),
+            range: normalizeSectorRange(getFirstFiniteNumber([item.range, item.radius], 220), 220),
             operator: item.network || item.Network || item.cluster || "Unknown",
             band: item.band || item.frequency_band || item.frequency || "Unknown",
             technology: item.Technology || item.tech || item.technology || inferredTechnology,
@@ -127,11 +161,14 @@ export const useSiteData = ({
               item.cell_id ??
               item.cell_id_representative,
             id:
-              item.id ||
-              item.cell_id ||
-              item.cell_id_representative ||
-              item.site ||
-              item.site_key_inferred ||
+              item.original_id ??
+              item.id ??
+              item.cell_id ??
+              item.cell_id_representative ??
+              item.site ??
+              item.site_id ??
+              item.siteId ??
+              item.site_key_inferred ??
               index,
           };
         }).filter(item => item.lat !== 0 && !isNaN(item.lat))
@@ -154,7 +191,7 @@ export const useSiteData = ({
     } finally {
       if (isMounted.current) setLoading(false);
     }
-  }, [enableSiteToggle, siteToggle, projectId, sessionIds, siteData.length, filterEnabled, polygons]);
+  }, [enableSiteToggle, siteToggle, sitePredictionVersion, projectId, sessionIds, siteData.length, filterEnabled, polygons]);
 
   useEffect(() => {
     if (autoFetch) {

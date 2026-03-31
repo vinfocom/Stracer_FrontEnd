@@ -88,6 +88,7 @@ const MultiViewPage = () => {
   const neighborData = hasPassedNeighbors ? passedNeighbors : fetchedNeighbors;
   const thresholds = passedThresholds || hookThresholds;
   const [metchOnly, setMetchOnly] = useState(false);
+  const [displayMode, setDisplayMode] = useState("logs"); // "logs" | "site"
   const [ui, setUi] = useState({
     drawEnabled: false,
     shapeMode: null,
@@ -100,8 +101,8 @@ const MultiViewPage = () => {
 
   // --- Map State Management ---
   const [maps, setMaps] = useState([
-    { id: 1, title: "Map 1", role: "primary" },
-    { id: 2, title: "Map 2", role: "secondary" },
+    { id: 1, title: "Map 1", role: "primary", sitePredictionVersion: "original" },
+    { id: 2, title: "Map 2", role: "secondary", sitePredictionVersion: "original" },
   ]);
   const [drawSourceMapId, setDrawSourceMapId] = useState(1);
 
@@ -111,7 +112,7 @@ const MultiViewPage = () => {
   const addMap = () => {
     const newId = maps.length > 0 ? Math.max(...maps.map((m) => m.id)) + 1 : 1;
     const role = newId % 2 === 0 ? "secondary" : "primary";
-    const newMaps = [...maps, { id: newId, title: `Map ${newId}`, role }];
+    const newMaps = [...maps, { id: newId, title: `Map ${newId}`, role, sitePredictionVersion: "original" }];
     setMaps(newMaps);
     if (newMaps.length > 2) {
       setActiveStartIndex(newMaps.length - 2); 
@@ -130,6 +131,20 @@ const MultiViewPage = () => {
       }),
     );
   };
+
+  const setMapSitePredictionVersion = useCallback((id, version) => {
+    const normalized =
+      String(version || "original").toLowerCase() === "updated"
+        ? "updated"
+        : "original";
+    setMaps((prevMaps) =>
+      prevMaps.map((mapInstance) =>
+        mapInstance.id === id
+          ? { ...mapInstance, sitePredictionVersion: normalized }
+          : mapInstance,
+      ),
+    );
+  }, []);
 
   const removeMap = (id, e) => {
     if(e) e.stopPropagation(); 
@@ -291,6 +306,8 @@ const MultiViewPage = () => {
         thresholds={thresholds}
         metchOnly={metchOnly}
         onMetchOnlyChange={setMetchOnly}
+        displayMode={displayMode}
+        onDisplayModeChange={setDisplayMode}
         ui={ui}
         onUIChange={handleDrawingUiChange}
       />
@@ -395,6 +412,9 @@ const MultiViewPage = () => {
                   project={project}
                   onRemove={(id) => removeMap(id)}
                   onRoleChange={(id, role) => setMapRole(id, role)}
+                  displayMode={displayMode}
+                  sitePredictionVersion={mapInstance.sitePredictionVersion || "original"}
+                  onSitePredictionVersionChange={setMapSitePredictionVersion}
                   sharedPolygons={sharedPolygons}
                   drawEnabled={Boolean(ui.drawEnabled) && mapInstance.id === drawSourceMapId}
                   drawShapeMode={ui.shapeMode || "polygon"}
