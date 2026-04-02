@@ -1012,6 +1012,7 @@ const UnifiedMapView = () => {
   const isSampleMode = enableDataToggle && dataToggle === "sample";
   const [enableSiteToggle, setEnableSiteToggle] = useState(false);
   const [siteToggle, setSiteToggle] = useState("Cell");
+  const [sitePredictionVersion, setSitePredictionVersion] = useState("original");
   const [modeMethod, setModeMethod] = useState("Operator");
   const [showSiteMarkers, setShowSiteMarkers] = useState(true);
   const [showSiteSectors, setShowSiteSectors] = useState(true);
@@ -1033,6 +1034,7 @@ const UnifiedMapView = () => {
   const [hoveredCellId, setHoveredCellId] = useState(null);
   const [hoveredLog, setHoveredLog] = useState(null);
   const [selectedSites, setSelectedSites] = useState([]);
+  const [sectorPredictionGridPoints, setSectorPredictionGridPoints] = useState([]);
 
   const [ui, setUi] = useState({
     basemapStyle: "roadmap",
@@ -1076,6 +1078,7 @@ const UnifiedMapView = () => {
   const [lteGridSizeMeters, setLteGridSizeMeters] = useState(50);
   const [lteGridAggregationMethod, setLteGridAggregationMethod] =
     useState("median");
+  const [deltaGridScope, setDeltaGridScope] = useState("selected");
   const [mlGridEnabled, setMlGridEnabled] = useState(false);
   const [mlGridSize, setMlGridSize] = useState(50);
   const [mlGridAggregation, setMlGridAggregation] = useState("mean");
@@ -1092,11 +1095,6 @@ const UnifiedMapView = () => {
   const [dominanceData, setDominanceData] = useState([]);
   const [manualSiteData, setManualSiteData] = useState([]);
   const [manualSiteLoading, setManualSiteLoading] = useState(false);
-
-  const openOperatorComparison = useCallback(() => {
-    setShowAnalytics(true);
-    setAnalyticsActiveTab("operatorComparison");
-  }, []);
 
   useEffect(() => {
     if (!enableSiteToggle) {
@@ -1412,9 +1410,36 @@ const UnifiedMapView = () => {
   const isSitePredictionMode =
     enableSiteToggle && siteToggle === "sites-prediction";
   const shouldFetchPredictionLogs = isDataPredictionMode || isSitePredictionMode;
+  const lteGridAvailable =
+    Boolean(enableSiteToggle) &&
+    (selectedSites.length > 0 || sectorPredictionGridPoints.length > 0);
   const shouldFetchLtePrediction =
-    Boolean(lteGridEnabled) ||
     Boolean(enableSiteToggle && selectedSites.length > 0);
+  const isDeltaSiteGridMode =
+    Boolean(enableSiteToggle) &&
+    String(siteToggle || "").toLowerCase() === "cell" &&
+    String(sitePredictionVersion || "").trim().toLowerCase() === "delta";
+  const isDeltaGridCompleteMode =
+    isDeltaSiteGridMode &&
+    String(deltaGridScope || "").trim().toLowerCase() === "complete";
+
+  useEffect(() => {
+    if (!lteGridAvailable && lteGridEnabled) {
+      setLteGridEnabled(false);
+    }
+  }, [lteGridAvailable, lteGridEnabled]);
+
+  useEffect(() => {
+    if (!isDeltaSiteGridMode && deltaGridScope !== "selected") {
+      setDeltaGridScope("selected");
+    }
+  }, [isDeltaSiteGridMode, deltaGridScope]);
+
+  useEffect(() => {
+    if (!isDeltaGridCompleteMode || !lteGridEnabled) return;
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("map:selectAllSectors"));
+  }, [isDeltaGridCompleteMode, lteGridEnabled]);
 
   // ✅ 2. Use Prediction Data Hook
   const {
@@ -1437,6 +1462,7 @@ const UnifiedMapView = () => {
     projectId,
     siteId: selectedSites.join(","),
     metric: selectedMetric,
+    sitePredictionVersion,
     enabled: shouldFetchLtePrediction,
     filterEnabled: false,
     polygons: EMPTY_POLYGONS,
@@ -1509,6 +1535,7 @@ const UnifiedMapView = () => {
   } = useSiteData({
     enableSiteToggle,
     siteToggle,
+    sitePredictionVersion,
     projectId,
     sessionIds,
     autoFetch: true,
@@ -2126,6 +2153,88 @@ const UnifiedMapView = () => {
     onlyInsidePolygons,
     hasFilteringPolygons,
     filteringPolygonChecker,
+  ]);
+
+  const lteLayerLocations = useMemo(() => {
+    const baseLocations = Array.isArray(ltePredictionLocations)
+      ? ltePredictionLocations
+      : EMPTY_LIST;
+    const sectorPoints = Array.isArray(sectorPredictionGridPoints)
+      ? sectorPredictionGridPoints
+      : EMPTY_LIST;
+
+    if (isDataPredictionMode) return finalDisplayLocations || EMPTY_LIST;
+
+    if (isDeltaSiteGridMode) {
+      // Delta grid compares baseline vs optimized from sector prediction points.
+      if (isDeltaGridCompleteMode) {
+        return sectorPoints;
+      }
+
+      if (!Array.isArray(selectedSites) || selectedSites.length === 0) {
+        return sectorPoints;
+      }
+
+      const selectedSiteSet = new Set(
+        selectedSites.map((siteId) => String(siteId || "").trim()).filter(Boolean),
+      );
+      if (selectedSiteSet.size === 0) return sectorPoints;
+
+      const filtered = sectorPoints.filter((point) => {
+        const rowSiteId = String(point?.siteId ?? point?.site_id ?? point?.site ?? "").trim();
+        return rowSiteId && selectedSiteSet.has(rowSiteId);
+      });
+      return filtered.length > 0 ? filtered : sectorPoints;
+    }
+
+    if (!enableSiteToggle || sectorPoints.length === 0) {
+      return baseLocations;
+    }
+
+    const merged = [...baseLocations, ...sectorPoints];
+    const seen = new Set();
+    return merged.filter((point) => {
+      const key = [
+        Number(point?.lat ?? point?.latitude).toFixed(6),
+        Number(point?.lng ?? point?.lon ?? point?.longitude).toFixed(6),
+        Number.isFinite(Number(point?.value)) ? Number(point.value).toFixed(2) : "na",
+        String(point?.siteId ?? point?.site_id ?? "").trim(),
+        String(point?.deltaVariant ?? point?.delta_variant ?? "").trim().toLowerCase(),
+      ].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [
+    enableSiteToggle,
+    finalDisplayLocations,
+    isDataPredictionMode,
+    isDeltaGridCompleteMode,
+    isDeltaSiteGridMode,
+    ltePredictionLocations,
+    selectedSites,
+    sectorPredictionGridPoints,
+  ]);
+
+  const legendLogs = useMemo(() => {
+    const hasSiteOrSectorPrediction =
+      Boolean(enableSiteToggle) &&
+      String(siteToggle || "").trim().toLowerCase() === "cell" &&
+      (selectedSites.length > 0 || sectorPredictionGridPoints.length > 0) &&
+      lteLayerLocations.length > 0;
+
+    if (hasSiteOrSectorPrediction) {
+      return lteLayerLocations;
+    }
+
+    return finalDisplayLocations || EMPTY_LIST;
+  }, [
+    enableSiteToggle,
+    siteToggle,
+    selectedSites.length,
+    sectorPredictionGridPoints.length,
+    lteLayerLocations,
+    finalDisplayLocations,
   ]);
 
   
@@ -2886,7 +2995,6 @@ const UnifiedMapView = () => {
         onSettingsSaved={refetchColors}
         onToggleControls={() => setIsSideOpen(!isSideOpen)}
         onLeftToggle={() => setShowAnalytics(!showAnalytics)}
-        onOpenOperatorComparison={openOperatorComparison}
         isControlsOpen={isSideOpen}
         showAnalytics={showAnalytics}
         projectId={projectId}
@@ -2959,6 +3067,14 @@ const UnifiedMapView = () => {
           drawnShapeAnalytics={drawnShapeAnalytics}
           activeTabExternal={analyticsActiveTab}
           onActiveTabExternalChange={setAnalyticsActiveTab}
+          sitePredictionVersion={sitePredictionVersion}
+          enableGrid={enableGrid}
+          gridCellStats={gridCellStats}
+          lteGridEnabled={lteGridEnabled}
+          lteGridSizeMeters={lteGridSizeMeters}
+          isDeltaSiteGridMode={isDeltaSiteGridMode}
+          deltaGridScope={deltaGridScope}
+          conditionLogsLocations={legendLogs}
         />
       )}
 
@@ -2996,6 +3112,8 @@ const UnifiedMapView = () => {
         setPciHandover={setPciHandover}
         pciTransitions={pciTransitions}
         siteToggle={siteToggle}
+        sitePredictionVersion={sitePredictionVersion}
+        setSitePredictionVersion={setSitePredictionVersion}
         showSessionNeighbors={showSessionNeighbors}
         setShowSessionNeighbors={setShowSessionNeighbors}
         gridCellStats={gridCellStats}
@@ -3047,10 +3165,13 @@ const UnifiedMapView = () => {
         setGridSizeMeters={setGridSizeMeters}
         lteGridEnabled={lteGridEnabled}
         setLteGridEnabled={setLteGridEnabled}
+        lteGridAvailable={lteGridAvailable}
         lteGridSizeMeters={lteGridSizeMeters}
         setLteGridSizeMeters={setLteGridSizeMeters}
         lteGridAggregationMethod={lteGridAggregationMethod}
         setLteGridAggregationMethod={setLteGridAggregationMethod}
+        deltaGridScope={deltaGridScope}
+        setDeltaGridScope={setDeltaGridScope}
         mlGridEnabled={mlGridEnabled}
         setMlGridEnabled={setMlGridEnabled}
         mlGridSize={mlGridSize}
@@ -3103,7 +3224,7 @@ const UnifiedMapView = () => {
             showTechnologies={colorBy === "technology"}
             showSignalQuality={!colorBy || colorBy === "metric"}
             availableFilterOptions={availableFilterOptions}
-            logs={finalDisplayLocations}
+            logs={legendLogs}
             activeFilter={legendFilter}
             onFilterChange={setLegendFilter}
           />
@@ -3114,6 +3235,7 @@ const UnifiedMapView = () => {
           sites={manualSiteData}
           colorMode={modeMethod}
           isLoading={manualSiteLoading}
+          sitePredictionVersion={sitePredictionVersion}
         />
 
         <BestNetworkLegend
@@ -3204,23 +3326,22 @@ const UnifiedMapView = () => {
               {/* LTE Prediction Layer — renders for prediction mode, LTE grid, or selected sites */}
               {(isDataPredictionMode ||
                 lteGridEnabled ||
-                (enableSiteToggle && selectedSites.length > 0)) && (
+                (enableSiteToggle && selectedSites.length > 0) ||
+                sectorPredictionGridPoints.length > 0) && (
                 <LtePredictionLocationLayer
                   enabled={true}
                   map={mapRef.current}
-                  locations={
-                    isDataPredictionMode
-                      ? finalDisplayLocations || EMPTY_LIST
-                      : ltePredictionLocations || EMPTY_LIST
-                  }
+                  locations={lteLayerLocations}
                   selectedMetric={selectedMetric}
                   thresholds={effectiveThresholds}
                   getMetricColor={getMetricColorForLog}
-                  filterPolygons={onlyInsidePolygons ? rawFilteringPolygons : EMPTY_POLYGONS}
+                  filterPolygons={rawFilteringPolygons}
                   filterInsidePolygons={onlyInsidePolygons}
+                  maxPoints={sectorPredictionGridPoints.length > 0 ? 120000 : 20000}
                   enableGrid={lteGridEnabled}
                   gridSizeMeters={lteGridSizeMeters || 50}
                   gridAggregationMethod={lteGridAggregationMethod || "median"}
+                  deltaComparisonMode={isDeltaSiteGridMode}
                   mlGridEnabled={mlGridEnabled}
                   mlGridSize={mlGridSize}
                   mlGridAggregation={mlGridAggregation}
@@ -3272,10 +3393,11 @@ const UnifiedMapView = () => {
 
               {shouldRenderSiteLayer && (
                 <NetworkPlannerMap
-                  key={`site-layer-${projectId || "none"}-${siteToggle}`}
+                  key={`site-layer-${projectId || "none"}-${siteToggle}-${sitePredictionVersion}`}
                   projectId={projectId}
                   sessionIds={sessionIds}
                   siteToggle={siteToggle}
+                  sitePredictionVersion={sitePredictionVersion}
                   enableSiteToggle={enableSiteToggle}
                   showSiteMarkers={showSiteMarkers}
                   showSiteSectors={showSiteSectors}
@@ -3292,6 +3414,7 @@ const UnifiedMapView = () => {
                   thresholds={effectiveThresholds}
                   getMetricColor={getMetricColorForLog}
                   onSiteSelect={setSelectedSites}
+                  onSectorPredictionPointsChange={setSectorPredictionGridPoints}
                   options={{
                     scale: 0.6,
                     zIndex: 1000,

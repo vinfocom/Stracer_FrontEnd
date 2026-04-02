@@ -41,7 +41,13 @@ const isRequestCancelled = (error) => {
   return inside;
 };
 
-export const useSessionNeighbors = (sessionIds, enabled = true, filterEnabled = false, polygons = []) => {
+export const useSessionNeighbors = (
+  sessionIds,
+  enabled = true,
+  filterEnabled = false,
+  polygons = [],
+  maxRows = 300000,
+) => {
   const [neighborData, setNeighborData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -56,6 +62,10 @@ export const useSessionNeighbors = (sessionIds, enabled = true, filterEnabled = 
 
   const fetchData = useCallback(async (force = false) => {
 const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
+    const safeMaxRows =
+      Number.isFinite(Number(maxRows)) && Number(maxRows) > 0
+        ? Math.floor(Number(maxRows))
+        : null;
 
     if (!sessionIds?.length || !enabled) {
       if (mountedRef.current) {
@@ -124,9 +134,16 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
           );
         }
 
+        if (safeMaxRows && finalNeighbors.length > safeMaxRows) {
+          const step = Math.ceil(finalNeighbors.length / safeMaxRows);
+          finalNeighbors = finalNeighbors
+            .filter((_, index) => index % step === 0)
+            .slice(0, safeMaxRows);
+        }
+
         const statsObj = { 
-          total: formattedData.length,
-          uniquePCIs: new Set(formattedData.map(d => d.primaryPci)).size
+          total: finalNeighbors.length,
+          uniquePCIs: new Set(finalNeighbors.map(d => d.primaryPci)).size
         }; 
 
         if (mountedRef.current) {
@@ -154,7 +171,7 @@ const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, [sessionIds, enabled]);
+  }, [sessionIds, enabled, maxRows]);
 
   // ... (rest of useEffects remain the same)
   useEffect(() => {

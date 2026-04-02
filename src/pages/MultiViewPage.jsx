@@ -16,6 +16,21 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 
+const MAX_MULTIVIEW_PRIMARY_POINTS = 120000;
+const MAX_MULTIVIEW_NEIGHBOR_POINTS = 80000;
+
+const downsampleRows = (rows, maxRows) => {
+  if (!Array.isArray(rows)) return [];
+  if (!Number.isFinite(maxRows) || maxRows <= 0 || rows.length <= maxRows) return rows;
+
+  const step = Math.ceil(rows.length / maxRows);
+  const sampled = [];
+  for (let i = 0; i < rows.length && sampled.length < maxRows; i += step) {
+    sampled.push(rows[i]);
+  }
+  return sampled;
+};
+
 const toCoordinateKey = (latValue, lngValue) => {
   const lat = Number(latValue);
   const lng = Number(lngValue);
@@ -77,15 +92,41 @@ const MultiViewPage = () => {
   const shouldFetch = !hasPassedLocations;
 
   const { locations: fetchedLocations, loading: samplesLoading } =
-    useNetworkSamples(sessionIds, shouldFetch);
+    useNetworkSamples(
+      sessionIds,
+      shouldFetch,
+      false,
+      [],
+      MAX_MULTIVIEW_PRIMARY_POINTS,
+    );
   const { neighborData: fetchedNeighbors, loading: neighborsLoading } =
-    useSessionNeighbors(sessionIds, shouldFetch);
+    useSessionNeighbors(
+      sessionIds,
+      shouldFetch,
+      false,
+      [],
+      MAX_MULTIVIEW_NEIGHBOR_POINTS,
+    );
 
   const { thresholds: hookThresholds } = useColorForLog();
   const { isLoaded } = useJsApiLoader(GOOGLE_MAPS_LOADER_OPTIONS);
 
-  const locations = hasPassedLocations ? passedLocations : fetchedLocations;
-  const neighborData = hasPassedNeighbors ? passedNeighbors : fetchedNeighbors;
+  const locations = useMemo(
+    () =>
+      downsampleRows(
+        hasPassedLocations ? passedLocations : fetchedLocations,
+        MAX_MULTIVIEW_PRIMARY_POINTS,
+      ),
+    [hasPassedLocations, passedLocations, fetchedLocations],
+  );
+  const neighborData = useMemo(
+    () =>
+      downsampleRows(
+        hasPassedNeighbors ? passedNeighbors : fetchedNeighbors,
+        MAX_MULTIVIEW_NEIGHBOR_POINTS,
+      ),
+    [hasPassedNeighbors, passedNeighbors, fetchedNeighbors],
+  );
   const thresholds = passedThresholds || hookThresholds;
   const [metchOnly, setMetchOnly] = useState(false);
   const [displayMode, setDisplayMode] = useState("logs"); // "logs" | "site"
@@ -302,7 +343,7 @@ const MultiViewPage = () => {
         locations={metchData.locations}
         rawLocations={locations}
         neighborData={metchData.neighbors}
-        rawNeighborData={normalizedNeighbors}
+        rawNeighborData={neighborData}
         thresholds={thresholds}
         metchOnly={metchOnly}
         onMetchOnlyChange={setMetchOnly}

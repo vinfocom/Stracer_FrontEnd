@@ -12,6 +12,7 @@ import { normalizeProviderName, normalizeTechName, getLogColor, generateColorFro
 const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 const CSHARP_API_BASE_URL = (import.meta.env.VITE_CSHARP_API_URL || "").replace(/\/+$/, "");
 const EMPTY_ARRAY = [];
+const MAX_IMAGE_LOG_SCAN_POINTS = 12000;
 
 const normalizeImagePath = (rawPath) => {
   if (rawPath === null || rawPath === undefined) return null;
@@ -1076,16 +1077,24 @@ const MapWithMultipleCircles = ({
   const imageLogs = useMemo(() => {
     if (!showImageIcons || !locationsToRender?.length) return EMPTY_ARRAY;
 
-    return locationsToRender
-      .filter((log) => normalizeImagePath(log?.image_path))
-      .map((log) => {
-        const rawImagePath = normalizeImagePath(log.image_path);
-        return {
-          ...log,
-          rawImagePath,
-          imageUrl: resolveImageUrl(rawImagePath),
-        };
+    const step = Math.max(
+      1,
+      Math.ceil(locationsToRender.length / MAX_IMAGE_LOG_SCAN_POINTS),
+    );
+    const sampled = [];
+
+    for (let i = 0; i < locationsToRender.length; i += step) {
+      const log = locationsToRender[i];
+      const rawImagePath = normalizeImagePath(log?.image_path);
+      if (!rawImagePath) continue;
+      sampled.push({
+        ...log,
+        rawImagePath,
+        imageUrl: resolveImageUrl(rawImagePath),
       });
+    }
+
+    return sampled;
   }, [locationsToRender, showImageIcons]);
 
   const shouldRenderDeckOverlay =

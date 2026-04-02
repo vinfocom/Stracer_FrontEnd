@@ -352,6 +352,24 @@ export const getMetricValueFromLog = (log, metric) => {
     }
   }
 
+  const metricKey = String(config.key || "").toLowerCase();
+  if (metricKey !== "pci" && metricKey !== "tac") {
+    const genericCandidates = [
+      log.value,
+      log.Value,
+      log.metric_value,
+      log.avg_value,
+      log.measured,
+      log.measured_value,
+    ];
+    for (const candidate of genericCandidates) {
+      const parsed = parseFloat(candidate);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
   return NaN;
 };
 

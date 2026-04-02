@@ -14,6 +14,22 @@ import { useLtePrediction } from "@/hooks/useLtePrediction";
 
 const EMPTY_SESSIONS = [];
 const EMPTY_POINTS = [];
+const MAX_OPTIONS_SCAN_POINTS = 50000;
+const MAX_LEGEND_SAMPLE_POINTS = 40000;
+const MAX_DRAWING_SAMPLE_POINTS = 60000;
+
+const sampleRows = (rows, maxRows) => {
+  if (!Array.isArray(rows)) return [];
+  if (!Number.isFinite(maxRows) || maxRows <= 0 || rows.length <= maxRows) return rows;
+
+  const step = Math.ceil(rows.length / maxRows);
+  const sampled = [];
+  for (let i = 0; i < rows.length && sampled.length < maxRows; i += step) {
+    sampled.push(rows[i]);
+  }
+  return sampled;
+};
+
 const toPoint = (item) => {
   const lat = Number(item?.lat ?? item?.latitude ?? item?.Lat);
   const lng = Number(item?.lng ?? item?.longitude ?? item?.Lng ?? item?.lon);
@@ -270,13 +286,31 @@ const MapChild = ({
     });
   }, [neighborDataForRender]);
 
-  const displayData = isAllView
-    ? [...primaryDataForRender, ...secondaryDisplayData]
-    : isSecondaryView
-      ? secondaryDisplayData
-      : primaryDataForRender;
+  const displayData = useMemo(() => {
+    if (isAllView) {
+      if (!primaryDataForRender.length) return secondaryDisplayData;
+      if (!secondaryDisplayData.length) return primaryDataForRender;
+      return [...primaryDataForRender, ...secondaryDisplayData];
+    }
+    return isSecondaryView ? secondaryDisplayData : primaryDataForRender;
+  }, [isAllView, isSecondaryView, primaryDataForRender, secondaryDisplayData]);
 
-  const footerData = displayData;
+  const legendData = useMemo(
+    () => sampleRows(displayData, MAX_LEGEND_SAMPLE_POINTS),
+    [displayData],
+  );
+  const drawingData = useMemo(
+    () => sampleRows(displayData, MAX_DRAWING_SAMPLE_POINTS),
+    [displayData],
+  );
+  const locationOptionsSource = useMemo(
+    () => sampleRows(allLocations, MAX_OPTIONS_SCAN_POINTS),
+    [allLocations],
+  );
+  const neighborOptionsSource = useMemo(
+    () => sampleRows(allNeighbors, MAX_OPTIONS_SCAN_POINTS),
+    [allNeighbors],
+  );
 
   const options = useMemo(() => {
     if (isSiteMode) {
@@ -292,7 +326,7 @@ const MapChild = ({
     const bandSet = new Set(["All"]);
 
     if (isSecondaryView) {
-      allNeighbors.forEach((neighbor) => {
+      neighborOptionsSource.forEach((neighbor) => {
         const normalizedTech = normalizeTechName(
           neighbor.networkType || neighbor.technology,
           neighbor.neighbourBand ||
@@ -313,12 +347,12 @@ const MapChild = ({
         if (normalizedBand) bandSet.add(normalizedBand);
       });
     } else if (isAllView) {
-      allLocations.forEach((loc) => {
+      locationOptionsSource.forEach((loc) => {
         if (loc.technology) techSet.add(normalizeTechName(loc.technology));
         if (loc.provider) providerSet.add(normalizeProviderName(loc.provider));
         if (loc.band) bandSet.add(String(loc.band));
       });
-      allNeighbors.forEach((neighbor) => {
+      neighborOptionsSource.forEach((neighbor) => {
         const normalizedTech = normalizeTechName(
           neighbor.networkType || neighbor.technology,
           neighbor.neighbourBand ||
@@ -339,7 +373,7 @@ const MapChild = ({
         if (normalizedBand) bandSet.add(normalizedBand);
       });
     } else {
-      allLocations.forEach((loc) => {
+      locationOptionsSource.forEach((loc) => {
         if (loc.technology) techSet.add(normalizeTechName(loc.technology));
         if (loc.provider) providerSet.add(normalizeProviderName(loc.provider));
         if (loc.band) bandSet.add(String(loc.band));
@@ -351,7 +385,7 @@ const MapChild = ({
       provs: Array.from(providerSet).sort(),
       bands: Array.from(bandSet).sort(),
     };
-  }, [allLocations, allNeighbors, isSecondaryView, isAllView, isSiteMode]);
+  }, [locationOptionsSource, neighborOptionsSource, isSecondaryView, isAllView, isSiteMode]);
 
   return (
     <div className="relative w-full h-full flex flex-col border rounded-lg bg-white shadow-sm overflow-hidden">
@@ -557,7 +591,7 @@ const MapChild = ({
             enabled={drawEnabled}
             shapeMode={drawShapeMode}
             showDrawingControl={false}
-            logs={displayData}
+            logs={drawingData}
             sessions={EMPTY_SESSIONS}
             selectedMetric={metric}
             thresholds={thresholds}
@@ -575,7 +609,7 @@ const MapChild = ({
               <MapLegend
                 thresholds={thresholds}
                 selectedMetric={metric}
-                logs={footerData}
+                logs={legendData}
                 activeFilter={legendFilter}
                 onFilterChange={setLegendFilter}
                 className="relative" // Added to fix positioning
@@ -587,7 +621,7 @@ const MapChild = ({
         {!isSiteMode && (
           <div>
             <MapChildFooter
-              data={footerData}
+              data={legendData}
               metric={metric}
               thresholds={thresholds}
             />
@@ -597,13 +631,13 @@ const MapChild = ({
         {/* Stats Overlay */}
         {!isSiteMode && (
           <div className="absolute bottom-2 left-2 bg-white/90 p-1 rounded text-[10px] shadow z-10">
-            Pts: {footerData.length} | Avg:{" "}
-            {footerData.length > 0
+            Pts: {displayData.length} | Avg:{" "}
+            {displayData.length > 0
               ? (
-                  footerData.reduce(
+                  legendData.reduce(
                     (acc, curr) => acc + (parseFloat(curr[metric]) || 0),
                     0,
-                  ) / footerData.length
+                  ) / legendData.length
                 ).toFixed(1)
               : 0}
           </div>

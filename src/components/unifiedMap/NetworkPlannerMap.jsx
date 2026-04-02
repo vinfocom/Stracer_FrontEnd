@@ -32,6 +32,39 @@ function computeOffset(center, distanceMeters, headingDegrees) {
   return { lat: (lat2 * 180) / Math.PI, lng: (lng2 * 180) / Math.PI };
 }
 
+function buildSectorRenderKey(sector, index = 0) {
+  return (
+    sector?.renderKey ||
+    [
+      sector?.id || `sector-${index}`,
+      Number(sector?.lat).toFixed(7),
+      Number(sector?.lng).toFixed(7),
+      Number(sector?.azimuth).toFixed(2),
+      Number(sector?.beamwidth).toFixed(2),
+      index,
+    ].join("|")
+  );
+}
+
+function buildSectorInfoPosition(sector, radiusMeters = 120, sectorScale = 1) {
+  const p0 = { lat: Number(sector?.lat), lng: Number(sector?.lng) };
+  if (!Number.isFinite(p0.lat) || !Number.isFinite(p0.lng)) return { lat: 0, lng: 0 };
+
+  const safeBeamwidth = normalizeBeamwidth(sector?.beamwidth, 65);
+  const sectorRange = Number(sector?.range);
+  const radius =
+    (Number.isFinite(sectorRange) && sectorRange > 0 ? sectorRange : Number(radiusMeters) || 120) *
+    (Number.isFinite(Number(sectorScale)) && Number(sectorScale) > 0 ? Number(sectorScale) : 1);
+  const azimuth = Number.isFinite(Number(sector?.azimuth)) ? Number(sector.azimuth) : 0;
+  const p1 = computeOffset(p0, radius, azimuth - safeBeamwidth / 2);
+  const p2 = computeOffset(p0, radius, azimuth + safeBeamwidth / 2);
+
+  return {
+    lat: (p0.lat + p1.lat + p2.lat) / 3,
+    lng: (p0.lng + p1.lng + p2.lng) / 3,
+  };
+}
+
 function getSiteId(site) {
   return normalizeComparableSiteId(
     site?.site ??
@@ -40,8 +73,9 @@ function getSiteId(site) {
       site?.site_key_inferred ??
       site?.siteKeyInferred ??
       site?.nodeb_id ??
+      site?.node_b_id ??
+      site?.node_b ??
       site?.nodebId ??
-      site?.id ??
       "",
   );
 }
@@ -57,6 +91,22 @@ function getSiteName(site) {
       site?.siteKeyInferred ||
       "Unknown",
   ).trim();
+}
+
+function getDisplaySiteId(site) {
+  const direct = getSiteId(site);
+  if (direct) return direct;
+
+  const nested = getSiteId(site?.rawSite);
+  if (nested) return nested;
+
+  return normalizeComparableSiteId(
+    site?.cellId ??
+      site?.cell_id ??
+      site?.cellIdRepresentative ??
+      site?.cell_id_representative ??
+      "",
+  );
 }
 
 function normalizeComparableSiteId(value) {
@@ -192,6 +242,57 @@ function normalizeBaselineLteMetric(metric) {
   return "RSRP";
 }
 
+function getSectorPredictionMetricValue(item, selectedMetric = "rsrp") {
+  const metricLower = String(selectedMetric || "rsrp").trim().toLowerCase();
+  const metricCandidates =
+    metricLower === "rsrq"
+      ? ["pred_rsrq", "reference_signal_quality", "rsrq"]
+      : metricLower === "sinr" || metricLower === "snr"
+        ? ["pred_sinr", "signal_to_noise_ratio", "sinr", "snr"]
+        : ["pred_rsrp", "reference_signal_power", "rsrp"];
+  const genericCandidates = [
+    metricLower,
+    metricLower.toUpperCase(),
+    "measured",
+    "measured_value",
+    "metric_value",
+    "avg_value",
+    "value",
+    "Value",
+  ];
+
+  let rawValue;
+  for (const key of metricCandidates) {
+    if (Object.prototype.hasOwnProperty.call(item || {}, key)) {
+      rawValue = item[key];
+      break;
+    }
+  }
+
+  if (rawValue === undefined || rawValue === null) {
+    for (const key of genericCandidates) {
+      if (Object.prototype.hasOwnProperty.call(item || {}, key)) {
+        rawValue = item[key];
+        break;
+      }
+    }
+  }
+
+  if (rawValue === undefined || rawValue === null) {
+    const metricHint = metricLower.replace(/[^a-z0-9]/g, "");
+    const hintedKey = Object.keys(item || {}).find((key) =>
+      String(key || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .includes(metricHint),
+    );
+    if (hintedKey) rawValue = item[hintedKey];
+  }
+
+  const value = Number(rawValue);
+  return Number.isFinite(value) ? value : null;
+}
+
 function normalizeLteRows(rawRows = [], fallbackSiteId = "", selectedMetric = "rsrp") {
   if (!Array.isArray(rawRows)) return [];
   const metricLower = String(selectedMetric || "rsrp").trim().toLowerCase();
@@ -271,6 +372,38 @@ function normalizeLteRows(rawRows = [], fallbackSiteId = "", selectedMetric = "r
     .filter(Boolean);
 }
 
+function normalizeSectorPredictionRows(rawRows = [], selectedMetric = "rsrp", options = {}) {
+  if (!Array.isArray(rawRows)) return [];
+  const normalizedVariant = String(options?.deltaVariant || "").trim().toLowerCase();
+
+  return rawRows
+    .map((item) => {
+      const lat = Number(item?.lat ?? item?.latitude ?? item?.Lat ?? item?.Latitude);
+      const lng = Number(
+        item?.lon ?? item?.lng ?? item?.longitude ?? item?.Lon ?? item?.Lng ?? item?.Longitude,
+      );
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      const value = getSectorPredictionMetricValue(item, selectedMetric);
+      return {
+        ...item,
+        lat,
+        lng,
+        latitude: lat,
+        longitude: lng,
+        value,
+        sampleCount: 1,
+        cellId: String(item?.cell_id ?? item?.cellId ?? "").trim(),
+        siteId: String(item?.site_id ?? item?.siteId ?? item?.site ?? item?.node_b_id ?? "").trim(),
+        sector: String(item?.sector ?? item?.sector_id ?? item?.sectorId ?? "").trim(),
+        deltaVariant:
+          normalizedVariant ||
+          String(item?.deltaVariant ?? item?.delta_variant ?? "").trim().toLowerCase() ||
+          null,
+      };
+    })
+    .filter(Boolean);
+}
+
 function computeDistanceMeters(a, b) {
   const lat1 = Number(a?.lat);
   const lng1 = Number(a?.lng);
@@ -338,6 +471,7 @@ function isSiteLteDebugEnabled() {
 const MIN_TRIANGLE_SCALE_MULTIPLIER = 0.25;
 const MAX_TRIANGLE_SCALE_MULTIPLIER = 3;
 const TRIANGLE_SCALE_STEP = 0.25;
+const SQUARE_MARKER_PATH = "M -1 -1 L 1 -1 L 1 1 L -1 1 Z";
 
 const NUMERIC_FIELD_HINTS = new Set([
   "site",
@@ -472,6 +606,111 @@ function extractApiErrorDetails(error) {
   return parts.filter(Boolean).join(" | ");
 }
 
+function extractRowsFromApiResponse(response) {
+  const payload = response?.Data ?? response?.data?.Data ?? response?.data ?? response;
+  if (Array.isArray(payload)) return payload;
+  return payload && typeof payload === "object" ? [payload] : [];
+}
+
+function extractRowsAffected(response) {
+  return (
+    Number(
+      response?.data?.RowsAffected ??
+        response?.data?.rowsAffected ??
+        response?.RowsAffected ??
+        response?.rowsAffected ??
+        response?.data?.Data ??
+        response?.Data ??
+        0,
+    ) || 0
+  );
+}
+
+function mergeSectorWithFetchedRow(sector, fetchedRow) {
+  const row = fetchedRow && typeof fetchedRow === "object" ? fetchedRow : {};
+  const mergedRawSite = {
+    ...(sector?.rawSite && typeof sector.rawSite === "object" ? sector.rawSite : {}),
+    ...row,
+  };
+  const mergedSiteId = getDisplaySiteId(row) || getDisplaySiteId(sector);
+  const mergedSiteName = getSiteName(row) || sector?.siteName || "Unknown";
+
+  const mergedSectorValue =
+    row.sector ?? row.sector_id ?? row.sectorId ?? sector?.sector ?? null;
+  const mergedCellId =
+    row.cell_id ??
+    row.cellId ??
+    row.cell_id_representative ??
+    row.cellIdRepresentative ??
+    sector?.cellId ??
+    sector?.cellIdRepresentative ??
+    null;
+  const mergedPci =
+    row.pci ??
+    row.PCI ??
+    row.pci_or_psi ??
+    row.physical_cell_id ??
+    sector?.pci ??
+    null;
+  const mergedTechnology = inferTechnologyFromCarrier(
+    row.Technology ?? row.technology ?? row.tech ?? sector?.technology ?? null,
+    row.earfcn_or_narfcn ?? row.earfcnOrNarfcn ?? row.earfcn ?? sector?.earfcnOrNarfcn ?? null,
+  );
+  const mergedNetwork = String(
+    row.cluster ?? row.network ?? row.Network ?? row.operator ?? sector?.network ?? "",
+  ).trim();
+  const mergedBand = String(
+    row.band ?? row.frequency_band ?? row.frequency ?? sector?.band ?? "",
+  ).trim();
+
+  // Keep triangle geometry anchored to existing sector values.
+  // Sector prediction APIs return many sample points, not sector centroid.
+  const mergedLat = getFirstFiniteNumber(
+    [sector?.lat, row.latitude, row.lat, row.lat_pred, row.Latitude],
+    Number(sector?.lat) || 0,
+  );
+  const mergedLng = getFirstFiniteNumber(
+    [sector?.lng, row.longitude, row.lng, row.lon, row.lon_pred, row.Longitude],
+    Number(sector?.lng) || 0,
+  );
+  const mergedAzimuth = getFirstFiniteNumber(
+    [sector?.azimuth, row.azimuth, row.azimuth_deg_5, row.azimuth_deg_5_soft],
+    Number(sector?.azimuth) || 0,
+  );
+  const mergedBeamwidth = normalizeBeamwidth(
+    getFirstFiniteNumber([sector?.beamwidth, row.bw, row.bandwidth, row.beamwidth, row.beamwidth_deg_est], 65),
+    65,
+  );
+  const mergedRange = normalizeSectorRange(
+    getFirstFiniteNumber([sector?.range, row.range, row.radius], 220),
+    220,
+  );
+
+  return {
+    ...(sector || {}),
+    rawSite: mergedRawSite,
+    siteId: mergedSiteId || null,
+    siteName: mergedSiteName,
+    sector:
+      mergedSectorValue != null && String(mergedSectorValue).trim() !== ""
+        ? String(mergedSectorValue).trim()
+        : null,
+    cellId:
+      mergedCellId != null && String(mergedCellId).trim() !== ""
+        ? String(mergedCellId).trim()
+        : null,
+    pci: mergedPci != null && String(mergedPci).trim() !== "" ? String(mergedPci).trim() : null,
+    technology: mergedTechnology || sector?.technology || null,
+    network: mergedNetwork || sector?.network || null,
+    band: mergedBand || sector?.band || null,
+    lat: Number.isFinite(Number(mergedLat)) ? Number(mergedLat) : Number(sector?.lat) || 0,
+    lng: Number.isFinite(Number(mergedLng)) ? Number(mergedLng) : Number(sector?.lng) || 0,
+    azimuth: Number.isFinite(Number(mergedAzimuth)) ? Number(mergedAzimuth) : Number(sector?.azimuth) || 0,
+    beamwidth: Number.isFinite(Number(mergedBeamwidth)) ? Number(mergedBeamwidth) : Number(sector?.beamwidth) || 65,
+    range: Number.isFinite(Number(mergedRange)) ? Number(mergedRange) : Number(sector?.range) || 220,
+  };
+}
+
 function pickValueByAliases(source, aliases = []) {
   for (const alias of aliases) {
     if (Object.prototype.hasOwnProperty.call(source, alias)) {
@@ -496,6 +735,8 @@ function normalizeSiteRows(rows = []) {
         item.site_name ||
         item.siteName ||
         item.nodeb_id ||
+        item.node_b_id ||
+        item.node_b ||
         item.nodebId ||
         item.cell_id_representative ||
         item.cellIdRepresentative ||
@@ -504,7 +745,7 @@ function normalizeSiteRows(rows = []) {
       lng: parseFloat(item.lon_pred || item.lng || item.lon || item.longitude || 0),
       azimuth: getFirstFiniteNumber([item.azimuth_deg_5, item.azimuth_deg_5_soft, item.azimuth], 0),
       beamwidth: normalizeBeamwidth(
-        getFirstFiniteNumber([item.bw, item.beamwidth, item.beamwidth_deg_est], 65),
+        getFirstFiniteNumber([item.bw, item.bandwidth, item.beamwidth, item.beamwidth_deg_est], 65),
         65,
       ),
       range: normalizeSectorRange(getFirstFiniteNumber([item.range, item.radius], 220), 220),
@@ -579,7 +820,7 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator", option
 
   const baseAzimuth = getFirstFiniteNumber([site.azimuth, site.azimuth_deg_5, site.azimuth_deg_5_soft], 0);
   const beamwidth = normalizeBeamwidth(
-    getFirstFiniteNumber([site.bw, site.beamwidth, site.beamwidth_deg_est], 65),
+    getFirstFiniteNumber([site.bw, site.bandwidth, site.beamwidth, site.beamwidth_deg_est], 65),
     65,
   );
   const range = normalizeSectorRange(getFirstFiniteNumber([site.range, site.radius], 220), 220);
@@ -616,15 +857,26 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator", option
   )
     ? Number(site.median_sample_distance_m ?? site.medianSampleDistanceM)
     : null;
+  const deltaVariant = String(
+    site.deltaVariant ?? site.delta_variant ?? site.__deltaVariant ?? "",
+  )
+    .trim()
+    .toLowerCase();
 
   let color;
-  const mode = colorMode.toLowerCase();
-  if (mode === "band") {
-    color = getBandColor(band);
-  } else if (mode === "technology") {
-    color = getTechnologyColor(tech);
+  if (deltaVariant === "baseline") {
+    color = "#dc2626";
+  } else if (deltaVariant === "optimized" || deltaVariant === "optimised") {
+    color = "#16a34a";
   } else {
-    color = getProviderColor(network);
+    const mode = colorMode.toLowerCase();
+    if (mode === "band") {
+      color = getBandColor(band);
+    } else if (mode === "technology") {
+      color = getTechnologyColor(tech);
+    } else {
+      color = getProviderColor(network);
+    }
   }
 
   if (Number.isNaN(lat) || Number.isNaN(lng) || (lat === 0 && lng === 0)) return [];
@@ -648,6 +900,7 @@ function generateSectorsFromSite(site, siteIndex, colorMode = "Operator", option
       beamwidth,
       color,
       network,
+      deltaVariant: deltaVariant || null,
       technology: tech,
       band,
       earfcnOrNarfcn,
@@ -695,6 +948,7 @@ const NetworkPlannerMap = ({
   enableSiteLteOverlay = false,
   singleSiteSelection = false,
   showBulkSiteActions = true,
+  onSectorPredictionPointsChange = null,
 }) => {
   const siteLteDebugEnabled = useMemo(() => isSiteLteDebugEnabled(), []);
   const { siteData, loading, error, fetchSiteData } = useSiteData({
@@ -716,6 +970,9 @@ const NetworkPlannerMap = ({
   const [selectedSiteDataById, setSelectedSiteDataById] = useState({});
   const [loadingSitesQueue, setLoadingSitesQueue] = useState(new Set());
   const [selectedSectorInfo, setSelectedSectorInfo] = useState(null);
+  const [loadingSectorDetailsKey, setLoadingSectorDetailsKey] = useState(null);
+  const [sectorOverridesByRenderKey, setSectorOverridesByRenderKey] = useState({});
+  const [sectorPredictionRowsByRenderKey, setSectorPredictionRowsByRenderKey] = useState({});
   const [isSavingSectorEdit, setIsSavingSectorEdit] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [sectorEditFormData, setSectorEditFormData] = useState({});
@@ -870,6 +1127,9 @@ const NetworkPlannerMap = ({
       setSelectedSiteIds([]);
       setSelectedSiteDataById({});
       setSelectedSectorInfo(null);
+      setLoadingSectorDetailsKey(null);
+      setSectorOverridesByRenderKey({});
+      setSectorPredictionRowsByRenderKey({});
       setDragMode(null);
       setPendingMovePosition(null);
       setIsEditDialogOpen(false);
@@ -884,10 +1144,19 @@ const NetworkPlannerMap = ({
     if (showSiteSectors) return;
     clearSectorOverlays();
     setSelectedSectorInfo(null);
+    setLoadingSectorDetailsKey(null);
+    setSectorOverridesByRenderKey({});
+    setSectorPredictionRowsByRenderKey({});
     setDragMode(null);
     setPendingMovePosition(null);
     setIsEditDialogOpen(false);
   }, [showSiteSectors, clearSectorOverlays]);
+
+  useEffect(() => {
+    setSectorOverridesByRenderKey({});
+    setLoadingSectorDetailsKey(null);
+    setSectorPredictionRowsByRenderKey({});
+  }, [projectId, siteToggle, sitePredictionVersion]);
 
   useEffect(() => {
     return () => {
@@ -938,35 +1207,44 @@ const NetworkPlannerMap = ({
   }, [allSectors]);
 
   const siteMarkers = useMemo(() => {
+    const isDeltaMode = String(sitePredictionVersion || "").trim().toLowerCase() === "delta";
     const bySite = new Map();
 
     filteredSiteData.forEach((item) => {
       const siteId = getSiteId(item);
       if (!siteId) return;
+      const lat = parseFloat(item.lat ?? item.latitude ?? item.lat_pred ?? 0);
+      const lng = parseFloat(item.lng ?? item.longitude ?? item.lon_pred ?? item.lon ?? 0);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const deltaVariant = String(item.deltaVariant ?? item.delta_variant ?? "").trim().toLowerCase();
+      const markerKey = isDeltaMode
+        ? `${siteId}|${deltaVariant || "unknown"}|${lat.toFixed(6)}|${lng.toFixed(6)}`
+        : siteId;
 
-      if (!bySite.has(siteId)) {
-        const lat = parseFloat(item.lat ?? item.latitude ?? item.lat_pred ?? 0);
-        const lng = parseFloat(item.lng ?? item.longitude ?? item.lon_pred ?? item.lon ?? 0);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-
-        bySite.set(siteId, {
+      if (!bySite.has(markerKey)) {
+        bySite.set(markerKey, {
+          markerKey,
           siteId,
           siteName: getSiteName(item),
           lat,
           lng,
+          deltaVariant: deltaVariant || null,
         });
       }
     });
 
     return Array.from(bySite.values());
-  }, [filteredSiteData]);
+  }, [filteredSiteData, sitePredictionVersion]);
 
   const fetchSitePayload = useCallback(
     async (siteMarker) => {
+      const rawVersion = String(sitePredictionVersion || "original").trim().toLowerCase();
       const normalizedVersion =
-        String(sitePredictionVersion || "original").toLowerCase() === "updated"
+        rawVersion === "updated"
           ? "updated"
-          : "original";
+          : rawVersion === "delta"
+            ? "delta"
+            : "original";
       const normalizedSiteId = normalizeComparableSiteId(siteMarker?.siteId);
       const debug = {
         siteId: String(siteMarker?.siteId || ""),
@@ -987,25 +1265,27 @@ const NetworkPlannerMap = ({
 
       let rows = [];
       let siteFetchFailed = false;
-      for (const params of candidateParams) {
-        try {
-          const res = await mapViewApi.getSitePrediction(params);
-          const rawRows = res?.Data || res?.data?.Data || res?.data || [];
-          const normalizedAll = normalizeSiteRows(rawRows);
-          const normalizedMatch = normalizedAll.filter(
-            (r) => normalizeComparableSiteId(getSiteId(r)) === normalizedSiteId,
-          );
+      if (normalizedVersion !== "delta") {
+        for (const params of candidateParams) {
+          try {
+            const res = await mapViewApi.getSitePrediction(params);
+            const rawRows = res?.Data || res?.data?.Data || res?.data || [];
+            const normalizedAll = normalizeSiteRows(rawRows);
+            const normalizedMatch = normalizedAll.filter(
+              (r) => normalizeComparableSiteId(getSiteId(r)) === normalizedSiteId,
+            );
 
-          if (normalizedMatch.length > 0) {
-            rows = normalizedMatch;
-            break;
+            if (normalizedMatch.length > 0) {
+              rows = normalizedMatch;
+              break;
+            }
+            if (normalizedAll.length === 1) {
+              rows = normalizedAll;
+              break;
+            }
+          } catch {
+            siteFetchFailed = true;
           }
-          if (normalizedAll.length === 1) {
-            rows = normalizedAll;
-            break;
-          }
-        } catch {
-          siteFetchFailed = true;
         }
       }
 
@@ -1027,7 +1307,7 @@ const NetworkPlannerMap = ({
         .filter((s) => pointInsideAnyPolygon({ lat: s.lat, lng: s.lng }));
 
       let lteRows = [];
-      if (enableSiteLteOverlay && Number(projectId) > 0) {
+      if (enableSiteLteOverlay && Number(projectId) > 0 && normalizedVersion !== "delta") {
         const lteFetchFn =
           normalizedVersion === "updated"
             ? mapViewApi.getLtePredictionLocationStatsRefined
@@ -1148,10 +1428,9 @@ const NetworkPlannerMap = ({
       const siteId = siteMarker.siteId;
       if (siteFetchTokenRef.current[siteId] && !forceRefresh) return;
       const metricKey = String(selectedMetric || "rsrp").toLowerCase();
+      const rawVersion = String(sitePredictionVersion || "original").trim().toLowerCase();
       const versionKey =
-        String(sitePredictionVersion || "original").toLowerCase() === "updated"
-          ? "updated"
-          : "original";
+        rawVersion === "updated" ? "updated" : rawVersion === "delta" ? "delta" : "original";
       const overlayKey = enableSiteLteOverlay ? "site-lte-on" : "site-lte-off";
       const cached = selectedSiteDataById[siteId];
       if (
@@ -1220,6 +1499,7 @@ const NetworkPlannerMap = ({
       if (!siteMarker?.siteId) return;
       const siteId = siteMarker.siteId;
       setSelectedSectorInfo(null);
+      setLoadingSectorDetailsKey(null);
 
       if (selectedSiteIdSet.has(siteId)) {
         const nextIds = selectedSiteIds.filter((id) => id !== siteId);
@@ -1245,6 +1525,7 @@ const NetworkPlannerMap = ({
   const handleSelectAllSites = useCallback(async () => {
     if (!Array.isArray(siteMarkers) || siteMarkers.length === 0) return;
     setSelectedSectorInfo(null);
+    setLoadingSectorDetailsKey(null);
     if (singleSiteSelection) {
       const firstSite = siteMarkers[0];
       if (!firstSite?.siteId) return;
@@ -1254,7 +1535,7 @@ const NetworkPlannerMap = ({
       await loadSiteData(firstSite, true);
       return;
     }
-    const allIds = siteMarkers.map((site) => site.siteId);
+    const allIds = Array.from(new Set(siteMarkers.map((site) => site.siteId)));
     setSelectedSiteIds(allIds);
     if (onSiteSelect) onSiteSelect(allIds);
     await Promise.all(siteMarkers.map((site) => loadSiteData(site)));
@@ -1262,6 +1543,9 @@ const NetworkPlannerMap = ({
 
   const handleClearSelectedSites = useCallback(() => {
     setSelectedSectorInfo(null);
+    setLoadingSectorDetailsKey(null);
+    setSectorOverridesByRenderKey({});
+    setSectorPredictionRowsByRenderKey({});
     setSelectedSiteIds([]);
     setSelectedSiteDataById({});
     siteFetchTokenRef.current = {};
@@ -1280,10 +1564,9 @@ const NetworkPlannerMap = ({
       if (siteFetchTokenRef.current[siteId]) return;
       const cached = selectedSiteDataById[siteId];
       const metricKey = String(selectedMetric || "rsrp").toLowerCase();
+      const rawVersion = String(sitePredictionVersion || "original").trim().toLowerCase();
       const versionKey =
-        String(sitePredictionVersion || "original").toLowerCase() === "updated"
-          ? "updated"
-          : "original";
+        rawVersion === "updated" ? "updated" : rawVersion === "delta" ? "delta" : "original";
       const overlayKey = enableSiteLteOverlay ? "site-lte-on" : "site-lte-off";
       if (
         !cached ||
@@ -1402,6 +1685,82 @@ const NetworkPlannerMap = ({
     [visibleSelectedSiteLteLocations],
   );
 
+  const selectedSectorPredictionRows = useMemo(() => {
+    const renderKey = selectedSectorInfo?.renderKey;
+    if (!renderKey) return [];
+    const rows = sectorPredictionRowsByRenderKey?.[renderKey];
+    return Array.isArray(rows) ? rows : [];
+  }, [selectedSectorInfo?.renderKey, sectorPredictionRowsByRenderKey]);
+
+  const allSectorPredictionRows = useMemo(() => {
+    const entries = Object.entries(sectorPredictionRowsByRenderKey || {});
+    if (entries.length === 0) return [];
+    return entries.flatMap(([renderKey, rows]) =>
+      (Array.isArray(rows) ? rows : []).map((row, index) => ({
+        ...row,
+        __renderKey: renderKey,
+        __rowIndex: index,
+      })),
+    );
+  }, [sectorPredictionRowsByRenderKey]);
+
+  const sectorPredictionPointsForGrid = useMemo(() => {
+    if (!Array.isArray(allSectorPredictionRows) || allSectorPredictionRows.length === 0) return [];
+    return allSectorPredictionRows
+      .map((row) => {
+        const lat = Number(row?.lat ?? row?.latitude);
+        const lng = Number(row?.lng ?? row?.lon ?? row?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        const value = getSectorPredictionMetricValue(row, selectedMetric);
+        return {
+          lat,
+          lng,
+          latitude: lat,
+          longitude: lng,
+          value,
+          sampleCount: Number.isFinite(Number(row?.sampleCount)) ? Number(row.sampleCount) : 1,
+          siteId: String(row?.siteId ?? row?.site_id ?? row?.site ?? "").trim(),
+          sector: String(row?.sector ?? row?.sector_id ?? row?.sectorId ?? "").trim(),
+          deltaVariant:
+            String(row?.deltaVariant ?? row?.delta_variant ?? "").trim().toLowerCase() || null,
+          source: "sector",
+        };
+      })
+      .filter(Boolean);
+  }, [allSectorPredictionRows, selectedMetric]);
+
+  useEffect(() => {
+    if (typeof onSectorPredictionPointsChange !== "function") return;
+    onSectorPredictionPointsChange(sectorPredictionPointsForGrid);
+  }, [onSectorPredictionPointsChange, sectorPredictionPointsForGrid]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof onSectorPredictionPointsChange === "function") {
+        onSectorPredictionPointsChange([]);
+      }
+    };
+  }, [onSectorPredictionPointsChange]);
+
+  const visibleAllSectorPredictionRows = useMemo(() => {
+    if (!Array.isArray(allSectorPredictionRows)) return [];
+    if (!viewport) return allSectorPredictionRows;
+    return allSectorPredictionRows.filter(
+      (p) =>
+        Number(p.lat) >= viewport.south &&
+        Number(p.lat) <= viewport.north &&
+        Number(p.lng) >= viewport.west &&
+        Number(p.lng) <= viewport.east,
+    );
+  }, [allSectorPredictionRows, viewport]);
+
+  const renderedAllSectorPredictionRows = useMemo(
+    () => downsampleRows(visibleAllSectorPredictionRows, MAX_RENDERED_LTE_MARKERS),
+    [visibleAllSectorPredictionRows],
+  );
+  const shouldRenderLegacySectorPredictionMarkers =
+    typeof onSectorPredictionPointsChange !== "function";
+
   const visibleSectors = useMemo(() => {
     if (!viewport) return sectorsToRender;
     return sectorsToRender.filter(
@@ -1423,6 +1782,11 @@ const NetworkPlannerMap = ({
         s.lng <= viewport.east,
     );
   }, [siteMarkers, viewport]);
+
+  const isDeltaPredictionMode = useMemo(
+    () => String(sitePredictionVersion || "").trim().toLowerCase() === "delta",
+    [sitePredictionVersion],
+  );
 
   const logCoords = useMemo(() => {
     if (!hoveredLog) return null;
@@ -1449,6 +1813,275 @@ const NetworkPlannerMap = ({
     setDragMode(null);
     setPendingMovePosition(null);
   }, []);
+
+  const clearSelectedSectorConfiguration = useCallback((renderKeyToClear = null) => {
+    const resolvedRenderKey =
+      typeof renderKeyToClear === "string" && renderKeyToClear.trim() !== ""
+        ? renderKeyToClear
+        : typeof selectedSectorInfo?.renderKey === "string"
+          ? selectedSectorInfo.renderKey
+          : null;
+
+    if (resolvedRenderKey) {
+      setSectorOverridesByRenderKey((prev) => {
+        if (!prev || !Object.prototype.hasOwnProperty.call(prev, resolvedRenderKey)) return prev;
+        const next = { ...prev };
+        delete next[resolvedRenderKey];
+        return next;
+      });
+      setSectorPredictionRowsByRenderKey((prev) => {
+        if (!prev || !Object.prototype.hasOwnProperty.call(prev, resolvedRenderKey)) return prev;
+        const next = { ...prev };
+        delete next[resolvedRenderKey];
+        return next;
+      });
+    }
+
+    setSelectedSectorInfo(null);
+    setLoadingSectorDetailsKey(null);
+    setDragMode(null);
+    setPendingMovePosition(null);
+    setIsEditDialogOpen(false);
+    setSectorEditFormData({});
+    setSectorEditOriginalData({});
+  }, [selectedSectorInfo?.renderKey]);
+
+  const closeSectorTooltipOnly = useCallback(() => {
+    setSelectedSectorInfo(null);
+    setLoadingSectorDetailsKey(null);
+    setDragMode(null);
+    setPendingMovePosition(null);
+    setIsEditDialogOpen(false);
+    setSectorEditFormData({});
+    setSectorEditOriginalData({});
+  }, []);
+
+  const loadSectorPredictionForSector = useCallback(
+    async (sector, infoPos, options = {}) => {
+      if (!sector) return false;
+      const showInfo = Boolean(options?.showInfo);
+      const silent = Boolean(options?.silent);
+
+      const sectorRenderKey = buildSectorRenderKey(sector, 0);
+      const nextSector = { ...sector, renderKey: sectorRenderKey };
+      if (showInfo) {
+        openSectorInfo(nextSector, infoPos);
+      }
+
+      const sectorValueForLookup = String(
+        nextSector.sector ??
+          nextSector.rawSite?.sector ??
+          nextSector.rawSite?.sector_id ??
+          nextSector.rawSite?.sectorId ??
+          "",
+      ).trim();
+      const fallbackCellId = String(
+        nextSector.cellId ??
+          nextSector.cellIdRepresentative ??
+          nextSector.rawSite?.cell_id ??
+          nextSector.rawSite?.cellId ??
+          "",
+      ).trim();
+      const lookupCandidates = Array.from(
+        new Set(
+          [
+            // Prefer concrete cell id first when available; sector-only values like 1/2/3
+            // are often non-unique and can return empty or wrong rows.
+            fallbackCellId,
+            sectorValueForLookup,
+          ]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
+      );
+      if (lookupCandidates.length === 0) return false;
+
+      const rawVersion = String(sitePredictionVersion || "original").trim().toLowerCase();
+      const normalizedVersion =
+        rawVersion === "updated" ? "updated" : rawVersion === "delta" ? "delta" : "original";
+      const deltaVariant = String(
+        nextSector.deltaVariant ??
+          nextSector.delta_variant ??
+          nextSector.rawSite?.deltaVariant ??
+          nextSector.rawSite?.delta_variant ??
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      const shouldUseOptimizedApi =
+        normalizedVersion === "updated" ||
+        (normalizedVersion === "delta" &&
+          (deltaVariant === "optimized" || deltaVariant === "optimised"));
+
+      setLoadingSectorDetailsKey(nextSector.renderKey || null);
+      try {
+        let rows = [];
+        let resolvedLookupValue = "";
+        for (const candidate of lookupCandidates) {
+          const response =
+            shouldUseOptimizedApi
+              ? await mapViewApi.getSitePredictionOptimised({ cell_id: candidate })
+              : await mapViewApi.getSitePredictionBase({ cell_id: candidate });
+          const extractedRows = extractRowsFromApiResponse(response);
+          if (Array.isArray(extractedRows) && extractedRows.length > 0) {
+            rows = extractedRows;
+            resolvedLookupValue = candidate;
+            break;
+          }
+        }
+
+        if (rows.length === 0) return false;
+        const normalizedPredictionRowsWithVariant = normalizeSectorPredictionRows(
+          rows,
+          selectedMetric,
+          { deltaVariant },
+        );
+        if (nextSector.renderKey) {
+          setSectorPredictionRowsByRenderKey((prev) => ({
+            ...(prev || {}),
+            [nextSector.renderKey]: normalizedPredictionRowsWithVariant,
+          }));
+        }
+
+        const matchedRow =
+          rows.find((row) => {
+            const rowSector = String(row?.sector ?? row?.sector_id ?? row?.sectorId ?? "").trim();
+            const rowCellId = String(row?.cell_id ?? row?.cellId ?? "").trim();
+            return rowSector === resolvedLookupValue || rowCellId === resolvedLookupValue;
+          }) || rows[0];
+        const mergedSector = mergeSectorWithFetchedRow(nextSector, matchedRow);
+        if (nextSector.renderKey) {
+          setSectorOverridesByRenderKey((prev) => ({
+            ...(prev || {}),
+            [nextSector.renderKey]: mergedSector,
+          }));
+        }
+
+        if (showInfo) {
+          setSelectedSectorInfo((prev) => {
+            if (!prev || prev.renderKey !== nextSector.renderKey) return prev;
+            return {
+              ...prev,
+              ...mergedSector,
+              infoPos: prev.infoPos,
+            };
+          });
+        }
+
+        return normalizedPredictionRowsWithVariant.length > 0;
+      } catch (error) {
+        if (!silent) {
+          toast.error(extractApiErrorDetails(error) || "Failed to load selected sector details.");
+        }
+        return false;
+      } finally {
+        setLoadingSectorDetailsKey((prev) =>
+          prev === (nextSector.renderKey || null) ? null : prev,
+        );
+      }
+    },
+    [openSectorInfo, selectedMetric, sitePredictionVersion],
+  );
+
+  const handleSelectAllSectors = useCallback(async () => {
+    if (!Array.isArray(uniqueSectors) || uniqueSectors.length === 0) {
+      toast.info("No sectors available to load.");
+      return;
+    }
+
+    let loadedCount = 0;
+    let skippedCount = 0;
+
+    for (let index = 0; index < uniqueSectors.length; index += 1) {
+      const sector = uniqueSectors[index];
+      const sectorRenderKey = buildSectorRenderKey(sector, index);
+      const hasRenderedData =
+        Array.isArray(sectorPredictionRowsByRenderKey?.[sectorRenderKey]) &&
+        sectorPredictionRowsByRenderKey[sectorRenderKey].length > 0;
+      if (hasRenderedData) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const infoPos = buildSectorInfoPosition(sector, radius, effectiveSectorScale);
+      const loaded = await loadSectorPredictionForSector(
+        { ...sector, renderKey: sectorRenderKey },
+        infoPos,
+        { showInfo: false, silent: true },
+      );
+      if (loaded) loadedCount += 1;
+    }
+
+    if (loadedCount > 0) {
+      toast.success(`Loaded sector data for ${loadedCount} sector${loadedCount > 1 ? "s" : ""}.`);
+      return;
+    }
+    if (skippedCount > 0) {
+      toast.info("Sector data is already loaded.");
+      return;
+    }
+    toast.info("No sector data could be loaded.");
+  }, [
+    effectiveSectorScale,
+    loadSectorPredictionForSector,
+    radius,
+    sectorPredictionRowsByRenderKey,
+    uniqueSectors,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const onSelectAllSites = () => {
+      void handleSelectAllSites();
+    };
+    const onSelectAllSectors = () => {
+      void handleSelectAllSectors();
+    };
+    const onClearSelectedSites = () => {
+      handleClearSelectedSites();
+    };
+
+    window.addEventListener("map:selectAllSites", onSelectAllSites);
+    window.addEventListener("map:selectAllSectors", onSelectAllSectors);
+    window.addEventListener("map:clearSelectedSites", onClearSelectedSites);
+
+    return () => {
+      window.removeEventListener("map:selectAllSites", onSelectAllSites);
+      window.removeEventListener("map:selectAllSectors", onSelectAllSectors);
+      window.removeEventListener("map:clearSelectedSites", onClearSelectedSites);
+    };
+  }, [handleClearSelectedSites, handleSelectAllSectors, handleSelectAllSites]);
+
+  const handleSectorLeftClick = useCallback(
+    async (sector, infoPos) => {
+      if (!sector) return;
+
+      const clickedRenderKey = buildSectorRenderKey(sector, 0);
+      const hasRenderedData =
+        Boolean(clickedRenderKey && sectorOverridesByRenderKey?.[clickedRenderKey]) ||
+        Boolean(
+          clickedRenderKey &&
+            Array.isArray(sectorPredictionRowsByRenderKey?.[clickedRenderKey]) &&
+            sectorPredictionRowsByRenderKey[clickedRenderKey].length > 0,
+        );
+      if (clickedRenderKey && hasRenderedData) {
+        clearSelectedSectorConfiguration(clickedRenderKey);
+        return;
+      }
+      await loadSectorPredictionForSector(
+        { ...sector, renderKey: clickedRenderKey },
+        infoPos,
+        { showInfo: true, silent: false },
+      );
+    },
+    [
+      clearSelectedSectorConfiguration,
+      loadSectorPredictionForSector,
+      sectorOverridesByRenderKey,
+      sectorPredictionRowsByRenderKey,
+    ],
+  );
 
   const startDragMove = useCallback((mode) => {
     if (!selectedSectorInfo) return;
@@ -1506,8 +2139,7 @@ const NetworkPlannerMap = ({
     setIsApplyingDraggedMove(true);
     try {
       const response = await mapViewApi.updateSitePrediction(payload);
-      const rowsAffected =
-        Number(response?.RowsAffected ?? response?.rowsAffected ?? response?.Data ?? response?.data?.Data ?? 0) || 0;
+      const rowsAffected = extractRowsAffected(response);
 
       if (rowsAffected <= 0) {
         toast.warning("No rows were updated. Check site toggle and row ids.");
@@ -1635,6 +2267,15 @@ const NetworkPlannerMap = ({
       toast.error("Unable to update this site row: missing row id.");
       return;
     }
+    const siteIdForUpdate = Number(
+      selectedSectorInfo.siteId ??
+      selectedSectorInfo?.rawSite?.site ??
+      selectedSectorInfo?.rawSite?.site_id ??
+      sectorEditOriginalData.site ??
+      NaN,
+    );
+    const payloadTargetId =
+      Number.isFinite(siteIdForUpdate) && siteIdForUpdate > 0 ? siteIdForUpdate : rowId;
 
     const azimuthValue = String(sectorEditFormData.azimuth ?? "").trim();
     if (azimuthValue !== "") {
@@ -1663,7 +2304,7 @@ const NetworkPlannerMap = ({
       }
     }
 
-    const payloadItem = { id: rowId };
+    const payloadItem = { id: payloadTargetId, site_id_selector: payloadTargetId };
     Object.keys(sectorEditFormData).forEach((key) => {
       if (key === "id") return;
       const originalValue = sectorEditOriginalData[key];
@@ -1689,8 +2330,7 @@ const NetworkPlannerMap = ({
     setIsSavingSectorEdit(true);
     try {
       const response = await mapViewApi.updateSitePrediction([payloadItem]);
-      const rowsAffected =
-        Number(response?.Data ?? response?.data?.Data ?? response?.rowsAffected ?? response?.RowsAffected ?? 0) || 0;
+      const rowsAffected = extractRowsAffected(response);
 
       const nextRaw = {
         ...(selectedSectorInfo.rawSite || {}),
@@ -1700,6 +2340,13 @@ const NetworkPlannerMap = ({
       const nextSiteName = String(nextRaw.site_name ?? selectedSectorInfo.siteNameRaw ?? "").trim();
       const nextSector = String(nextRaw.sector ?? selectedSectorInfo.sector ?? "").trim();
       const nextAzimuth = Number(nextRaw.azimuth ?? selectedSectorInfo.azimuth ?? 0);
+      const nextBeamwidth = normalizeBeamwidth(
+        getFirstFiniteNumber(
+          [nextRaw.bw, nextRaw.bandwidth, nextRaw.beamwidth, selectedSectorInfo.beamwidth],
+          selectedSectorInfo.beamwidth ?? 65,
+        ),
+        selectedSectorInfo.beamwidth ?? 65,
+      );
       const nextBand = String(nextRaw.band ?? selectedSectorInfo.band ?? "").trim();
       const nextPci =
         nextRaw.pci ?? nextRaw.PCI ?? nextRaw.pci_or_psi ?? nextRaw.cell_id ?? selectedSectorInfo.pci ?? null;
@@ -1740,6 +2387,7 @@ const NetworkPlannerMap = ({
                 siteName: nextSiteName || sector.siteName || sector.siteId || "Unknown",
                 sector: nextSector || null,
                 azimuth: Number.isFinite(nextAzimuth) ? nextAzimuth : sector.azimuth,
+                beamwidth: Number.isFinite(nextBeamwidth) ? nextBeamwidth : sector.beamwidth,
                 band: nextBand || sector.band,
                 pci: nextPci !== null && nextPci !== undefined ? String(nextPci).trim() : sector.pci,
                 technology: nextTechnology || sector.technology,
@@ -1764,6 +2412,7 @@ const NetworkPlannerMap = ({
               siteName: nextSiteName || prev.siteName || prev.siteId || "Unknown",
               sector: nextSector || null,
               azimuth: Number.isFinite(nextAzimuth) ? nextAzimuth : prev.azimuth,
+              beamwidth: Number.isFinite(nextBeamwidth) ? nextBeamwidth : prev.beamwidth,
               band: nextBand || prev.band,
               pci: nextPci !== null && nextPci !== undefined ? String(nextPci).trim() : prev.pci,
               technology: nextTechnology || prev.technology,
@@ -1791,6 +2440,10 @@ const NetworkPlannerMap = ({
       );
       setIsEditDialogOpen(false);
       toast.success(rowsAffected > 0 ? `Updated (${rowsAffected} row${rowsAffected > 1 ? "s" : ""}).` : "Site updated.");
+
+      // Always refetch after edit so non-location fields (azimuth/bw/tilts) are refreshed
+      // across baseline/updated/delta modes.
+      await fetchSiteData();
 
       const marker = siteMarkers.find((item) => item.siteId === selectedSectorInfo.siteId);
       if (marker) {
@@ -1923,11 +2576,7 @@ const NetworkPlannerMap = ({
             <span className="font-semibold text-slate-800">Move Controls</span>
             <button
               type="button"
-              onClick={() => {
-                setSelectedSectorInfo(null);
-                setDragMode(null);
-                setPendingMovePosition(null);
-              }}
+              onClick={closeSectorTooltipOnly}
               className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
             >
               Close
@@ -1935,7 +2584,7 @@ const NetworkPlannerMap = ({
           </div>
 
           <div className="mb-2 text-[11px] text-slate-600">
-            Site: <span className="font-semibold">{selectedSectorInfo.siteId || "N/A"}</span>
+            Site: <span className="font-semibold">{getDisplaySiteId(selectedSectorInfo) || "N/A"}</span>
           </div>
 
           {String(siteToggle || "").toLowerCase() !== "cell" ? (
@@ -1995,16 +2644,32 @@ const NetworkPlannerMap = ({
       {showSiteMarkers &&
         visibleSiteMarkers.map((site) => (
           <MarkerF
-            key={`site-${site.siteId}`}
+            key={`site-${site.markerKey || site.siteId}`}
             position={{ lat: site.lat, lng: site.lng }}
             icon={{
               path: window.google.maps.SymbolPath.CIRCLE,
               scale: selectedSiteIdSet.has(site.siteId) ? 7 : 5,
-              fillColor: selectedSiteIdSet.has(site.siteId) ? "#dc2626" : "#2563eb",
+              fillColor: selectedSiteIdSet.has(site.siteId)
+                ? "#dc2626"
+                : site.deltaVariant === "baseline"
+                  ? "#dc2626"
+                  : site.deltaVariant === "optimized" || site.deltaVariant === "optimised"
+                    ? "#16a34a"
+                    : "#2563eb",
               fillOpacity: 0.95,
               strokeColor: "#ffffff",
               strokeWeight: 1.5,
             }}
+            label={
+              isDeltaPredictionMode
+                ? {
+                    text: String(getDisplaySiteId(site) || ""),
+                    color: "#111827",
+                    fontSize: "11px",
+                    fontWeight: "700",
+                  }
+                : undefined
+            }
             zIndex={selectedSiteIdSet.has(site.siteId) ? 4001 : 3001}
             onClick={() => {
               void handleSiteMarkerClick(site);
@@ -2062,8 +2727,9 @@ const NetworkPlannerMap = ({
             <MarkerF
               key={key}
               position={{ lat: Number(point.lat), lng: Number(point.lng) }}
+              clickable={false}
               icon={{
-                path: window.google.maps.SymbolPath.CIRCLE,
+                path: SQUARE_MARKER_PATH,
                 scale: 4.5,
                 fillColor: pointColor,
                 fillOpacity: 0.95,
@@ -2075,12 +2741,40 @@ const NetworkPlannerMap = ({
           );
         })}
 
+      {shouldRenderLegacySectorPredictionMarkers &&
+        renderedAllSectorPredictionRows.map((point, index) => {
+        const pointValue = getSectorPredictionMetricValue(point, selectedMetric);
+        const colorRaw =
+          typeof getMetricColor === "function"
+            ? getMetricColor(pointValue, selectedMetric)
+            : "#f97316";
+        const pointColor =
+          typeof colorRaw === "string" && colorRaw.trim() !== ""
+            ? colorRaw
+            : "#f97316";
+        const pointKey = `sector-pred-${point.__renderKey || "na"}-${Number(
+          point.lat,
+        ).toFixed(6)}-${Number(point.lng).toFixed(6)}-${index}`;
+
+        return (
+          <MarkerF
+            key={pointKey}
+            position={{ lat: Number(point.lat), lng: Number(point.lng) }}
+            clickable={false}
+              icon={{
+                path: SQUARE_MARKER_PATH,
+                scale: 6,
+                fillColor: pointColor,
+                fillOpacity: 0.95,
+                strokeColor: "#ffffff",
+                strokeWeight: 1.1,
+              }}
+            zIndex={4200}
+          />
+        );
+      })}
+
       {visibleSectors.map((sector, index) => {
-        const p0 = { lat: sector.lat, lng: sector.lng };
-        const r = (sector.range || radius) * effectiveSectorScale;
-        const safeBeamwidth = normalizeBeamwidth(sector.beamwidth, 65);
-        const p1 = computeOffset(p0, r, sector.azimuth - safeBeamwidth / 2);
-        const p2 = computeOffset(p0, r, sector.azimuth + safeBeamwidth / 2);
         const sectorRenderKey =
           sector.renderKey ||
           [
@@ -2091,16 +2785,29 @@ const NetworkPlannerMap = ({
             Number(sector.beamwidth).toFixed(2),
             index,
           ].join("|");
+        const sectorOverride = sectorOverridesByRenderKey?.[sectorRenderKey] || null;
+        const effectiveSector = sectorOverride
+          ? { ...sector, ...sectorOverride, renderKey: sectorRenderKey }
+          : { ...sector, renderKey: sectorRenderKey };
+        const p0 = { lat: effectiveSector.lat, lng: effectiveSector.lng };
+        const r = (effectiveSector.range || radius) * effectiveSectorScale;
+        const safeBeamwidth = normalizeBeamwidth(effectiveSector.beamwidth, 65);
+        const p1 = computeOffset(p0, r, effectiveSector.azimuth - safeBeamwidth / 2);
+        const p2 = computeOffset(p0, r, effectiveSector.azimuth + safeBeamwidth / 2);
         const infoPos = {
           lat: (p0.lat + p1.lat + p2.lat) / 3,
           lng: (p0.lng + p1.lng + p2.lng) / 3,
         };
 
         const activeCoords = logCoords;
-        const sectorPci = normalizeMatchValue(sector.pci);
+        const sectorPci = normalizeMatchValue(effectiveSector.pci);
         const isHoveredMatch = logPci !== null && sectorPci !== null && sectorPci === logPci;
         const isSelectedSector = selectedSectorInfo?.renderKey === sectorRenderKey;
-        const infoSector = isSelectedSector ? selectedSectorInfo || sector : sector;
+        const isSectorDataActive =
+          Array.isArray(sectorPredictionRowsByRenderKey?.[sectorRenderKey]) &&
+          sectorPredictionRowsByRenderKey[sectorRenderKey].length > 0;
+        const infoSector = isSelectedSector ? selectedSectorInfo || effectiveSector : effectiveSector;
+        const infoSectorSiteId = getDisplaySiteId(infoSector);
         const canEditSitePrediction = String(siteToggle || "").toLowerCase() === "cell";
 
         return (
@@ -2108,18 +2815,23 @@ const NetworkPlannerMap = ({
             <PolygonF
               paths={[p0, p1, p2]}
               options={{
-                fillColor: sector.color,
-                fillOpacity: isSelectedSector ? 0.95 : isHoveredMatch ? 0.9 : options.opacity || 0.6,
-                strokeWeight: isSelectedSector ? 2 : 1,
-                strokeColor: isSelectedSector ? "#111827" : isHoveredMatch ? "#FF0000" : sector.color,
-                zIndex: isSelectedSector ? 3000 : isHoveredMatch ? 2001 : 2000,
+                fillColor: effectiveSector.color,
+                fillOpacity: isSectorDataActive
+                  ? 0.22
+                  : isSelectedSector
+                    ? 0.95
+                    : isHoveredMatch
+                      ? 0.9
+                      : options.opacity || 0.6,
+                strokeWeight: isSectorDataActive ? 2 : isSelectedSector ? 2 : 1,
+                strokeColor: isSelectedSector ? "#111827" : isHoveredMatch ? "#FF0000" : effectiveSector.color,
+                strokeOpacity: isSectorDataActive ? 0.95 : 1,
+                zIndex: isSectorDataActive ? 5200 : isSelectedSector ? 5100 : isHoveredMatch ? 5050 : 5000,
               }}
-              onClick={() => openSectorInfo({ ...sector, renderKey: sectorRenderKey }, infoPos)}
-              onRightClick={() => {
-                const nextSector = { ...sector, renderKey: sectorRenderKey };
-                openSectorInfo(nextSector, infoPos);
-                openSiteEditDialog(nextSector);
+              onClick={() => {
+                void handleSectorLeftClick(effectiveSector, infoPos);
               }}
+              onRightClick={() => clearSelectedSectorConfiguration(sectorRenderKey)}
               onLoad={(polygon) => {
                 if (polygon) polygonRefs.current.add(polygon);
               }}
@@ -2149,13 +2861,15 @@ const NetworkPlannerMap = ({
             {isSelectedSector && (
               <InfoWindowF
                 position={selectedSectorInfo.infoPos}
-                onCloseClick={() => {
-                  setSelectedSectorInfo(null);
-                  setDragMode(null);
-                  setPendingMovePosition(null);
-                }}
+                onCloseClick={closeSectorTooltipOnly}
               >
-                <div className="min-w-[210px] border border-slate-300 bg-white p-2 text-xs shadow-sm">
+                <div
+                  className="min-w-[210px] border border-slate-300 bg-white p-2 text-xs shadow-sm"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    clearSelectedSectorConfiguration();
+                  }}
+                >
                   <div className="mb-1 flex items-center justify-between border-b border-slate-200 pb-1 font-semibold">
                     <span>Site Info</span>
                     <button
@@ -2172,13 +2886,18 @@ const NetworkPlannerMap = ({
                       Edit
                     </button>
                   </div>
-                  <div>Site ID: {infoSector.siteId || "N/A"}</div>
+                  <div>Site ID: {infoSectorSiteId || "N/A"}</div>
                   <div>Cell ID: {infoSector.cellId || infoSector.cellIdRepresentative || "N/A"}</div>
+                  <div>Sector: {infoSector.sector || "N/A"}</div>
                   <div>NodeB ID: {infoSector.nodebId || "N/A"}</div>
                   <div>PCI: {infoSector.pci || "N/A"}</div>
                   <div>Network: {infoSector.network || "N/A"}</div>
                   <div>Technology: {infoSector.technology || "N/A"}</div>
                   <div>Band: {infoSector.band || "N/A"}</div>
+                  <div>Prediction Points: {selectedSectorPredictionRows.length}</div>
+                  {loadingSectorDetailsKey === sectorRenderKey && (
+                    <div className="mt-1 text-[11px] text-blue-700">Loading sector details...</div>
+                  )}
                   {canEditSitePrediction && (
                     <div className="mt-2 border-t border-slate-200 pt-2">
                       {!dragMode ? (

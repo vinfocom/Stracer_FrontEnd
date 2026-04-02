@@ -223,6 +223,8 @@ export const COLORS = {
 export const TABS = [
   { id: "overview", label: "Overview", icon: "BarChart3" },
   { id: "signal", label: "Signal", icon: "Signal" },
+  { id: "conditionLogs", label: "Logs", icon: "ListFilter" },
+  { id: "operatorComparison", label: "Benchmark", icon: "Globe" },
   { id: "network", label: "Comparison", icon: "Wifi" },
   { id: "performance", label: "Performance", icon: "Zap" },
   { id: "Application", label: "Apps", icon: "PieChartIcon" },

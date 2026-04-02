@@ -34,6 +34,13 @@ const AGGREGATION_METHODS = {
   max: (values) => (Array.isArray(values) && values.length ? Math.max(...values) : null),
 };
 
+const normalizeDeltaVariant = (value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "baseline") return "baseline";
+  if (normalized === "optimized" || normalized === "optimised") return "optimized";
+  return "";
+};
+
 const toRgbaArray = (hexOrCss, alpha = 220) => {
   if (!hexOrCss || typeof hexOrCss !== "string") return [107, 114, 128, alpha];
   const hex = hexOrCss.trim().replace("#", "");
@@ -290,6 +297,7 @@ const LtePredictionLocationLayer = ({
   enableGrid = false,
   gridSizeMeters = 50,
   gridAggregationMethod = "median",
+  deltaComparisonMode = false,
   aggregateOverlaps = false,
   mlGridEnabled = false,
   mlGridSize = 50,
@@ -325,6 +333,7 @@ const LtePredictionLocationLayer = ({
         const value = Number(p.value);
         const sampleCount = Number(p.sampleCount ?? 0);
         const siteId = String(p.siteId ?? p.site_id ?? "").trim();
+        const deltaVariant = normalizeDeltaVariant(p.deltaVariant ?? p.delta_variant);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
         return {
           ...p,
@@ -333,6 +342,7 @@ const LtePredictionLocationLayer = ({
           value: Number.isFinite(value) ? value : null,
           sampleCount: Number.isFinite(sampleCount) ? sampleCount : 0,
           siteId,
+          deltaVariant: deltaVariant || null,
           selectedMetric,
         };
       })
@@ -550,14 +560,36 @@ const LtePredictionLocationLayer = ({
       const key = `${row}|${col}`;
       let bucket = cellBuckets.get(key);
       if (!bucket) {
-        bucket = { row, col, values: [], pointCount: 0, sampleCount: 0 };
+        bucket = {
+          row,
+          col,
+          values: [],
+          pointCount: 0,
+          sampleCount: 0,
+          baselineValues: [],
+          optimizedValues: [],
+          baselinePointCount: 0,
+          optimizedPointCount: 0,
+          baselineSampleCount: 0,
+          optimizedSampleCount: 0,
+        };
         cellBuckets.set(key, bucket);
       }
 
       bucket.pointCount += 1;
       bucket.sampleCount += Number.isFinite(point.sampleCount) ? point.sampleCount : 0;
+      const variant = normalizeDeltaVariant(point?.deltaVariant ?? point?.delta_variant);
+      if (variant === "baseline") {
+        bucket.baselinePointCount += 1;
+        bucket.baselineSampleCount += Number.isFinite(point.sampleCount) ? point.sampleCount : 0;
+      } else if (variant === "optimized") {
+        bucket.optimizedPointCount += 1;
+        bucket.optimizedSampleCount += Number.isFinite(point.sampleCount) ? point.sampleCount : 0;
+      }
       if (Number.isFinite(point.value)) {
         bucket.values.push(point.value);
+        if (variant === "baseline") bucket.baselineValues.push(point.value);
+        if (variant === "optimized") bucket.optimizedValues.push(point.value);
       }
     }
 
@@ -576,10 +608,38 @@ const LtePredictionLocationLayer = ({
         return;
       }
 
-      const aggregatedValue = aggregateFn(bucket.values);
-      const colorHex = Number.isFinite(aggregatedValue)
+      let aggregatedValue = aggregateFn(bucket.values);
+      let colorHex = Number.isFinite(aggregatedValue)
         ? resolveMetricColor(aggregatedValue)
         : "#6b7280";
+      let baselineAvg = null;
+      let optimizedAvg = null;
+      let difference = null;
+      const isDeltaCompareCell = Boolean(deltaComparisonMode);
+
+      if (isDeltaCompareCell) {
+        baselineAvg = aggregateFn(bucket.baselineValues);
+        optimizedAvg = aggregateFn(bucket.optimizedValues);
+        const hasBaseline = Number.isFinite(baselineAvg);
+        const hasOptimized = Number.isFinite(optimizedAvg);
+
+        if (hasBaseline && hasOptimized) {
+          difference = optimizedAvg - baselineAvg;
+          aggregatedValue = difference;
+          if (difference > 0) colorHex = "#16a34a";
+          else if (difference < 0) colorHex = "#dc2626";
+          else colorHex = "#6b7280";
+        } else if (hasOptimized) {
+          aggregatedValue = optimizedAvg;
+          colorHex = "#16a34a";
+        } else if (hasBaseline) {
+          aggregatedValue = baselineAvg;
+          colorHex = "#dc2626";
+        } else {
+          aggregatedValue = null;
+          colorHex = "#6b7280";
+        }
+      }
 
       cells.push({
         kind: "grid",
@@ -593,6 +653,14 @@ const LtePredictionLocationLayer = ({
         value: Number.isFinite(aggregatedValue) ? aggregatedValue : null,
         pointCount: bucket.pointCount,
         sampleCount: bucket.sampleCount,
+        deltaCompare: isDeltaCompareCell,
+        baselineAvg: Number.isFinite(baselineAvg) ? baselineAvg : null,
+        optimizedAvg: Number.isFinite(optimizedAvg) ? optimizedAvg : null,
+        difference: Number.isFinite(difference) ? difference : null,
+        baselinePointCount: bucket.baselinePointCount,
+        optimizedPointCount: bucket.optimizedPointCount,
+        baselineSampleCount: bucket.baselineSampleCount,
+        optimizedSampleCount: bucket.optimizedSampleCount,
         lat: center.lat,
         lng: center.lng,
         color: toRgbaArray(colorHex, 190),
@@ -611,6 +679,7 @@ const LtePredictionLocationLayer = ({
     thresholds,
     getMetricColor,
     resolveMetricColor,
+    deltaComparisonMode,
   ]);
 
   const isGridMode = enableGrid && gridLayerData.length > 0;
@@ -697,10 +766,10 @@ const LtePredictionLocationLayer = ({
           getPolygon: (d) => d.polygon,
           getFillColor: (d) => d.color,
           onHover: handleHover,
-          updateTriggers: {
-            getFillColor: [selectedMetric, thresholds, gridAggregationMethod],
-          },
-        }),
+            updateTriggers: {
+              getFillColor: [selectedMetric, thresholds, gridAggregationMethod, deltaComparisonMode],
+            },
+          }),
       );
     } else if (mlGridEnabled) {
       const mlGridData = pointLayerData.filter(
@@ -762,6 +831,7 @@ const LtePredictionLocationLayer = ({
     selectedMetric,
     thresholds,
     gridAggregationMethod,
+    deltaComparisonMode,
     mlGridEnabled,
     mlGridAggregation,
     sizeScale,
@@ -804,11 +874,27 @@ const LtePredictionLocationLayer = ({
       <div>Metric: {hoveredMetricLabel}</div>
 
       {isHoveredGrid ? (
-        <>
-          <div>Value: {hoveredValue}</div>
-          <div>Grid Points: {hovered.object.pointCount ?? 0}</div>
-          <div>Samples: {hovered.object.sampleCount ?? 0}</div>
-        </>
+        hovered.object.deltaCompare ? (
+          <>
+            <div>Baseline Avg: {Number.isFinite(hovered.object.baselineAvg) ? hovered.object.baselineAvg.toFixed(2) : "N/A"}</div>
+            <div>Optimized Avg: {Number.isFinite(hovered.object.optimizedAvg) ? hovered.object.optimizedAvg.toFixed(2) : "N/A"}</div>
+            <div className={Number(hovered.object.difference) >= 0 ? "text-emerald-700 font-semibold" : "text-red-700 font-semibold"}>
+              Difference (Opt - Base): {Number.isFinite(hovered.object.difference) ? hovered.object.difference.toFixed(2) : "N/A"}
+            </div>
+            <div className="text-[10px] text-slate-600">
+              Points B/O: {hovered.object.baselinePointCount ?? 0}/{hovered.object.optimizedPointCount ?? 0}
+            </div>
+            <div className="text-[10px] text-slate-600">
+              Samples B/O: {hovered.object.baselineSampleCount ?? 0}/{hovered.object.optimizedSampleCount ?? 0}
+            </div>
+          </>
+        ) : (
+          <>
+            <div>Value: {hoveredValue}</div>
+            <div>Grid Points: {hovered.object.pointCount ?? 0}</div>
+            <div>Samples: {hovered.object.sampleCount ?? 0}</div>
+          </>
+        )
       ) : isHoveredMlGrid ? (
         <>
           <div className="mt-1 font-semibold text-[11px] text-blue-600 border-b pb-0.5 mb-0.5">

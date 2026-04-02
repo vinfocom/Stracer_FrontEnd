@@ -11,11 +11,43 @@ import {
   normalizeTechName
 } from "@/utils/colorUtils";
 
-export default function SiteLegend({ enabled, sites = [], isLoading = false, colorMode = "Operator" }) {
+export default function SiteLegend({
+  enabled,
+  sites = [],
+  isLoading = false,
+  colorMode = "Operator",
+  sitePredictionVersion = "original",
+}) {
   const [collapsed, setCollapsed] = useState(false);
 
   const legendItems = useMemo(() => {
     if (!sites || sites.length === 0) return [];
+
+    const isDeltaMode =
+      String(sitePredictionVersion || "").trim().toLowerCase() === "delta" ||
+      sites.some((site) => {
+        const variant = String(site?.deltaVariant ?? site?.delta_variant ?? "").trim().toLowerCase();
+        return variant === "baseline" || variant === "optimized" || variant === "optimised";
+      });
+
+    if (isDeltaMode) {
+      let baselineCount = 0;
+      let optimizedCount = 0;
+      sites.forEach((site) => {
+        const variant = String(site?.deltaVariant ?? site?.delta_variant ?? "").trim().toLowerCase();
+        if (variant === "baseline") baselineCount += 1;
+        if (variant === "optimized" || variant === "optimised") optimizedCount += 1;
+      });
+
+      const items = [];
+      if (baselineCount > 0) {
+        items.push({ label: "Baseline", color: "#dc2626", count: baselineCount });
+      }
+      if (optimizedCount > 0) {
+        items.push({ label: "Optimized", color: "#16a34a", count: optimizedCount });
+      }
+      return items;
+    }
 
     const itemMap = new Map();
     const mode = colorMode.toLowerCase();
@@ -60,7 +92,7 @@ export default function SiteLegend({ enabled, sites = [], isLoading = false, col
        }
        return a.label.localeCompare(b.label);
     });
-  }, [sites, colorMode]);
+  }, [sites, colorMode, sitePredictionVersion]);
 
   if (!enabled) return null;
 
@@ -78,7 +110,7 @@ export default function SiteLegend({ enabled, sites = [], isLoading = false, col
                 Cell Sectors
               </span>
               <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
-                 by {colorMode}
+                 by {String(sitePredictionVersion || "").trim().toLowerCase() === "delta" ? "Delta" : colorMode}
               </span>
             </div>
            

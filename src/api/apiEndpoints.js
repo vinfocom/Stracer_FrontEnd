@@ -957,6 +957,15 @@ export const mapViewApi = {
 
   getSitePrediction: (params) =>
     api.get("/api/MapView/GetSitePrediction", { params }),
+  getSitePredictionBase: (params, config = {}) =>
+    api.get("/api/MapView/GetSitePredictionBase", { params, ...config }),
+  getSitePredictionOptimised: (params, config = {}) =>
+    api.get("/api/MapView/GetSitePredictionOptimised", { params, ...config }),
+  // Keep US spelling alias for callers while backend route remains "Optimised".
+  getSitePredictionOptimized: (params, config = {}) =>
+    api.get("/api/MapView/GetSitePredictionOptimised", { params, ...config }),
+  compareSitePrediction: (params, config = {}) =>
+    api.get("/api/MapView/CompareSitePrediction", { params, ...config }),
   updateSitePrediction: (payload) =>
     api.post("/api/MapView/UpdateSitePrediction", payload),
 

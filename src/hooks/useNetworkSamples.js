@@ -136,7 +136,13 @@ const parseLogEntry = (log, sessionId) => {
   };
 };
 
-export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = false, polygons = []) => {
+export const useNetworkSamples = (
+  sessionIds,
+  enabled = true,
+  filterEnabled = false,
+  polygons = [],
+  maxRows = 2000000,
+) => {
   const [locations, setLocations] = useState([]);
   const [appSummary, setAppSummary] = useState({});
   const [inpSummary, setInpSummary] = useState({});
@@ -157,6 +163,10 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     const fetchKey = sessionIds ? [...sessionIds].sort().join(',') : '';
+    const safeMaxRows =
+      Number.isFinite(Number(maxRows)) && Number(maxRows) > 0
+        ? Math.floor(Number(maxRows))
+        : null;
 
 
     if (!forceRefresh && fetchKey === lastFetchedKeyRef.current && locations.length > 0) return;
@@ -271,6 +281,11 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
           if (parsed) allParsedLogs.push(parsed);
         });
 
+        if (safeMaxRows && allParsedLogs.length >= safeMaxRows) {
+          allParsedLogs.length = safeMaxRows;
+          hasMoreData = false;
+        }
+
         if (mountedRef.current && fetchIdRef.current === currentFetchId) {
           setProgress({
             current: allParsedLogs.length,
@@ -296,6 +311,11 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
         );
       }
 
+      if (safeMaxRows && finalLogs.length > safeMaxRows) {
+        const step = Math.ceil(finalLogs.length / safeMaxRows);
+        finalLogs = finalLogs.filter((_, index) => index % step === 0).slice(0, safeMaxRows);
+      }
+
       console.log("[DEBUG] useNetworkSamples fetched data:", {
         rawParsedLogs: allParsedLogs?.length,
         finalLogs: finalLogs?.length,
@@ -312,7 +332,13 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
 
 
       if (allParsedLogs.length > 0) {
-        toast.success(`${allParsedLogs.length.toLocaleString()} points loaded in ${fetchTime}s`);
+        const cappedSuffix =
+          safeMaxRows && allParsedLogs.length >= safeMaxRows
+            ? ` (capped at ${safeMaxRows.toLocaleString()})`
+            : "";
+        toast.success(
+          `${allParsedLogs.length.toLocaleString()} points loaded in ${fetchTime}s${cappedSuffix}`,
+        );
       } else {
         toast.warn('No valid log data found');
       }
@@ -336,7 +362,7 @@ export const useNetworkSamples = (sessionIds, enabled = true, filterEnabled = fa
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, [sessionIds, enabled, filterEnabled, polygons]);
+  }, [sessionIds, enabled, filterEnabled, polygons, maxRows]);
 
   // Handle Technology Transitions Logic
   useEffect(() => {

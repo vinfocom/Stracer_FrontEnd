@@ -277,7 +277,6 @@ export default function UnifiedHeader({
   isControlsOpen,
   isLeftOpen,
   onLeftToggle,
-  onOpenOperatorComparison,
   showAnalytics,
   projectId,
   sessionIds,
@@ -703,14 +702,6 @@ export default function UnifiedHeader({
       </div>
 
       <div className="flex items-center space-x-4">
-        <Button
-              onClick={() => onOpenOperatorComparison?.()}
-              size="sm"
-              className="flex gap-1 items-center bg-indigo-600 hover:bg-indigo-500 text-white"
-              title="Open Operator Comparison"
-            >
-              BenchMark
-            </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" className="bg-slate-700 hover:bg-slate-600 text-white border-slate-600 flex items-center gap-1">

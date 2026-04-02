@@ -3,6 +3,7 @@ import { Globe, Settings, BarChart3, TrendingUp, Hash } from "lucide-react";
 import {
   BarChart,
   Bar,
+  Cell,
   LineChart,
   Line,
   XAxis,
@@ -24,7 +25,7 @@ import {
   normalizeProviderName,
   normalizeTechName,
   normalizeBandName,
-  getLogColor,
+  getProviderColor as getProviderColorFromUtils,
 } from "@/utils/colorUtils";
 
 const safeNumber = (value) => {
@@ -324,10 +325,7 @@ const STAT_MODES = {
 
 const DEFAULT_METRICS = ["rsrp"];
 
-const getProviderColor = (provider) => {
-  const normalized = normalizeProviderName(provider);
-  return getLogColor("provider", normalized, "#6B7280");
-};
+const getProviderColor = (provider) => getProviderColorFromUtils(provider);
 
 const TECHNOLOGY_SORT_ORDER = {
   "5G": 1,
@@ -618,7 +616,7 @@ export const OperatorComparisonChart = React.forwardRef(
 
     const barChartData = useMemo(() => {
       return chartOrderedOperators.map((op) => {
-        const data = { name: op.name, samples: op.samples };
+        const data = { name: op.name, samples: op.samples, color: op.color };
         selectedMetrics.forEach((metricKey) => {
           data[metricKey] = getMetricValue(op, metricKey, resolveStatMode(metricKey));
         });
@@ -894,6 +892,7 @@ export const OperatorComparisonChart = React.forwardRef(
       const chartData = chartOrderedOperators.map((op) => ({
         name: op.name,
         value: getMetricValue(op, metricKey, currentMode),
+        color: op.color,
       }));
 
       return (
@@ -983,7 +982,14 @@ export const OperatorComparisonChart = React.forwardRef(
                   name={config.label}
                   radius={[4, 4, 0, 0]}
                   fill={config.color}
-                />
+                >
+                  {chartData.map((entry, idx) => (
+                    <Cell
+                      key={`${metricKey}-${entry.name}-${idx}`}
+                      fill={entry.color || config.color}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1177,7 +1183,14 @@ export const OperatorComparisonChart = React.forwardRef(
                       name={config.label}
                       radius={[4, 4, 0, 0]}
                       fill={config.color}
-                    />
+                    >
+                      {barChartData.map((entry, idx) => (
+                        <Cell
+                          key={`${metricKey}-${entry.name}-${idx}`}
+                          fill={entry.color || config.color}
+                        />
+                      ))}
+                    </Bar>
                   );
                 })}
               </BarChart>

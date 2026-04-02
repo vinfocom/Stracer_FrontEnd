@@ -42,6 +42,7 @@ import { ApplicationTab } from "./tabs/ApplicationTab";
 import { IOAnalysis } from "./tabs/IOAnalysis";
 import N78AnalysisTab from "./tabs/N78AnalysisTab";
 import SubSessionAnalyticsTab from "./tabs/SubSessionAnalyticsTab";
+import ConditionLogsTab from "./tabs/ConditionLogsTab";
 
 import { TabButton } from "./common/TabButton";
 import { LoadingSpinner } from "./common/LoadingSpinner";
@@ -651,6 +652,8 @@ export default function UnifiedDetailLogs({
   siteData = [],
   siteToggle,
   enableSiteToggle,
+  showSiteMarkers = true,
+  showSiteSectors = true,
   appSummary,
   polygons = [],
   showPolygons,
@@ -683,6 +686,15 @@ export default function UnifiedDetailLogs({
   drawnShapeAnalytics = [],
   activeTabExternal = null,
   onActiveTabExternalChange,
+  sitePredictionVersion = "original",
+  enableGrid = false,
+  gridCellStats = { total: 0, populated: 0 },
+  lteGridEnabled = false,
+  lteGridSizeMeters = 50,
+  isDeltaSiteGridMode = false,
+  deltaGridScope = "selected",
+  conditionLogsLocations = [],
+  viewport = null,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -800,6 +812,10 @@ export default function UnifiedDetailLogs({
 
   const availableTabs = useMemo(() => {
     let tabs = [...TABS];
+    const isSiteLayerVisible = Boolean(enableSiteToggle && (showSiteMarkers || showSiteSectors));
+    if (!isSiteLayerVisible) {
+      tabs = tabs.filter((tab) => tab.id !== "conditionLogs");
+    }
     if (!techHandOver) {
       tabs = tabs.filter(tab => tab.id !== 'handover');
     }
@@ -810,7 +826,15 @@ export default function UnifiedDetailLogs({
       tabs.push({ id: "subSession", label: "Sub Session" });
     }
     return tabs;
-  }, [techHandOver, showN78Neighbors, n78NeighborData, showSubSession]);
+  }, [
+    enableSiteToggle,
+    showSiteMarkers,
+    showSiteSectors,
+    techHandOver,
+    showN78Neighbors,
+    n78NeighborData,
+    showSubSession,
+  ]);
 
   useEffect(() => {
     if (!activeTabExternal) return;
@@ -837,6 +861,13 @@ export default function UnifiedDetailLogs({
     onFilteredDataChange?.(filtered);
     setIsFilterLoading(false);
   }, [locations, dataFilters, hasActiveFilters, onFilteredDataChange]);
+
+  const conditionTabLocations = useMemo(() => {
+    if (Array.isArray(conditionLogsLocations) && conditionLogsLocations.length > 0) {
+      return conditionLogsLocations;
+    }
+    return filteredLocations;
+  }, [conditionLogsLocations, filteredLocations]);
 
   const fetchDuration = async () => {
     if (!sessionIds?.length) return null;
@@ -1174,6 +1205,22 @@ export default function UnifiedDetailLogs({
 
         {activeTab === "signal" && (
            <SignalTab locations={filteredLocations} selectedMetric={selectedMetric} thresholds={thresholds} expanded={expanded} chartRefs={chartRefs} />
+        )}
+
+        {activeTab === "conditionLogs" && (
+          <ConditionLogsTab
+            locations={conditionTabLocations}
+            selectedMetric={selectedMetric}
+            sitePredictionVersion={sitePredictionVersion}
+            enableGrid={enableGrid}
+            gridCellStats={gridCellStats}
+            lteGridEnabled={lteGridEnabled}
+            lteGridSizeMeters={lteGridSizeMeters}
+            isDeltaSiteGridMode={isDeltaSiteGridMode}
+            deltaGridScope={deltaGridScope}
+            viewport={viewport}
+            expanded={expanded}
+          />
         )}
 
         {activeTab === "operatorComparison" && (
