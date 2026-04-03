@@ -283,6 +283,12 @@ export const METRIC_CONFIG = {
     unit: '',
     fields: ['coverage_violation'],
   },
+  delta: {
+    thresholdKey: 'delta',
+    label: 'Delta',
+    unit: '',
+    fields: ['delta', 'difference', 'value', 'metric_value'],
+  },
 };
 
 const METRIC_ALIASES = {

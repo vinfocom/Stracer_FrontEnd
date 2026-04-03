@@ -375,8 +375,13 @@ const UnifiedMapSidebar = ({
   setLteGridSizeMeters,
   lteGridAggregationMethod,
   setLteGridAggregationMethod,
+  storedGridMetricMode = "avg",
+  setStoredGridMetricMode,
   deltaGridScope = "selected",
   setDeltaGridScope,
+  deltaGridApiState = {},
+  onDeltaGridComputeStore,
+  onDeltaGridFetchStored,
   mlGridEnabled,
   setMlGridEnabled,
   mlGridSize,
@@ -506,6 +511,22 @@ const UnifiedMapSidebar = ({
       onlyInsidePolygons,
     [enableDataToggle, enableSiteToggle, siteToggle, showPolygons, onlyInsidePolygons],
   );
+
+  const isDeltaCellMode = useMemo(
+    () =>
+      String(siteToggle || "").toLowerCase() === "cell" &&
+      String(sitePredictionVersion || "").trim().toLowerCase() === "delta",
+    [siteToggle, sitePredictionVersion],
+  );
+  const isCellMode = useMemo(
+    () => String(siteToggle || "").toLowerCase() === "cell",
+    [siteToggle],
+  );
+
+  const deltaGridButtonsDisabled = useMemo(() => {
+    const numericProjectId = Number(projectId);
+    return !Number.isFinite(numericProjectId) || numericProjectId <= 0;
+  }, [projectId]);
 
   const toggleEnvironment = useCallback(
     (value) => {
@@ -779,9 +800,13 @@ const UnifiedMapSidebar = ({
                         placeholder="Select aggregation"
                       />
 
-                      {String(siteToggle || "").toLowerCase() === "cell" &&
-                        String(sitePredictionVersion || "").trim().toLowerCase() === "delta" && (
-                        <div className="pt-1 bg-slate-800/50 rounded-lg p-2 space-y-2">
+                    </>
+                  )}
+
+                  {isCellMode && (
+                    <div className="pt-1 bg-slate-800/50 rounded-lg p-2 space-y-2">
+                      {isDeltaCellMode && (
+                        <>
                           <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
                             <Grid3X3 className="w-3 h-3" /> Delta Grid Scope
                           </Label>
@@ -794,11 +819,99 @@ const UnifiedMapSidebar = ({
                             ]}
                           />
                           <p className="text-[10px] text-slate-400">
-                            Selected uses currently selected sites/sectors. Complete loads all sectors and compares baseline vs optimized for full-grid delta.
+                            Selected uses currently selected sites/sectors. Complete uses project map regions and compares baseline vs optimized for full-grid delta.
                           </p>
-                        </div>
+                        </>
                       )}
-                    </>
+
+                      <div className="pt-1 bg-slate-900/40 rounded-lg p-2">
+                        <div className="flex items-center justify-between text-xs mb-2">
+                          <span className="text-slate-400">Manual Grid Size</span>
+                        </div>
+                        <ThresholdInput
+                          value={Number(lteGridSizeMeters) || 50}
+                          onChange={(next) => setLteGridSizeMeters?.(Math.round(next))}
+                          min={5}
+                          max={500}
+                          step={5}
+                          unit="m"
+                        />
+                      </div>
+
+                      <SelectRow
+                        label="Stored Grid Metric"
+                        value={storedGridMetricMode || "avg"}
+                        onChange={setStoredGridMetricMode}
+                        options={[
+                          { value: "avg", label: "Average" },
+                          { value: "median", label: "Median" },
+                          { value: "max", label: "Maximum" },
+                          { value: "min", label: "Minimum" },
+                        ]}
+                        placeholder="Select DB metric"
+                      />
+
+                      <div className="pt-2 border-t border-slate-700/50 space-y-2">
+                        <Label className="text-xs font-semibold text-blue-400 flex items-center gap-1">
+                          <Database className="w-3 h-3" /> Grid API (Compute + Fetch)
+                        </Label>
+                        <button
+                          type="button"
+                          onClick={() => onDeltaGridComputeStore?.()}
+                          disabled={
+                            deltaGridButtonsDisabled ||
+                            Boolean(deltaGridApiState?.computing) ||
+                            Boolean(deltaGridApiState?.fetching)
+                          }
+                          className="w-full px-2 py-1.5 rounded-md text-[11px] font-medium disabled:opacity-50 disabled:cursor-not-allowed text-white bg-blue-600 hover:bg-blue-500"
+                        >
+                          {deltaGridApiState?.computing ? "Computing..." : "Compute & Store"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeltaGridFetchStored?.()}
+                          disabled={
+                            deltaGridButtonsDisabled ||
+                            Boolean(deltaGridApiState?.computing) ||
+                            Boolean(deltaGridApiState?.fetching)
+                          }
+                          className={`w-full px-2 py-1.5 rounded-md text-[11px] font-medium disabled:opacity-50 disabled:cursor-not-allowed text-white ${
+                            deltaGridApiState?.gridVisible
+                              ? "bg-rose-600 hover:bg-rose-500"
+                              : "bg-emerald-600 hover:bg-emerald-500"
+                          }`}
+                        >
+                          {deltaGridApiState?.fetching
+                            ? "Fetching..."
+                            : deltaGridApiState?.gridVisible
+                              ? "Hide Grid"
+                              : "Fetch & Show Grid"}
+                        </button>
+                        {/* <div className="text-[10px] text-slate-400 leading-4">
+                          <div>
+                            projectId: {Number(projectId) > 0 ? Number(projectId) : "N/A"} | gridSize:{" "}
+                            {Math.max(5, Number(lteGridSizeMeters) || 50)}m
+                          </div>
+                          {deltaGridApiState?.lastStatus &&
+                            deltaGridApiState.lastStatus !== "idle" && (
+                              <div>
+                                status: {deltaGridApiState.lastStatus}
+                                {Number.isFinite(Number(deltaGridApiState?.gridSizeMeters)) &&
+                                  Number(deltaGridApiState.gridSizeMeters) > 0 &&
+                                  ` | stored: ${Number(deltaGridApiState.gridSizeMeters)}m`}
+                                {Number.isFinite(Number(deltaGridApiState?.gridsCount)) &&
+                                  ` | grids: ${Number(deltaGridApiState.gridsCount)}`}
+                              </div>
+                            )}
+                          {deltaGridApiState?.lastMessage ? (
+                            <div className="text-emerald-300/90">{deltaGridApiState.lastMessage}</div>
+                          ) : null}
+                          {deltaGridApiState?.lastError ? (
+                            <div className="text-amber-300/90">{deltaGridApiState.lastError}</div>
+                          ) : null}
+                        </div> */}
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -827,29 +940,7 @@ const UnifiedMapSidebar = ({
                     Add Site
                   </button>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={() => window.dispatchEvent(new CustomEvent('map:selectAllSites'))}
-                      className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all duration-200 shadow-sm"
-                    >
-                      <Layers className="h-3.5 w-3.5" />
-                      Select All Sites
-                    </button>
-                    <button
-                      onClick={() => window.dispatchEvent(new CustomEvent('map:selectAllSectors'))}
-                      className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-all duration-200 shadow-sm"
-                    >
-                      <Radio className="h-3.5 w-3.5" />
-                      Select All Sectors
-                    </button>
-                    <button
-                      onClick={() => window.dispatchEvent(new CustomEvent('map:clearSelectedSites'))}
-                      className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium bg-slate-700 hover:bg-slate-600 text-white transition-all duration-200 shadow-sm"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Clear Selected
-                    </button>
-                  </div>
+                 
 
                 </div>
               </>

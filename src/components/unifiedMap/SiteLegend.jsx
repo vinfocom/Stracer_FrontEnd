@@ -11,6 +11,37 @@ import {
   normalizeTechName
 } from "@/utils/colorUtils";
 
+const normalizeDeltaVariant = (value) => {
+  const variant = String(value ?? "").trim().toLowerCase();
+  if (variant === "optimised") return "optimized";
+  return variant;
+};
+
+const readSiteId = (row = {}) =>
+  String(
+    row.site_id ??
+      row.siteId ??
+      row.site ??
+      row.site_key_inferred ??
+      row.siteKeyInferred ??
+      row.nodeb_id ??
+      row.node_b_id ??
+      row.nodebId ??
+      "",
+  ).trim();
+
+const readSectorId = (row = {}) =>
+  String(
+    row.sector ??
+      row.sector_id ??
+      row.sectorId ??
+      row.cell_id ??
+      row.cellId ??
+      row.cell_id_representative ??
+      row.cellIdRepresentative ??
+      "",
+  ).trim();
+
 export default function SiteLegend({
   enabled,
   sites = [],
@@ -20,23 +51,48 @@ export default function SiteLegend({
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
+  const uniqueSectorRows = useMemo(() => {
+    if (!Array.isArray(sites) || sites.length === 0) return [];
+
+    const seen = new Set();
+    const result = [];
+
+    sites.forEach((row) => {
+      const siteId = readSiteId(row);
+      const sectorId = readSectorId(row);
+      if (!sectorId) return;
+
+      const variant = normalizeDeltaVariant(
+        row?.deltaVariant ?? row?.delta_variant ?? "",
+      );
+      const baseKey = `${siteId || "unknown-site"}|${sectorId}`;
+      const uniqueKey = variant ? `${baseKey}|${variant}` : baseKey;
+
+      if (seen.has(uniqueKey)) return;
+      seen.add(uniqueKey);
+      result.push(row);
+    });
+
+    return result;
+  }, [sites]);
+
   const legendItems = useMemo(() => {
-    if (!sites || sites.length === 0) return [];
+    if (!uniqueSectorRows.length) return [];
 
     const isDeltaMode =
       String(sitePredictionVersion || "").trim().toLowerCase() === "delta" ||
-      sites.some((site) => {
-        const variant = String(site?.deltaVariant ?? site?.delta_variant ?? "").trim().toLowerCase();
+      uniqueSectorRows.some((site) => {
+        const variant = normalizeDeltaVariant(site?.deltaVariant ?? site?.delta_variant ?? "");
         return variant === "baseline" || variant === "optimized" || variant === "optimised";
       });
 
     if (isDeltaMode) {
       let baselineCount = 0;
       let optimizedCount = 0;
-      sites.forEach((site) => {
-        const variant = String(site?.deltaVariant ?? site?.delta_variant ?? "").trim().toLowerCase();
+      uniqueSectorRows.forEach((site) => {
+        const variant = normalizeDeltaVariant(site?.deltaVariant ?? site?.delta_variant ?? "");
         if (variant === "baseline") baselineCount += 1;
-        if (variant === "optimized" || variant === "optimised") optimizedCount += 1;
+        if (variant === "optimized") optimizedCount += 1;
       });
 
       const items = [];
@@ -52,7 +108,7 @@ export default function SiteLegend({
     const itemMap = new Map();
     const mode = colorMode.toLowerCase();
 
-    sites.forEach(site => {
+    uniqueSectorRows.forEach(site => {
       let rawName = "Unknown";
       let normalized = "Unknown";
       let color = "#9ca3af";
@@ -92,7 +148,7 @@ export default function SiteLegend({
        }
        return a.label.localeCompare(b.label);
     });
-  }, [sites, colorMode, sitePredictionVersion]);
+  }, [uniqueSectorRows, colorMode, sitePredictionVersion]);
 
   if (!enabled) return null;
 

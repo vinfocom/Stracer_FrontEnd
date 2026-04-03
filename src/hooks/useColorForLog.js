@@ -41,6 +41,7 @@ function useColorForLog() {
                     sinr: safeParse(data.sinr_json),
                     dl_thpt: safeParse(data.dl_thpt_json),
                     ul_thpt: safeParse(data.ul_thpt_json),
+                    delta: safeParse(data.delta_json ?? data.delta),
                     volteCall: safeParse(data.volte_call),
                     lte_bler: safeParse(data.lte_bler_json),
                     mos: safeParse(data.mos_json),
@@ -127,6 +128,7 @@ function useColorForLog() {
             'latency': 'latency',
             'packet_loss': 'packet_loss',
             'tac': 'tac',
+            'delta': 'delta',
             'dominance': 'dominance',
             'coverage_violation': 'coverage_violation'
         };
@@ -180,23 +182,9 @@ function useColorForLog() {
             return firstThreshold.color;
         }
 
-        // ✅ Fallback: find closest threshold
-        let closestThreshold = sortedThresholds[0];
-        let minDistance = Math.abs(numValue - parseFloat(closestThreshold.min));
-
-        for (const thres of sortedThresholds) {
-            const min = parseFloat(thres.min);
-            const max = parseFloat(thres.max);
-            const midPoint = (min + max) / 2;
-            const distance = Math.abs(numValue - midPoint);
-            
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestThreshold = thres;
-            }
-        }
-
-        return closestThreshold?.color || "#808080";
+        // If the value falls in a gap between configured ranges,
+        // keep it neutral instead of forcing nearest-range color.
+        return "#808080";
     }, [parsedData]);
 
     const getThresholdInfo = useCallback((value, metric) => {
@@ -227,6 +215,7 @@ function useColorForLog() {
             'latency': 'latency',
             'packet_loss': 'packet_loss',
             'tac': 'tac',
+            'delta': 'delta',
             'dominance': 'dominance',
             'coverage_violation': 'coverage_violation'
         };
@@ -298,6 +287,7 @@ function useColorForLog() {
             'latency': 'latency',
             'packet_loss': 'packet_loss',
             'tac': 'tac',
+            'delta': 'delta',
             'dominance': 'dominance',
             'coverage_violation': 'coverage_violation',
         };

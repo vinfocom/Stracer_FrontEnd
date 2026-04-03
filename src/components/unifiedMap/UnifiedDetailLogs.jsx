@@ -691,9 +691,12 @@ export default function UnifiedDetailLogs({
   gridCellStats = { total: 0, populated: 0 },
   lteGridEnabled = false,
   lteGridSizeMeters = 50,
+  isCellSiteGridMode = false,
   isDeltaSiteGridMode = false,
   deltaGridScope = "selected",
+  storedGridMetricMode = "avg",
   conditionLogsLocations = [],
+  conditionSectorLocations = [],
   viewport = null,
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -1210,14 +1213,19 @@ export default function UnifiedDetailLogs({
         {activeTab === "conditionLogs" && (
           <ConditionLogsTab
             locations={conditionTabLocations}
+            sectorSummaryLocations={conditionSectorLocations}
+            projectId={projectId}
             selectedMetric={selectedMetric}
             sitePredictionVersion={sitePredictionVersion}
+            thresholds={thresholds}
             enableGrid={enableGrid}
             gridCellStats={gridCellStats}
             lteGridEnabled={lteGridEnabled}
             lteGridSizeMeters={lteGridSizeMeters}
+            isCellSiteGridMode={isCellSiteGridMode}
             isDeltaSiteGridMode={isDeltaSiteGridMode}
             deltaGridScope={deltaGridScope}
+            storedGridMetricMode={storedGridMetricMode}
             viewport={viewport}
             expanded={expanded}
           />

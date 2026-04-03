@@ -14,6 +14,7 @@ const FALLBACK_COLORS = [
   { min: 0.2, color: "#ea580c" },
   { min: 0.0, color: "#dc2626" },
 ];
+const METRIC_RANGE_EPSILON = 1e-9;
 
 const AGGREGATION_METHODS = {
   median: (values) => {
@@ -174,13 +175,26 @@ const getLegendCategoryValue = (point, key) => {
   return "Unknown";
 };
 
+const matchesLegendMetricRange = (value, legendFilter) => {
+  const min = Number(legendFilter?.min);
+  const max = Number(legendFilter?.max);
+  const includeMax = Boolean(legendFilter?.includeMax);
+  if (![value, min, max].every(Number.isFinite)) return false;
+
+  const lowerMatch = value >= min - METRIC_RANGE_EPSILON;
+  const upperMatch = includeMax
+    ? value <= max + METRIC_RANGE_EPSILON
+    : value < max - METRIC_RANGE_EPSILON;
+  return lowerMatch && upperMatch;
+};
+
 const matchesLegendFilter = (point, legendFilter, selectedMetric) => {
   if (!legendFilter) return true;
 
   if (legendFilter.type === "metric") {
     const metric = legendFilter.metric || selectedMetric;
     const value = getMetricValueFromPoint(point, metric);
-    return Number.isFinite(value) && value >= legendFilter.min && value < legendFilter.max;
+    return Number.isFinite(value) && matchesLegendMetricRange(value, legendFilter);
   }
 
   if (legendFilter.type === "category") {
@@ -298,6 +312,7 @@ const LtePredictionLocationLayer = ({
   gridSizeMeters = 50,
   gridAggregationMethod = "median",
   deltaComparisonMode = false,
+  externalGridCells = [],
   aggregateOverlaps = false,
   mlGridEnabled = false,
   mlGridSize = 50,
@@ -527,6 +542,41 @@ const LtePredictionLocationLayer = ({
   }, [sampledPoints, resolveMetricColor]);
 
   const gridLayerData = useMemo(() => {
+    if (
+      enabled &&
+      enableGrid &&
+      Array.isArray(externalGridCells) &&
+      externalGridCells.length > 0
+    ) {
+      return externalGridCells
+        .map((cell, index) => ({
+          kind: "grid",
+          id: cell?.id || `external-grid-${index}`,
+          polygon: Array.isArray(cell?.polygon) ? cell.polygon : null,
+          value: Number.isFinite(Number(cell?.value)) ? Number(cell.value) : null,
+          pointCount: Number(cell?.pointCount || 0),
+          sampleCount: Number(cell?.sampleCount || 0),
+          deltaCompare: Boolean(cell?.deltaCompare),
+          baselineAvg: Number.isFinite(Number(cell?.baselineAvg))
+            ? Number(cell.baselineAvg)
+            : null,
+          optimizedAvg: Number.isFinite(Number(cell?.optimizedAvg))
+            ? Number(cell.optimizedAvg)
+            : null,
+          difference: Number.isFinite(Number(cell?.difference))
+            ? Number(cell.difference)
+            : null,
+          baselinePointCount: Number(cell?.baselinePointCount || 0),
+          optimizedPointCount: Number(cell?.optimizedPointCount || 0),
+          baselineSampleCount: Number(cell?.baselineSampleCount || 0),
+          optimizedSampleCount: Number(cell?.optimizedSampleCount || 0),
+          lat: Number(cell?.lat),
+          lng: Number(cell?.lng),
+          color: Array.isArray(cell?.color) ? cell.color : [107, 114, 128, 190],
+        }))
+        .filter((cell) => Array.isArray(cell.polygon) && cell.polygon.length >= 3);
+    }
+
     if (!enabled || !enableGrid || !Array.isArray(filteredPoints) || filteredPoints.length === 0) {
       return [];
     }
@@ -680,6 +730,7 @@ const LtePredictionLocationLayer = ({
     getMetricColor,
     resolveMetricColor,
     deltaComparisonMode,
+    externalGridCells,
   ]);
 
   const isGridMode = enableGrid && gridLayerData.length > 0;

@@ -988,6 +988,21 @@ export const mapViewApi = {
     api.post("/api/MapView/UploadImageLegacy", formData),
 };
 
+export const gridAnalyticsApi = {
+  computeAndStoreGridAnalytics: (params, config = {}) =>
+    api.post("/api/GridAnalytics/ComputeAndStoreGridAnalytics", null, {
+      params,
+      ...config,
+    }),
+  getGridAnalytics: (params, config = {}) =>
+    api.get("/api/GridAnalytics/GetGridAnalytics", { params, ...config }),
+  getCoverageOptimizationSummary: (params, config = {}) =>
+    api.get("/api/GridAnalytics/GetCoverageOptimizationSummary", {
+      params,
+      ...config,
+    }),
+};
+
 export const homeApi = {
   login: (credentials) => api.post("/Home/UserLogin", credentials),
   getStateInfo: () => api.post("/Home/GetStateIformation"),

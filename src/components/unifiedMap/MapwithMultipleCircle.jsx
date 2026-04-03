@@ -13,6 +13,20 @@ const DEFAULT_CENTER = { lat: 28.64453086, lng: 77.37324242 };
 const CSHARP_API_BASE_URL = (import.meta.env.VITE_CSHARP_API_URL || "").replace(/\/+$/, "");
 const EMPTY_ARRAY = [];
 const MAX_IMAGE_LOG_SCAN_POINTS = 12000;
+const METRIC_RANGE_EPSILON = 1e-9;
+
+const matchesLegendMetricRange = (value, legendFilter) => {
+  const min = Number(legendFilter?.min);
+  const max = Number(legendFilter?.max);
+  const includeMax = Boolean(legendFilter?.includeMax);
+  if (![value, min, max].every(Number.isFinite)) return false;
+
+  const lowerMatch = value >= min - METRIC_RANGE_EPSILON;
+  const upperMatch = includeMax
+    ? value <= max + METRIC_RANGE_EPSILON
+    : value < max - METRIC_RANGE_EPSILON;
+  return lowerMatch && upperMatch;
+};
 
 const normalizeImagePath = (rawPath) => {
   if (rawPath === null || rawPath === undefined) return null;
@@ -762,7 +776,7 @@ const MapWithMultipleCircles = ({
       filtered = filtered.filter(log => {
         if (legendFilter.type === 'metric') {
           const val = getMetricValueFromLog(log, legendFilter.metric);
-          return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
+          return Number.isFinite(val) && matchesLegendMetricRange(val, legendFilter);
         }
 
         if (legendFilter.type === 'pci') {
@@ -894,7 +908,7 @@ const MapWithMultipleCircles = ({
       parsed = parsed.filter(n => {
         if (legendFilter.type === 'metric') {
           const val = n.metricValue;
-          return Number.isFinite(val) && val >= legendFilter.min && val < legendFilter.max;
+          return Number.isFinite(val) && matchesLegendMetricRange(val, legendFilter);
         }
         if (legendFilter.type === 'pci') {
           const val = n.neighbourPci || n.pci;

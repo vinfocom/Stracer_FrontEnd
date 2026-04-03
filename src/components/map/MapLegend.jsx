@@ -14,6 +14,17 @@ import {
   generateColorFromHash
 } from "@/utils/colorUtils";
 
+const METRIC_RANGE_EPSILON = 1e-9;
+
+const matchesMetricRange = (value, min, max, includeMax = false) => {
+  if (![value, min, max].every(Number.isFinite)) return false;
+  const lowerMatch = value >= min - METRIC_RANGE_EPSILON;
+  const upperMatch = includeMax
+    ? value <= max + METRIC_RANGE_EPSILON
+    : value < max - METRIC_RANGE_EPSILON;
+  return lowerMatch && upperMatch;
+};
+
 // Helper to get normalized key for counting
 const getNormalizedKey = (log, colorBy, scheme) => {
   switch (colorBy) {
@@ -281,15 +292,33 @@ const MetricThresholdLegend = ({
 }) => {
   const config = getMetricConfig(selectedMetric);
   const list = thresholds?.[config.thresholdKey] || [];
+  const normalizedThresholds = useMemo(
+    () =>
+      (Array.isArray(list) ? list : [])
+        .map((t, idx) => ({
+          ...t,
+          idx,
+          minNum: Number.parseFloat(t?.min),
+          maxNum: Number.parseFloat(t?.max),
+        }))
+        .filter((t) => Number.isFinite(t.minNum) && Number.isFinite(t.maxNum))
+        .sort((a, b) => a.minNum - b.minNum)
+        .map((t, idx, arr) => ({
+          ...t,
+          isLast: idx === arr.length - 1,
+        })),
+    [list],
+  );
 
-  const { validCount, invalidCount, usedThresholds } = useMemo(() => {
-    if (!logs?.length || !list.length) {
-      return { validCount: 0, invalidCount: 0, usedThresholds: [] };
+  const { validCount, invalidCount, unmatchedCount, usedThresholds } = useMemo(() => {
+    if (!logs?.length || !normalizedThresholds.length) {
+      return { validCount: 0, invalidCount: 0, unmatchedCount: 0, usedThresholds: [] };
     }
 
-    const tempCounts = new Array(list.length).fill(0);
+    const tempCounts = new Array(normalizedThresholds.length).fill(0);
     let valid = 0,
-      invalid = 0;
+      invalid = 0,
+      unmatched = 0;
 
     logs.forEach((log) => {
       const val = getMetricValueFromLog(log, selectedMetric);
@@ -300,34 +329,31 @@ const MetricThresholdLegend = ({
       }
 
       valid++;
-      const idx = list.findIndex((t) => {
-        const min = parseFloat(t.min),
-          max = parseFloat(t.max);
-        return (
-          Number.isFinite(min) &&
-          Number.isFinite(max) &&
-          val >= min &&
-          val < max
-        );
-      });
+      const idx = normalizedThresholds.findIndex((t) =>
+        matchesMetricRange(val, t.minNum, t.maxNum, t.isLast),
+      );
 
       if (idx !== -1) {
         tempCounts[idx]++;
       } else {
-        const mins = list.map((t) => parseFloat(t.min)).filter(Number.isFinite);
-        const maxs = list.map((t) => parseFloat(t.max)).filter(Number.isFinite);
+        const mins = normalizedThresholds.map((t) => t.minNum);
+        const maxs = normalizedThresholds.map((t) => t.maxNum);
 
         if (mins.length && maxs.length) {
           const globalMin = Math.min(...mins);
           const globalMax = Math.max(...maxs);
 
           if (val < globalMin) {
-            const i = list.findIndex((t) => parseFloat(t.min) === globalMin);
+            const i = normalizedThresholds.findIndex((t) => t.minNum === globalMin);
             if (i !== -1) tempCounts[i]++;
           } else if (val >= globalMax) {
-            const i = list.findIndex((t) => parseFloat(t.max) === globalMax);
+            const i = normalizedThresholds.findIndex((t) => t.maxNum === globalMax);
             if (i !== -1) tempCounts[i]++;
+          } else {
+            unmatched++;
           }
+        } else {
+          unmatched++;
         }
       }
     });
@@ -335,11 +361,12 @@ const MetricThresholdLegend = ({
     return {
       validCount: valid,
       invalidCount: invalid,
-      usedThresholds: list
+      unmatchedCount: unmatched,
+      usedThresholds: normalizedThresholds
         .map((t, idx) => ({ ...t, idx, count: tempCounts[idx] }))
         .filter((t) => t.count > 0),
     };
-  }, [logs, list, selectedMetric]);
+  }, [logs, normalizedThresholds, selectedMetric]);
 
   const handleRowClick = (threshold) => {
     const id = `metric-${threshold.min}-${threshold.max}`;
@@ -351,6 +378,7 @@ const MetricThresholdLegend = ({
         id,
         min: parseFloat(threshold.min),
         max: parseFloat(threshold.max),
+        includeMax: Boolean(threshold.isLast),
         metric: selectedMetric,
       });
     }
@@ -393,6 +421,18 @@ const MetricThresholdLegend = ({
             />
           );
         })}
+        {unmatchedCount > 0 ? (
+          <LegendRow
+            key="metric-unmatched"
+            color="#808080"
+            label="No Range Match"
+            count={unmatchedCount}
+            total={validCount}
+            onClick={() => {}}
+            isActive={false}
+            isDimmed={false}
+          />
+        ) : null}
       </div>
       <LegendFooter
         total={validCount}
@@ -413,6 +453,13 @@ const LegendRow = ({
   isActive,
   isDimmed,
 }) => {
+  const safeTotal = Number(total);
+  const safeCount = Number(count) || 0;
+  const percentage =
+    Number.isFinite(safeTotal) && safeTotal > 0
+      ? (safeCount / safeTotal) * 100
+      : null;
+
   return (
     <div
       onClick={onClick}
@@ -426,8 +473,9 @@ const LegendRow = ({
         style={{ backgroundColor: color }}
       />
       <span className="text-[11px] text-white flex-1 truncate">{label}</span>
-      <span className="text-sm tabular-nums text-white min-w-[36px] text-right">
-        {count.toLocaleString()}
+      <span className="text-sm tabular-nums text-white min-w-[96px] text-right">
+        {safeCount.toLocaleString()}
+        {percentage !== null ? ` (${percentage.toFixed(1)}%)` : ""}
       </span>
     </div>
   );
