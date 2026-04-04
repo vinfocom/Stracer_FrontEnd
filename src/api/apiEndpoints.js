@@ -968,6 +968,8 @@ export const mapViewApi = {
     api.get("/api/MapView/CompareSitePrediction", { params, ...config }),
   updateSitePrediction: (payload) =>
     api.post("/api/MapView/UpdateSitePrediction", payload),
+  deleteSitePrediction: (payload) =>
+    api.post("/api/MapView/DeleteSitePrediction", payload),
 
   assignSitePredictionToProject: (projectId, siteIds) => {
     const params = new URLSearchParams();

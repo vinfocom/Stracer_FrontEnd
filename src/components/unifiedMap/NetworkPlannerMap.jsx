@@ -590,6 +590,11 @@ function convertFormValueForApi(key, rawValue, originalValue) {
   return value;
 }
 
+function toFiniteNumberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function extractApiErrorDetails(error) {
   const parts = [];
   const primary = String(error?.message || "").trim();
@@ -2072,12 +2077,48 @@ const NetworkPlannerMap = ({
       await loadSectorPredictionForSector(
         { ...sector, renderKey: clickedRenderKey },
         infoPos,
-        { showInfo: true, silent: false },
+        { showInfo: false, silent: false },
       );
     },
     [
       clearSelectedSectorConfiguration,
       loadSectorPredictionForSector,
+      sectorOverridesByRenderKey,
+      sectorPredictionRowsByRenderKey,
+    ],
+  );
+
+  const handleSectorRightClick = useCallback(
+    async (sector, infoPos) => {
+      if (!sector) return;
+
+      const clickedRenderKey = buildSectorRenderKey(sector, 0);
+      const hasRenderedData =
+        Boolean(clickedRenderKey && sectorOverridesByRenderKey?.[clickedRenderKey]) ||
+        Boolean(
+          clickedRenderKey &&
+            Array.isArray(sectorPredictionRowsByRenderKey?.[clickedRenderKey]) &&
+            sectorPredictionRowsByRenderKey[clickedRenderKey].length > 0,
+        );
+
+      if (clickedRenderKey && hasRenderedData) {
+        const sectorOverride = sectorOverridesByRenderKey?.[clickedRenderKey] || null;
+        const effectiveSector = sectorOverride
+          ? { ...sector, ...sectorOverride, renderKey: clickedRenderKey }
+          : { ...sector, renderKey: clickedRenderKey };
+        openSectorInfo(effectiveSector, infoPos);
+        return;
+      }
+
+      await loadSectorPredictionForSector(
+        { ...sector, renderKey: clickedRenderKey },
+        infoPos,
+        { showInfo: true, silent: false },
+      );
+    },
+    [
+      loadSectorPredictionForSector,
+      openSectorInfo,
       sectorOverridesByRenderKey,
       sectorPredictionRowsByRenderKey,
     ],
@@ -2262,20 +2303,15 @@ const NetworkPlannerMap = ({
 
   const handleSectorEditSave = useCallback(async () => {
     if (!selectedSectorInfo) return;
-    const rowId = Number(sectorEditOriginalData.id ?? selectedSectorInfo.sourceRowId);
+    const rowId = Number(
+      selectedSectorInfo.sourceRowId ??
+        sectorEditOriginalData.original_id ??
+        sectorEditOriginalData.id,
+    );
     if (!Number.isFinite(rowId) || rowId <= 0) {
       toast.error("Unable to update this site row: missing row id.");
       return;
     }
-    const siteIdForUpdate = Number(
-      selectedSectorInfo.siteId ??
-      selectedSectorInfo?.rawSite?.site ??
-      selectedSectorInfo?.rawSite?.site_id ??
-      sectorEditOriginalData.site ??
-      NaN,
-    );
-    const payloadTargetId =
-      Number.isFinite(siteIdForUpdate) && siteIdForUpdate > 0 ? siteIdForUpdate : rowId;
 
     const azimuthValue = String(sectorEditFormData.azimuth ?? "").trim();
     if (azimuthValue !== "") {
@@ -2304,7 +2340,23 @@ const NetworkPlannerMap = ({
       }
     }
 
-    const payloadItem = { id: payloadTargetId, site_id_selector: payloadTargetId };
+    // For sector edit, always target the single source row only.
+    const payloadItem = {
+      id: rowId,
+      source_id: rowId,
+      site_id_selector: String(
+        selectedSectorInfo.siteId ??
+          selectedSectorInfo?.rawSite?.site ??
+          selectedSectorInfo?.rawSite?.site_id ??
+          "",
+      ).trim(),
+      sector_selector: String(
+        selectedSectorInfo.sector ??
+          selectedSectorInfo?.rawSite?.sector ??
+          selectedSectorInfo?.rawSite?.sector_id ??
+          "",
+      ).trim(),
+    };
     Object.keys(sectorEditFormData).forEach((key) => {
       if (key === "id") return;
       const originalValue = sectorEditOriginalData[key];
@@ -2314,7 +2366,9 @@ const NetworkPlannerMap = ({
       }
     });
 
-    if (Object.keys(payloadItem).length === 1) {
+    const payloadControlKeys = new Set(["id", "source_id", "site_id_selector", "sector_selector"]);
+    const hasAnyChangedField = Object.keys(payloadItem).some((key) => !payloadControlKeys.has(key));
+    if (!hasAnyChangedField) {
       toast.info("No changes to save.");
       setIsEditDialogOpen(false);
       return;
@@ -2439,7 +2493,11 @@ const NetworkPlannerMap = ({
         ),
       );
       setIsEditDialogOpen(false);
-      toast.success(rowsAffected > 0 ? `Updated (${rowsAffected} row${rowsAffected > 1 ? "s" : ""}).` : "Site updated.");
+      toast.success(
+        rowsAffected > 0
+          ? `Sector updated (${rowsAffected} row${rowsAffected > 1 ? "s" : ""}).`
+          : "Sector updated.",
+      );
 
       // Always refetch after edit so non-location fields (azimuth/bw/tilts) are refreshed
       // across baseline/updated/delta modes.
@@ -2490,6 +2548,379 @@ const NetworkPlannerMap = ({
     normalizedPolygonPaths,
     pointInsideAnyPolygon,
     viewport,
+  ]);
+
+  const handleDeleteSectorFromTooltip = useCallback(async () => {
+    if (!selectedSectorInfo) return;
+    if (String(siteToggle || "").toLowerCase() !== "cell") {
+      toast.info("Delete is available only for Cell toggle (site_prediction).");
+      return;
+    }
+
+    const projectIdNumeric = Number(projectId);
+    if (!Number.isFinite(projectIdNumeric) || projectIdNumeric <= 0) {
+      toast.error("Project id is required to delete sector.");
+      return;
+    }
+
+    const sourceRowId = Number(selectedSectorInfo.sourceRowId ?? selectedSectorInfo?.rawSite?.id ?? NaN);
+    const siteIdForDelete = String(
+      getDisplaySiteId(selectedSectorInfo) ||
+        selectedSectorInfo.siteId ||
+        selectedSectorInfo?.rawSite?.site ||
+        "",
+    ).trim();
+    const sectorForDelete = String(
+      selectedSectorInfo.sector ?? selectedSectorInfo?.rawSite?.sector ?? "",
+    ).trim();
+
+    if ((!Number.isFinite(sourceRowId) || sourceRowId <= 0) && (!siteIdForDelete || !sectorForDelete)) {
+      toast.error("Unable to identify sector row to delete.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete sector ${sectorForDelete || "selected"} for site ${siteIdForDelete || "selected"}?`,
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await mapViewApi.deleteSitePrediction({
+        projectId: projectIdNumeric,
+        sourceId: Number.isFinite(sourceRowId) && sourceRowId > 0 ? sourceRowId : null,
+        site: siteIdForDelete || null,
+        sector: sectorForDelete || null,
+        deleteEntireSite: false,
+      });
+      const rowsAffected = extractRowsAffected(response);
+      if (rowsAffected > 0) {
+        toast.success(`Deleted ${rowsAffected} sector row${rowsAffected > 1 ? "s" : ""}.`);
+      } else {
+        toast.warning("No sector rows were deleted.");
+      }
+
+      clearSelectedSectorConfiguration();
+      await fetchSiteData();
+
+      if (siteIdForDelete) {
+        const marker = siteMarkers.find((item) => item.siteId === siteIdForDelete);
+        if (marker) {
+          void loadSiteData(marker, true);
+        }
+      }
+    } catch (error) {
+      toast.error(extractApiErrorDetails(error) || "Failed to delete sector.");
+    }
+  }, [
+    clearSelectedSectorConfiguration,
+    fetchSiteData,
+    loadSiteData,
+    projectId,
+    selectedSectorInfo,
+    siteMarkers,
+    siteToggle,
+  ]);
+
+  const handleDeleteSiteFromTooltip = useCallback(async () => {
+    if (!selectedSectorInfo) return;
+    if (String(siteToggle || "").toLowerCase() !== "cell") {
+      toast.info("Delete is available only for Cell toggle (site_prediction).");
+      return;
+    }
+
+    const projectIdNumeric = Number(projectId);
+    if (!Number.isFinite(projectIdNumeric) || projectIdNumeric <= 0) {
+      toast.error("Project id is required to delete site.");
+      return;
+    }
+
+    const siteIdForDelete = String(
+      getDisplaySiteId(selectedSectorInfo) ||
+        selectedSectorInfo.siteId ||
+        selectedSectorInfo?.rawSite?.site ||
+        "",
+    ).trim();
+    if (!siteIdForDelete) {
+      toast.error("Unable to identify site to delete.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete full site ${siteIdForDelete} (all sectors)?`);
+    if (!confirmed) return;
+
+    try {
+      const response = await mapViewApi.deleteSitePrediction({
+        projectId: projectIdNumeric,
+        site: siteIdForDelete,
+        deleteEntireSite: true,
+      });
+      const rowsAffected = extractRowsAffected(response);
+      if (rowsAffected > 0) {
+        toast.success(`Deleted ${rowsAffected} site row${rowsAffected > 1 ? "s" : ""}.`);
+      } else {
+        toast.warning("No site rows were deleted.");
+      }
+
+      clearSelectedSectorConfiguration();
+      setSelectedSiteIds((prev) => {
+        const next = (Array.isArray(prev) ? prev : []).filter((id) => id !== siteIdForDelete);
+        if (onSiteSelect) onSiteSelect(next);
+        return next;
+      });
+      setSelectedSiteDataById((prev) => {
+        if (!prev || !Object.prototype.hasOwnProperty.call(prev, siteIdForDelete)) return prev;
+        const next = { ...prev };
+        delete next[siteIdForDelete];
+        return next;
+      });
+
+      await fetchSiteData();
+    } catch (error) {
+      toast.error(extractApiErrorDetails(error) || "Failed to delete site.");
+    }
+  }, [
+    clearSelectedSectorConfiguration,
+    fetchSiteData,
+    onSiteSelect,
+    projectId,
+    selectedSectorInfo,
+    siteToggle,
+  ]);
+
+  const handleRevertOptimizedSiteFromTooltip = useCallback(async () => {
+    if (!selectedSectorInfo) return;
+    if (String(siteToggle || "").toLowerCase() !== "cell") {
+      toast.info("Revert is available only for Cell toggle (site_prediction).");
+      return;
+    }
+
+    const projectIdNumeric = Number(projectId);
+    if (!Number.isFinite(projectIdNumeric) || projectIdNumeric <= 0) {
+      toast.error("Project id is required to revert optimized site.");
+      return;
+    }
+
+    const siteIdForRevert = String(
+      getDisplaySiteId(selectedSectorInfo) ||
+        selectedSectorInfo.siteId ||
+        selectedSectorInfo?.rawSite?.site ||
+        "",
+    ).trim();
+    if (!siteIdForRevert) {
+      toast.error("Unable to identify site to revert.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Revert optimized values for site ${siteIdForRevert}? This will delete rows from site_prediction_optimized only.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await mapViewApi.deleteSitePrediction({
+        projectId: projectIdNumeric,
+        site: siteIdForRevert,
+        deleteEntireSite: true,
+        optimizedOnly: true,
+      });
+      const rowsAffected = extractRowsAffected(response);
+      if (rowsAffected > 0) {
+        toast.success(
+          `Reverted optimized data for site ${siteIdForRevert} (${rowsAffected} row${rowsAffected > 1 ? "s" : ""}).`,
+        );
+      } else {
+        toast.info("No optimized rows found for this site.");
+      }
+
+      clearSelectedSectorConfiguration();
+      await fetchSiteData();
+
+      const marker = siteMarkers.find((item) => item.siteId === siteIdForRevert);
+      if (marker) {
+        void loadSiteData(marker, true);
+      }
+    } catch (error) {
+      toast.error(extractApiErrorDetails(error) || "Failed to revert optimized site data.");
+    }
+  }, [
+    clearSelectedSectorConfiguration,
+    fetchSiteData,
+    loadSiteData,
+    projectId,
+    selectedSectorInfo,
+    siteMarkers,
+    siteToggle,
+  ]);
+
+  const handleAddSectorToSiteFromTooltip = useCallback(async () => {
+    if (!selectedSectorInfo) return;
+    if (String(siteToggle || "").toLowerCase() !== "cell") {
+      toast.info("Add Sector is available only for Cell toggle (site_prediction).");
+      return;
+    }
+
+    const projectIdNumeric = Number(projectId);
+    if (!Number.isFinite(projectIdNumeric) || projectIdNumeric <= 0) {
+      toast.error("Project id is required to add sector.");
+      return;
+    }
+
+    const siteIdValue = String(
+      getDisplaySiteId(selectedSectorInfo) ||
+        selectedSectorInfo.siteId ||
+        selectedSectorInfo?.rawSite?.site ||
+        "",
+    ).trim();
+    if (!siteIdValue) {
+      toast.error("Unable to identify site id for new sector.");
+      return;
+    }
+
+    const siteSectorPool = [
+      ...(selectedSiteDataById[siteIdValue]?.sectors || []),
+      ...allSectors.filter((item) => String(item.siteId || "") === siteIdValue),
+    ];
+    const usedSectorIds = new Set(
+      siteSectorPool
+        .map((item) => Number(String(item?.sector ?? "").trim()))
+        .filter((value) => Number.isFinite(value)),
+    );
+    let suggestedSectorId = 1;
+    while (usedSectorIds.has(suggestedSectorId)) {
+      suggestedSectorId += 1;
+    }
+
+    const sectorInput = window.prompt("Enter new sector id", String(suggestedSectorId));
+    if (sectorInput === null) return;
+    const nextSectorId = Number(String(sectorInput || "").trim());
+    if (!Number.isFinite(nextSectorId) || nextSectorId <= 0) {
+      toast.error("Sector id must be a positive number.");
+      return;
+    }
+    if (usedSectorIds.has(nextSectorId)) {
+      toast.error(`Sector ${nextSectorId} already exists for this site.`);
+      return;
+    }
+
+    const azimuthInput = window.prompt(
+      "Enter azimuth (0-360)",
+      String(Math.round(Number(selectedSectorInfo.azimuth) || 0)),
+    );
+    if (azimuthInput === null) return;
+    const nextAzimuth = Number(String(azimuthInput || "").trim());
+    if (!Number.isFinite(nextAzimuth) || nextAzimuth < 0 || nextAzimuth > 360) {
+      toast.error("Azimuth must be between 0 and 360.");
+      return;
+    }
+
+    const idValueCandidate = toFiniteNumberOrNull(
+      selectedSectorInfo.pci ??
+        selectedSectorInfo.cellId ??
+        selectedSectorInfo?.rawSite?.pci ??
+        selectedSectorInfo?.rawSite?.cell_id ??
+        selectedSectorInfo?.rawSite?.cellId,
+    );
+    let nextIdValue = idValueCandidate;
+    if (!Number.isFinite(nextIdValue)) {
+      const idValueInput = window.prompt(
+        "Enter PCI/Cell ID value for the new sector",
+        String(nextSectorId),
+      );
+      if (idValueInput === null) return;
+      nextIdValue = Number(String(idValueInput || "").trim());
+    }
+    if (!Number.isFinite(nextIdValue)) {
+      toast.error("A valid PCI/Cell ID is required.");
+      return;
+    }
+
+    const nextLatitude = toFiniteNumberOrNull(
+      selectedSectorInfo.lat ?? selectedSectorInfo?.rawSite?.latitude ?? selectedSectorInfo?.rawSite?.lat,
+    );
+    const nextLongitude = toFiniteNumberOrNull(
+      selectedSectorInfo.lng ?? selectedSectorInfo?.rawSite?.longitude ?? selectedSectorInfo?.rawSite?.lng,
+    );
+    if (!Number.isFinite(nextLatitude) || !Number.isFinite(nextLongitude)) {
+      toast.error("Invalid site location.");
+      return;
+    }
+
+    const technology = String(
+      selectedSectorInfo.technology ??
+        selectedSectorInfo?.rawSite?.Technology ??
+        selectedSectorInfo?.rawSite?.technology ??
+        "4G",
+    ).trim() || "4G";
+    const band = String(
+      selectedSectorInfo.band ??
+        selectedSectorInfo?.rawSite?.band ??
+        selectedSectorInfo?.rawSite?.frequency_band ??
+        "",
+    ).trim();
+    if (!band) {
+      toast.error("Band is required on current sector to add a new sector quickly.");
+      return;
+    }
+
+    const height = toFiniteNumberOrNull(selectedSectorInfo?.rawSite?.height) ?? 30;
+    const mTilt = toFiniteNumberOrNull(selectedSectorInfo?.rawSite?.m_tilt) ?? 0;
+    const eTilt = toFiniteNumberOrNull(selectedSectorInfo?.rawSite?.e_tilt) ?? 0;
+    const cluster = String(
+      selectedSectorInfo?.rawSite?.cluster ??
+        selectedSectorInfo?.rawSite?.network ??
+        selectedSectorInfo?.network ??
+        "",
+    ).trim();
+    const earfcn = String(
+      selectedSectorInfo?.rawSite?.earfcn ??
+        selectedSectorInfo?.rawSite?.earfcn_or_narfcn ??
+        selectedSectorInfo?.earfcnOrNarfcn ??
+        "",
+    ).trim();
+
+    const payload = {
+      projectId: projectIdNumeric,
+      site: siteIdValue,
+      cluster,
+      bands: [band],
+      sectors: [Math.round(nextSectorId)],
+      azimuths: [Math.round(nextAzimuth)],
+      heights: [height],
+      mechanicalTilts: [mTilt],
+      electricalTilts: [eTilt],
+      technology,
+      technologies: [
+        {
+          technology,
+          idValues: [Math.round(nextIdValue)],
+          earfcn,
+        },
+      ],
+      latitude: nextLatitude,
+      longitude: nextLongitude,
+    };
+
+    try {
+      await mapViewApi.addSitePrediction(payload);
+      toast.success(`Added sector ${Math.round(nextSectorId)} to site ${siteIdValue}.`);
+
+      await fetchSiteData();
+      const marker = siteMarkers.find((item) => item.siteId === siteIdValue);
+      if (marker) {
+        void loadSiteData(marker, true);
+      }
+    } catch (error) {
+      toast.error(extractApiErrorDetails(error) || "Failed to add sector.");
+    }
+  }, [
+    allSectors,
+    fetchSiteData,
+    loadSiteData,
+    projectId,
+    selectedSectorInfo,
+    selectedSiteDataById,
+    siteMarkers,
+    siteToggle,
   ]);
 
   if (!enableSiteToggle) return null;
@@ -2831,7 +3262,9 @@ const NetworkPlannerMap = ({
               onClick={() => {
                 void handleSectorLeftClick(effectiveSector, infoPos);
               }}
-              onRightClick={() => clearSelectedSectorConfiguration(sectorRenderKey)}
+              onRightClick={() => {
+                void handleSectorRightClick(effectiveSector, infoPos);
+              }}
               onLoad={(polygon) => {
                 if (polygon) polygonRefs.current.add(polygon);
               }}
@@ -2865,10 +3298,6 @@ const NetworkPlannerMap = ({
               >
                 <div
                   className="min-w-[210px] border border-slate-300 bg-white p-2 text-xs shadow-sm"
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    clearSelectedSectorConfiguration();
-                  }}
                 >
                   <div className="mb-1 flex items-center justify-between border-b border-slate-200 pb-1 font-semibold">
                     <span>Site Info</span>
@@ -2897,6 +3326,53 @@ const NetworkPlannerMap = ({
                   <div>Prediction Points: {selectedSectorPredictionRows.length}</div>
                   {loadingSectorDetailsKey === sectorRenderKey && (
                     <div className="mt-1 text-[11px] text-blue-700">Loading sector details...</div>
+                  )}
+                  {canEditSitePrediction && (
+                    <div className="mt-2 border-t border-slate-200 pt-2">
+                      <div className="mb-1 text-[11px] font-semibold text-slate-700">Quick Actions</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleRevertOptimizedSiteFromTooltip();
+                          }}
+                          className="rounded bg-violet-600 px-2 py-1 text-[11px] font-semibold text-white"
+                          title="Delete site rows from site_prediction_optimized only"
+                        >
+                          Revert Optimized
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleAddSectorToSiteFromTooltip();
+                          }}
+                          className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white"
+                          title="Add a new sector to this site"
+                        >
+                          Add Sector
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleDeleteSectorFromTooltip();
+                          }}
+                          className="rounded bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white"
+                          title="Delete this sector"
+                        >
+                          Delete Sector
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleDeleteSiteFromTooltip();
+                          }}
+                          className="rounded bg-red-600 px-2 py-1 text-[11px] font-semibold text-white"
+                          title="Delete this site with all sectors"
+                        >
+                          Delete Site
+                        </button>
+                      </div>
+                    </div>
                   )}
                   {canEditSitePrediction && (
                     <div className="mt-2 border-t border-slate-200 pt-2">
