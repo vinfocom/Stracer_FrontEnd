@@ -887,29 +887,7 @@ const UnifiedMapSidebar = ({
                               ? "Hide Grid"
                               : "Fetch & Show Grid"}
                         </button>
-                        {/* <div className="text-[10px] text-slate-400 leading-4">
-                          <div>
-                            projectId: {Number(projectId) > 0 ? Number(projectId) : "N/A"} | gridSize:{" "}
-                            {Math.max(5, Number(lteGridSizeMeters) || 50)}m
-                          </div>
-                          {deltaGridApiState?.lastStatus &&
-                            deltaGridApiState.lastStatus !== "idle" && (
-                              <div>
-                                status: {deltaGridApiState.lastStatus}
-                                {Number.isFinite(Number(deltaGridApiState?.gridSizeMeters)) &&
-                                  Number(deltaGridApiState.gridSizeMeters) > 0 &&
-                                  ` | stored: ${Number(deltaGridApiState.gridSizeMeters)}m`}
-                                {Number.isFinite(Number(deltaGridApiState?.gridsCount)) &&
-                                  ` | grids: ${Number(deltaGridApiState.gridsCount)}`}
-                              </div>
-                            )}
-                          {deltaGridApiState?.lastMessage ? (
-                            <div className="text-emerald-300/90">{deltaGridApiState.lastMessage}</div>
-                          ) : null}
-                          {deltaGridApiState?.lastError ? (
-                            <div className="text-amber-300/90">{deltaGridApiState.lastError}</div>
-                          ) : null}
-                        </div> */}
+                        
                       </div>
                     </div>
                   )}

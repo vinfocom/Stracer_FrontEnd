@@ -555,6 +555,7 @@ export const ConditionLogsTab = ({
   expanded = false,
 }) => {
   const [showSectorSummary, setShowSectorSummary] = useState(false);
+  const [showPoorGridHistogram, setShowPoorGridHistogram] = useState(false);
   const selectedCondition = useMemo(
     () => resolveSelectedCondition(sitePredictionVersion),
     [sitePredictionVersion],
@@ -1561,6 +1562,108 @@ export const ConditionLogsTab = ({
     readGridDiffMetric,
   ]);
 
+  const rsrpThresholdRanges = useMemo(() => {
+    const normalized = normalizeThresholdRanges(thresholds?.rsrp);
+    if (normalized.length > 0) return normalized;
+    return [
+      { index: 0, min: -1e9, max: -110, color: "#ef4444", label: "Very Poor" },
+      { index: 1, min: -110, max: -100, color: "#f97316", label: "Poor" },
+      { index: 2, min: -100, max: -90, color: "#f59e0b", label: "Fair" },
+      { index: 3, min: -90, max: -80, color: "#22c55e", label: "Good" },
+      { index: 4, min: -80, max: 1e9, color: "#16a34a", label: "Excellent" },
+    ];
+  }, [thresholds]);
+
+  const poorGridRsrpHistogram = useMemo(() => {
+    const rows = Array.isArray(storedGridState.grids) ? storedGridState.grids : [];
+    if (rows.length === 0 || rsrpThresholdRanges.length === 0) {
+      return {
+        rows: [],
+        poorGridCount: 0,
+        baselineSampleCount: 0,
+        optimizedSampleCount: 0,
+      };
+    }
+
+    const fallbackDeltaRanges = [
+      { index: 0, min: -1e9, max: 0, color: "#dc2626", label: "Poor" },
+      { index: 1, min: 0, max: 1e9, color: "#16a34a", label: "Better" },
+    ];
+    const activeDeltaRanges =
+      Array.isArray(deltaThresholdRanges) && deltaThresholdRanges.length > 0
+        ? deltaThresholdRanges
+        : fallbackDeltaRanges;
+
+    const counterByIndex = new Map(
+      rsrpThresholdRanges.map((range) => [
+        range.index,
+        { baselineCount: 0, optimizedCount: 0 },
+      ]),
+    );
+
+    let poorGridCount = 0;
+    let baselineSampleCount = 0;
+    let optimizedSampleCount = 0;
+
+    rows.forEach((grid) => {
+      const deltaValue = readGridDiffMetric(grid);
+      if (!Number.isFinite(deltaValue)) return;
+      const deltaMatchedRange = matchThresholdRange(deltaValue, activeDeltaRanges);
+      const quality = classifyDeltaQuality(deltaMatchedRange?.label, deltaValue);
+      if (quality !== "poor") return;
+
+      poorGridCount += 1;
+
+      const baselineRsrp = readMetricFromGridMetrics(
+        grid?.baseline || {},
+        "rsrp",
+        normalizedStoredMetricMode,
+      );
+      const optimizedRsrp = readMetricFromGridMetrics(
+        grid?.optimized || {},
+        "rsrp",
+        normalizedStoredMetricMode,
+      );
+
+      const baselineRange = matchThresholdRange(baselineRsrp, rsrpThresholdRanges);
+      if (baselineRange && counterByIndex.has(baselineRange.index)) {
+        counterByIndex.get(baselineRange.index).baselineCount += 1;
+        baselineSampleCount += 1;
+      }
+
+      const optimizedRange = matchThresholdRange(optimizedRsrp, rsrpThresholdRanges);
+      if (optimizedRange && counterByIndex.has(optimizedRange.index)) {
+        counterByIndex.get(optimizedRange.index).optimizedCount += 1;
+        optimizedSampleCount += 1;
+      }
+    });
+
+    return {
+      rows: rsrpThresholdRanges.map((range) => {
+        const counts = counterByIndex.get(range.index) || {
+          baselineCount: 0,
+          optimizedCount: 0,
+        };
+        return {
+          key: `${range.index}-${range.label}`,
+          label: range.label,
+          thresholdColor: range.color,
+          baselineCount: counts.baselineCount,
+          optimizedCount: counts.optimizedCount,
+        };
+      }),
+      poorGridCount,
+      baselineSampleCount,
+      optimizedSampleCount,
+    };
+  }, [
+    storedGridState.grids,
+    rsrpThresholdRanges,
+    deltaThresholdRanges,
+    readGridDiffMetric,
+    normalizedStoredMetricMode,
+  ]);
+
   const sectorChangeSummary = useMemo(() => {
     if (!Array.isArray(normalizedSectorRows) || normalizedSectorRows.length === 0) {
       return {
@@ -1752,13 +1855,19 @@ export const ConditionLogsTab = ({
           subValue="Delta > 0"
           color="green"
         />
-        <StatCard
-          icon={Grid3X3}
-          label="Poor Grids"
-          value={storedGridMetricSummary.poorGrids}
-          subValue="Delta < 0"
-          color="orange"
-        />
+        <button
+          type="button"
+          onClick={() => setShowPoorGridHistogram((prev) => !prev)}
+          className="text-left"
+        >
+          <StatCard
+            icon={Grid3X3}
+            label="Poor Grids"
+            value={storedGridMetricSummary.poorGrids}
+            subValue="Delta < 0 (click for RSRP histogram)"
+            color="orange"
+          />
+        </button>
         <StatCard
           icon={Grid3X3}
           label="No Change Grids"
@@ -1767,6 +1876,63 @@ export const ConditionLogsTab = ({
           color="blue"
         />
       </div>
+
+      {showPoorGridHistogram ? (
+        <ChartContainer
+          title="Poor Grid RSRP Histogram"
+          subtitle="Baseline (green) vs Optimized (red) by RSRP threshold ranges"
+          icon={BarChart3}
+        >
+          {poorGridRsrpHistogram.rows.length === 0 ? (
+            <EmptyState message="No poor-grid RSRP histogram data available" />
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={poorGridRsrpHistogram.rows} margin={CHART_CONFIG.margin}>
+                  <CartesianGrid {...CHART_CONFIG.grid} />
+                  <XAxis dataKey="label" tick={{ fill: "#9CA3AF", fontSize: 12 }} />
+                  <YAxis tick={{ fill: "#9CA3AF", fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{
+                      ...CHART_CONFIG.tooltip,
+                      backgroundColor: "#020617",
+                      border: "1px solid #334155",
+                    }}
+                    labelStyle={{ color: "#FFFFFF" }}
+                    itemStyle={{ color: "#FFFFFF" }}
+                    formatter={(value, name) => [
+                      Number(value) || 0,
+                      String(name || ""),
+                    ]}
+                  />
+                  <Legend
+                    verticalAlign="top"
+                    height={28}
+                    wrapperStyle={{ color: "#E2E8F0", fontSize: 12 }}
+                  />
+                  <Bar
+                    dataKey="baselineCount"
+                    name="Baseline"
+                    fill="#22c55e"
+                    radius={[6, 6, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="optimizedCount"
+                    name="Optimized"
+                    fill="#ef4444"
+                    radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="mt-2 text-[11px] text-slate-300">
+                Poor grids: {poorGridRsrpHistogram.poorGridCount} | Baseline samples:{" "}
+                {poorGridRsrpHistogram.baselineSampleCount} | Optimized samples:{" "}
+                {poorGridRsrpHistogram.optimizedSampleCount}
+              </div>
+            </>
+          )}
+        </ChartContainer>
+      ) : null}
 
       {/* {shouldUseStoredGridAnalytics ? (
         <div
@@ -1852,12 +2018,7 @@ export const ConditionLogsTab = ({
         </div>
       ) : null}
 
-      {/* {shouldUseStoredGridAnalytics ? (
-        <div className="text-xs text-slate-400">
-          Grid classification rule: `delta &gt; 0` = Upgraded, `delta &lt; 0` = Poor,
-          `delta = 0` = No Change.
-        </div>
-      ) : null} */}
+      
 
       <div className={`grid ${expanded ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
         <ChartContainer
