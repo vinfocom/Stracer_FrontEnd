@@ -843,8 +843,8 @@ const UnifiedMapSidebar = ({
                         value={storedGridMetricMode || "avg"}
                         onChange={setStoredGridMetricMode}
                         options={[
-                          { value: "avg", label: "Average" },
-                          { value: "median", label: "Median" },
+                          // { value: "avg", label: "Average" },
+                          // { value: "median", label: "Median" },
                           { value: "max", label: "Maximum" },
                           { value: "min", label: "Minimum" },
                         ]}

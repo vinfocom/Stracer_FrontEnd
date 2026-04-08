@@ -553,9 +553,9 @@ export const OverviewTab = ({
         </div>
       )}
 
-      {ioSummary && (ioSummary.indoor > 0 || ioSummary.outdoor > 0) && (
+      {/* {ioSummary && (ioSummary.indoor > 0 || ioSummary.outdoor > 0) && (
         <IODistributionCard ioSummary={ioSummary} />
-      )}
+      )} */}
 
       {selectedMetric === "pci" && topPCIs.length > 0 && (
         <PCIReferenceCard topPCIs={topPCIs} />
@@ -603,88 +603,88 @@ const MetricCard = ({ label, value, color = "white", raw = false }) => {
   );
 };
 
-const IODistributionCard = ({ ioSummary }) => (
-  <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
-    <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-      <MapPin className="h-4 w-4" />
-      Indoor/Outdoor Distribution
-    </h4>
+// const IODistributionCard = ({ ioSummary }) => (
+//   <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+//     <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+//       <MapPin className="h-4 w-4" />
+//       Indoor/Outdoor Distribution
+//     </h4>
 
-    <div className="grid grid-cols-2 gap-3">
-      {ioSummary.indoor > 0 && (
-        <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/30 rounded-lg p-4 hover:shadow-lg hover:shadow-cyan-500/10 transition-all">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="bg-cyan-500/20 p-2.5 rounded-lg">
-              <svg
-                className="h-6 w-6 text-cyan-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-            </div>
-            <div>
-              <div className="text-xs text-cyan-300 font-medium">
-                Indoor Samples
-              </div>
-              <div className="text-2xl font-bold text-cyan-400">
-                {ioSummary.indoor.toLocaleString()}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between pt-3 border-t border-cyan-500/20">
-            <span className="text-xs text-white">Percentage</span>
-            <span className="text-sm font-semibold text-cyan-400">
-              {((ioSummary.indoor / ioSummary.total) * 100).toFixed(1)}%
-            </span>
-          </div>
-        </div>
-      )}
+//     <div className="grid grid-cols-2 gap-3">
+//       {ioSummary.indoor > 0 && (
+//         <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/30 rounded-lg p-4 hover:shadow-lg hover:shadow-cyan-500/10 transition-all">
+//           <div className="flex items-center gap-3 mb-3">
+//             <div className="bg-cyan-500/20 p-2.5 rounded-lg">
+//               <svg
+//                 className="h-6 w-6 text-cyan-400"
+//                 fill="none"
+//                 viewBox="0 0 24 24"
+//                 stroke="currentColor"
+//               >
+//                 <path
+//                   strokeLinecap="round"
+//                   strokeLinejoin="round"
+//                   strokeWidth={2}
+//                   d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+//                 />
+//               </svg>
+//             </div>
+//             <div>
+//               <div className="text-xs text-cyan-300 font-medium">
+//                 Indoor Samples
+//               </div>
+//               <div className="text-2xl font-bold text-cyan-400">
+//                 {ioSummary.indoor.toLocaleString()}
+//               </div>
+//             </div>
+//           </div>
+//           <div className="flex items-center justify-between pt-3 border-t border-cyan-500/20">
+//             <span className="text-xs text-white">Percentage</span>
+//             <span className="text-sm font-semibold text-cyan-400">
+//               {((ioSummary.indoor / ioSummary.total) * 100).toFixed(1)}%
+//             </span>
+//           </div>
+//         </div>
+//       )}
 
-      {ioSummary.outdoor > 0 && (
-        <div className="bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/30 rounded-lg p-4 hover:shadow-lg hover:shadow-green-500/10 transition-all">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="bg-green-500/20 p-2.5 rounded-lg">
-              <svg
-                className="h-6 w-6 text-green-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </div>
-            <div>
-              <div className="text-xs text-green-300 font-medium">
-                Outdoor Samples
-              </div>
-              <div className="text-2xl font-bold text-green-400">
-                {ioSummary.outdoor.toLocaleString()}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between pt-3 border-t border-green-500/20">
-            <span className="text-xs text-white">Percentage</span>
-            <span className="text-sm font-semibold text-green-400">
-              {((ioSummary.outdoor / ioSummary.total) * 100).toFixed(1)}%
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
-);
+//       {ioSummary.outdoor > 0 && (
+//         <div className="bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/30 rounded-lg p-4 hover:shadow-lg hover:shadow-green-500/10 transition-all">
+//           <div className="flex items-center gap-3 mb-3">
+//             <div className="bg-green-500/20 p-2.5 rounded-lg">
+//               <svg
+//                 className="h-6 w-6 text-green-400"
+//                 fill="none"
+//                 viewBox="0 0 24 24"
+//                 stroke="currentColor"
+//               >
+//                 <path
+//                   strokeLinecap="round"
+//                   strokeLinejoin="round"
+//                   strokeWidth={2}
+//                   d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+//                 />
+//               </svg>
+//             </div>
+//             <div>
+//               <div className="text-xs text-green-300 font-medium">
+//                 Outdoor Samples
+//               </div>
+//               <div className="text-2xl font-bold text-green-400">
+//                 {ioSummary.outdoor.toLocaleString()}
+//               </div>
+//             </div>
+//           </div>
+//           <div className="flex items-center justify-between pt-3 border-t border-green-500/20">
+//             <span className="text-xs text-white">Percentage</span>
+//             <span className="text-sm font-semibold text-green-400">
+//               {((ioSummary.outdoor / ioSummary.total) * 100).toFixed(1)}%
+//             </span>
+//           </div>
+//         </div>
+//       )}
+//     </div>
+//   </div>
+// );
 
 const PCIReferenceCard = ({ topPCIs }) => (
   <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
